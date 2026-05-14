@@ -1,13 +1,14 @@
 import { useCallback, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { Box, ChevronLeft, ChevronRight } from "lucide-react";
-import type { NavItem } from "@/config/navigation";
+import type { PrimaryNavEntry } from "@/config/navigation";
 import { logoutNavItem } from "@/config/navigation";
+import { SidebarNavGroup } from "@/app/layout/SidebarNavGroup";
 
 const SIDEBAR_EXPANDED_KEY = "easybook-sidebar-expanded";
 
 type SidebarNavProps = {
-  items: NavItem[];
+  items: PrimaryNavEntry[];
 };
 
 function readStoredExpanded(): boolean {
@@ -40,7 +41,7 @@ export function SidebarNav({ items }: SidebarNavProps) {
 
   return (
     <aside
-      className={`flex shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 py-5 transition-[width] duration-200 ease-out ${
+      className={`relative flex shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 py-5 transition-[width] duration-200 ease-out ${
         expanded ? "w-56 px-3" : "w-[72px] items-center px-0"
       }`}
       aria-label="Navigasi aplikasi"
@@ -97,19 +98,29 @@ export function SidebarNav({ items }: SidebarNavProps) {
         className={`flex flex-1 flex-col gap-2 ${expanded ? "w-full" : "items-center"}`}
         aria-label="Menu utama"
       >
-        {items.map((item) => {
-          const Icon = item.icon;
+        {items.map((entry) => {
+          if (entry.kind === "group") {
+            return (
+              <SidebarNavGroup
+                key={entry.id}
+                group={entry}
+                sidebarExpanded={expanded}
+                rowClass={navLinkClass}
+              />
+            );
+          }
+          const Icon = entry.icon;
           return (
             <NavLink
-              key={item.id}
-              to={item.path}
-              end={item.path === "/"}
-              title={expanded ? undefined : item.label}
+              key={entry.id}
+              to={entry.path}
+              end={entry.path === "/"}
+              title={expanded ? undefined : entry.label}
               className={({ isActive }) => navLinkClass(isActive, expanded)}
             >
               <Icon className="h-5 w-5 shrink-0" strokeWidth={1.75} aria-hidden />
               {expanded ? (
-                <span className="min-w-0 truncate text-sm font-medium">{item.label}</span>
+                <span className="min-w-0 truncate text-sm font-medium">{entry.label}</span>
               ) : null}
             </NavLink>
           );

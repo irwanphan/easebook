@@ -9,6 +9,7 @@ import { PengaturanPage } from "@/pages/PengaturanPage";
 import { KategoriGrupPage } from "@/pages/manajemen/KategoriGrupPage";
 import { TambahKategoriGrupPage } from "@/pages/manajemen/TambahKategoriGrupPage";
 import { MerekPage } from "@/pages/manajemen/MerekPage";
+import { TambahMerekPage } from "@/pages/manajemen/TambahMerekPage";
 import { MasterLainnyaPage } from "@/pages/manajemen/MasterLainnyaPage";
 
 export const router = createHashRouter([
@@ -24,6 +25,7 @@ export const router = createHashRouter([
       { path: "manajemen/kategori", element: <KategoriGrupPage /> },
       { path: "manajemen/kategori/tambah", element: <TambahKategoriGrupPage /> },
       { path: "manajemen/merek", element: <MerekPage /> },
+      { path: "manajemen/merek/tambah", element: <TambahMerekPage /> },
       { path: "manajemen/lainnya", element: <MasterLainnyaPage /> },
       { path: "pengaturan", element: <PengaturanPage /> },
     ],

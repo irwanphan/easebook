@@ -5,6 +5,7 @@ import {
   ShoppingCart,
   Truck,
   Briefcase,
+  Wallet,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -56,6 +57,19 @@ export const primaryNavEntries: PrimaryNavEntry[] = [
       { id: "mj-merk", label: "Merek", path: "/manajemen/merek" },
       { id: "mj-gudang", label: "Gudang", path: "/manajemen/gudang" },
       { id: "mj-lain", label: "Master lainnya", path: "/manajemen/lainnya" },
+    ],
+  },
+  {
+    kind: "group",
+    id: "keuangan",
+    label: "Keuangan",
+    icon: Wallet,
+    children: [
+      { id: "ke-pengeluaran", label: "Pengeluaran", path: "/keuangan/pengeluaran" },
+      { id: "ke-penerimaan", label: "Penerimaan", path: "/keuangan/penerimaan" },
+      { id: "ke-piutang", label: "Pelunasan piutang", path: "/keuangan/pelunasan-piutang" },
+      { id: "ke-hutang", label: "Pelunasan hutang", path: "/keuangan/pelunasan-hutang" },
+      { id: "ke-transfer", label: "Transfer", path: "/keuangan/transfer" },
     ],
   },
   { kind: "link", id: "pengaturan", label: "Pengaturan", path: "/pengaturan", icon: Settings },

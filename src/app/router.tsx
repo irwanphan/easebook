@@ -13,6 +13,11 @@ import { TambahMerekPage } from "@/pages/manajemen/TambahMerekPage";
 import { GudangPage } from "@/pages/manajemen/GudangPage";
 import { TambahGudangPage } from "@/pages/manajemen/TambahGudangPage";
 import { MasterLainnyaPage } from "@/pages/manajemen/MasterLainnyaPage";
+import { KeuanganPengeluaranPage } from "@/pages/keuangan/KeuanganPengeluaranPage";
+import { KeuanganPenerimaanPage } from "@/pages/keuangan/KeuanganPenerimaanPage";
+import { KeuanganPelunasanPiutangPage } from "@/pages/keuangan/KeuanganPelunasanPiutangPage";
+import { KeuanganPelunasanHutangPage } from "@/pages/keuangan/KeuanganPelunasanHutangPage";
+import { KeuanganTransferPage } from "@/pages/keuangan/KeuanganTransferPage";
 
 export const router = createHashRouter([
   {
@@ -31,6 +36,11 @@ export const router = createHashRouter([
       { path: "manajemen/gudang", element: <GudangPage /> },
       { path: "manajemen/gudang/tambah", element: <TambahGudangPage /> },
       { path: "manajemen/lainnya", element: <MasterLainnyaPage /> },
+      { path: "keuangan/pengeluaran", element: <KeuanganPengeluaranPage /> },
+      { path: "keuangan/penerimaan", element: <KeuanganPenerimaanPage /> },
+      { path: "keuangan/pelunasan-piutang", element: <KeuanganPelunasanPiutangPage /> },
+      { path: "keuangan/pelunasan-hutang", element: <KeuanganPelunasanHutangPage /> },
+      { path: "keuangan/transfer", element: <KeuanganTransferPage /> },
       { path: "pengaturan", element: <PengaturanPage /> },
     ],
   },

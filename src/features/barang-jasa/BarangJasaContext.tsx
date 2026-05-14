@@ -2,61 +2,70 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { BarangJasaRow } from "@/data/mockData";
-import { mockBarangJasa } from "@/data/mockData";
-
-const STORAGE_KEY = "easybook-barang-jasa-items";
-
-function loadItems(): BarangJasaRow[] {
-  if (typeof window === "undefined") return [...mockBarangJasa];
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [...mockBarangJasa];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [...mockBarangJasa];
-    return parsed as BarangJasaRow[];
-  } catch {
-    return [...mockBarangJasa];
-  }
-}
-
-function persistItems(items: BarangJasaRow[]) {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-}
 
 type BarangJasaContextValue = {
   items: BarangJasaRow[];
-  addItem: (row: BarangJasaRow) => boolean;
-  kodeExists: (kode: string) => boolean;
+  loading: boolean;
+  refresh: () => Promise<void>;
+  addItem: (row: BarangJasaRow) => Promise<void>;
+  kodeExists: (kode: string) => Promise<boolean>;
 };
 
 const BarangJasaContext = createContext<BarangJasaContextValue | null>(null);
 
 export function BarangJasaProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<BarangJasaRow[]>(() => loadItems());
+  const [items, setItems] = useState<BarangJasaRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const kodeExists = useCallback(
-    (kode: string) => items.some((r) => r.kode.toLowerCase() === kode.trim().toLowerCase()),
-    [items],
+  const refresh = useCallback(async () => {
+    const list = await invoke<BarangJasaRow[]>("barang_jasa_list");
+    setItems(
+      list.map((r) => ({
+        ...r,
+        tipe: r.tipe as "Barang" | "Jasa",
+      })),
+    );
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void refresh().catch(() => setLoading(false));
+  }, [refresh]);
+
+  const kodeExists = useCallback(async (kode: string) => {
+    return invoke<boolean>("barang_jasa_kode_exists", { kode });
+  }, []);
+
+  const addItem = useCallback(
+    async (row: BarangJasaRow) => {
+      await invoke("barang_jasa_insert", {
+        row: {
+          kode: row.kode,
+          nama: row.nama,
+          tipe: row.tipe,
+          satuan: row.satuan,
+          harga: row.harga,
+          stok: row.tipe === "Barang" ? row.stok ?? null : null,
+          kategoriKode: row.kategoriKode ?? null,
+          merekKode: row.merekKode ?? null,
+          defaultGudangKode: row.defaultGudangKode ?? null,
+        },
+      });
+      await refresh();
+    },
+    [refresh],
   );
 
-  const addItem = useCallback((row: BarangJasaRow) => {
-    if (kodeExists(row.kode)) return false;
-    setItems((prev) => {
-      const next = [...prev, row];
-      persistItems(next);
-      return next;
-    });
-    return true;
-  }, [kodeExists]);
-
   const value = useMemo(
-    () => ({ items, addItem, kodeExists }),
-    [items, addItem, kodeExists],
+    () => ({ items, loading, refresh, addItem, kodeExists }),
+    [items, loading, refresh, addItem, kodeExists],
   );
 
   return (

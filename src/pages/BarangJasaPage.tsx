@@ -15,7 +15,7 @@ function formatRupiah(n: number) {
 
 export function BarangJasaPage() {
   const navigate = useNavigate();
-  const { items } = useBarangJasa();
+  const { items, loading } = useBarangJasa();
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -28,6 +28,9 @@ export function BarangJasaPage() {
           </Button>
         }
       />
+      {loading ? (
+        <p className="text-sm text-zinc-500">Memuat data dari database lokal…</p>
+      ) : null}
       <Card className="p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-left text-sm">

@@ -2,64 +2,64 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { GudangRow } from "@/data/gudang";
-import { mockGudang } from "@/data/gudang";
-
-const STORAGE_KEY = "easybook-gudang-items";
-
-function loadItems(): GudangRow[] {
-  if (typeof window === "undefined") return [...mockGudang];
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [...mockGudang];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [...mockGudang];
-    return parsed as GudangRow[];
-  } catch {
-    return [...mockGudang];
-  }
-}
-
-function persistItems(items: GudangRow[]) {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-}
 
 type GudangContextValue = {
   items: GudangRow[];
-  addItem: (row: GudangRow) => boolean;
-  kodeExists: (kode: string) => boolean;
+  loading: boolean;
+  refresh: () => Promise<void>;
+  addItem: (row: GudangRow) => Promise<void>;
+  kodeExists: (kode: string) => Promise<boolean>;
 };
 
 const GudangContext = createContext<GudangContextValue | null>(null);
 
 export function GudangProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<GudangRow[]>(() => loadItems());
+  const [items, setItems] = useState<GudangRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const kodeExists = useCallback(
-    (kode: string) => items.some((r) => r.kode.toLowerCase() === kode.trim().toLowerCase()),
-    [items],
-  );
+  const refresh = useCallback(async () => {
+    const list = await invoke<GudangRow[]>("gudang_list");
+    setItems(list);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void refresh().catch(() => setLoading(false));
+  }, [refresh]);
+
+  const kodeExists = useCallback(async (kode: string) => {
+    return invoke<boolean>("gudang_kode_exists", { kode });
+  }, []);
 
   const addItem = useCallback(
-    (row: GudangRow) => {
-      if (kodeExists(row.kode)) return false;
-      setItems((prev) => {
-        const next = [...prev, row];
-        persistItems(next);
-        return next;
+    async (row: GudangRow) => {
+      await invoke("gudang_insert", {
+        row: {
+          kode: row.kode,
+          nama: row.nama,
+          alamat: row.alamat,
+          lokasi: row.lokasi,
+          pic: row.pic,
+          nomorKontak: row.nomorKontak,
+          luasM2: row.luasM2,
+          kapasitasPenyimpanan: row.kapasitasPenyimpanan,
+        },
       });
-      return true;
+      await refresh();
     },
-    [kodeExists],
+    [refresh],
   );
 
   const value = useMemo(
-    () => ({ items, addItem, kodeExists }),
-    [items, addItem, kodeExists],
+    () => ({ items, loading, refresh, addItem, kodeExists }),
+    [items, loading, refresh, addItem, kodeExists],
   );
 
   return <GudangContext.Provider value={value}>{children}</GudangContext.Provider>;

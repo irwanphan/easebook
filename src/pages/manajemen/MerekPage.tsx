@@ -6,7 +6,7 @@ import { useMerek } from "@/features/merek/MerekContext";
 
 export function MerekPage() {
   const navigate = useNavigate();
-  const { items } = useMerek();
+  const { items, loading } = useMerek();
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -19,6 +19,9 @@ export function MerekPage() {
           </Button>
         }
       />
+      {loading ? (
+        <p className="text-sm text-zinc-500">Memuat data dari database lokal…</p>
+      ) : null}
       <Card className="overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] text-left text-sm">

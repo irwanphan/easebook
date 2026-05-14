@@ -104,6 +104,10 @@ export type BarangJasaRow = {
   satuan: string;
   harga: number;
   stok?: number;
+  /** Diisi dari SQLite bila ada relasi master */
+  kategoriKode?: string | null;
+  merekKode?: string | null;
+  defaultGudangKode?: string | null;
 };
 
 export const mockBarangJasa: BarangJasaRow[] = [

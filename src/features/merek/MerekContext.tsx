@@ -2,64 +2,55 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { MerekRow } from "@/data/merek";
-import { mockMerek } from "@/data/merek";
-
-const STORAGE_KEY = "easybook-merek-items";
-
-function loadItems(): MerekRow[] {
-  if (typeof window === "undefined") return [...mockMerek];
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [...mockMerek];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [...mockMerek];
-    return parsed as MerekRow[];
-  } catch {
-    return [...mockMerek];
-  }
-}
-
-function persistItems(items: MerekRow[]) {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-}
 
 type MerekContextValue = {
   items: MerekRow[];
-  addItem: (row: MerekRow) => boolean;
-  kodeExists: (kode: string) => boolean;
+  loading: boolean;
+  refresh: () => Promise<void>;
+  addItem: (row: MerekRow) => Promise<void>;
+  kodeExists: (kode: string) => Promise<boolean>;
 };
 
 const MerekContext = createContext<MerekContextValue | null>(null);
 
 export function MerekProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<MerekRow[]>(() => loadItems());
+  const [items, setItems] = useState<MerekRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const kodeExists = useCallback(
-    (kode: string) => items.some((r) => r.kode.toLowerCase() === kode.trim().toLowerCase()),
-    [items],
-  );
+  const refresh = useCallback(async () => {
+    const list = await invoke<MerekRow[]>("merek_list");
+    setItems(list);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void refresh().catch(() => setLoading(false));
+  }, [refresh]);
+
+  const kodeExists = useCallback(async (kode: string) => {
+    return invoke<boolean>("merek_kode_exists", { kode });
+  }, []);
 
   const addItem = useCallback(
-    (row: MerekRow) => {
-      if (kodeExists(row.kode)) return false;
-      setItems((prev) => {
-        const next = [...prev, row];
-        persistItems(next);
-        return next;
+    async (row: MerekRow) => {
+      await invoke("merek_insert", {
+        row: { kode: row.kode, nama: row.nama, deskripsi: row.deskripsi },
       });
-      return true;
+      await refresh();
     },
-    [kodeExists],
+    [refresh],
   );
 
   const value = useMemo(
-    () => ({ items, addItem, kodeExists }),
-    [items, addItem, kodeExists],
+    () => ({ items, loading, refresh, addItem, kodeExists }),
+    [items, loading, refresh, addItem, kodeExists],
   );
 
   return <MerekContext.Provider value={value}>{children}</MerekContext.Provider>;

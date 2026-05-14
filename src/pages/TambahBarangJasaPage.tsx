@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import type { BarangJasaRow } from "@/data/mockData";
+import { tauriErrorMessage } from "@/lib/tauriError";
 
 function FieldLabel({ htmlFor, children }: { htmlFor: string; children: ReactNode }) {
   return (
@@ -43,7 +44,7 @@ export function TambahBarangJasaPage() {
     return n;
   }
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
 
@@ -52,7 +53,7 @@ export function TambahBarangJasaPage() {
       setError("Kode wajib diisi.");
       return;
     }
-    if (kodeExists(kodeTrim)) {
+    if (await kodeExists(kodeTrim)) {
       setError("Kode sudah dipakai. Gunakan kode lain.");
       return;
     }
@@ -85,12 +86,12 @@ export function TambahBarangJasaPage() {
       ...(tipe === "Barang" ? { stok: stokVal } : {}),
     };
 
-    const ok = addItem(row);
-    if (!ok) {
-      setError("Gagal menyimpan (kode bentrok).");
-      return;
+    try {
+      await addItem(row);
+      navigate("/barang-jasa");
+    } catch (err) {
+      setError(tauriErrorMessage(err));
     }
-    navigate("/barang-jasa");
   }
 
   return (

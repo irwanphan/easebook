@@ -10,7 +10,7 @@ function formatLuas(n: number) {
 
 export function GudangPage() {
   const navigate = useNavigate();
-  const { items } = useGudang();
+  const { items, loading } = useGudang();
 
   return (
     <div className="mx-auto flex max-w-[1600px] flex-col gap-6">
@@ -23,6 +23,9 @@ export function GudangPage() {
           </Button>
         }
       />
+      {loading ? (
+        <p className="text-sm text-zinc-500">Memuat data dari database lokal…</p>
+      ) : null}
       <Card className="overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1100px] text-left text-sm">

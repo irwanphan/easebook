@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useKategoriGrup } from "@/features/kategori-grup/KategoriGrupContext";
 import type { KategoriGrupRow } from "@/data/kategoriGrup";
+import { tauriErrorMessage } from "@/lib/tauriError";
 
 function FieldLabel({ htmlFor, children }: { htmlFor: string; children: ReactNode }) {
   return (
@@ -30,7 +31,7 @@ export function TambahKategoriGrupPage() {
   const [deskripsi, setDeskripsi] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
 
@@ -39,7 +40,7 @@ export function TambahKategoriGrupPage() {
       setError("Kode wajib diisi.");
       return;
     }
-    if (kodeExists(kodeTrim)) {
+    if (await kodeExists(kodeTrim)) {
       setError("Kode sudah dipakai. Gunakan kode lain.");
       return;
     }
@@ -54,12 +55,12 @@ export function TambahKategoriGrupPage() {
       deskripsi: deskripsi.trim(),
     };
 
-    const ok = addItem(row);
-    if (!ok) {
-      setError("Gagal menyimpan (kode bentrok).");
-      return;
+    try {
+      await addItem(row);
+      navigate("/manajemen/kategori");
+    } catch (err) {
+      setError(tauriErrorMessage(err));
     }
-    navigate("/manajemen/kategori");
   }
 
   return (

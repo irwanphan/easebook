@@ -6,7 +6,7 @@ import { useKategoriGrup } from "@/features/kategori-grup/KategoriGrupContext";
 
 export function KategoriGrupPage() {
   const navigate = useNavigate();
-  const { items } = useKategoriGrup();
+  const { items, loading } = useKategoriGrup();
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -19,6 +19,9 @@ export function KategoriGrupPage() {
           </Button>
         }
       />
+      {loading ? (
+        <p className="text-sm text-zinc-500">Memuat data dari database lokal…</p>
+      ) : null}
       <Card className="overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] text-left text-sm">

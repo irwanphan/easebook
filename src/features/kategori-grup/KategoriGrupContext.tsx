@@ -2,64 +2,55 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { KategoriGrupRow } from "@/data/kategoriGrup";
-import { mockKategoriGrup } from "@/data/kategoriGrup";
-
-const STORAGE_KEY = "easybook-kategori-grup-items";
-
-function loadItems(): KategoriGrupRow[] {
-  if (typeof window === "undefined") return [...mockKategoriGrup];
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [...mockKategoriGrup];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [...mockKategoriGrup];
-    return parsed as KategoriGrupRow[];
-  } catch {
-    return [...mockKategoriGrup];
-  }
-}
-
-function persistItems(items: KategoriGrupRow[]) {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-}
 
 type KategoriGrupContextValue = {
   items: KategoriGrupRow[];
-  addItem: (row: KategoriGrupRow) => boolean;
-  kodeExists: (kode: string) => boolean;
+  loading: boolean;
+  refresh: () => Promise<void>;
+  addItem: (row: KategoriGrupRow) => Promise<void>;
+  kodeExists: (kode: string) => Promise<boolean>;
 };
 
 const KategoriGrupContext = createContext<KategoriGrupContextValue | null>(null);
 
 export function KategoriGrupProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<KategoriGrupRow[]>(() => loadItems());
+  const [items, setItems] = useState<KategoriGrupRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const kodeExists = useCallback(
-    (kode: string) => items.some((r) => r.kode.toLowerCase() === kode.trim().toLowerCase()),
-    [items],
-  );
+  const refresh = useCallback(async () => {
+    const list = await invoke<KategoriGrupRow[]>("kategori_list");
+    setItems(list);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void refresh().catch(() => setLoading(false));
+  }, [refresh]);
+
+  const kodeExists = useCallback(async (kode: string) => {
+    return invoke<boolean>("kategori_kode_exists", { kode });
+  }, []);
 
   const addItem = useCallback(
-    (row: KategoriGrupRow) => {
-      if (kodeExists(row.kode)) return false;
-      setItems((prev) => {
-        const next = [...prev, row];
-        persistItems(next);
-        return next;
+    async (row: KategoriGrupRow) => {
+      await invoke("kategori_insert", {
+        row: { kode: row.kode, nama: row.nama, deskripsi: row.deskripsi },
       });
-      return true;
+      await refresh();
     },
-    [kodeExists],
+    [refresh],
   );
 
   const value = useMemo(
-    () => ({ items, addItem, kodeExists }),
-    [items, addItem, kodeExists],
+    () => ({ items, loading, refresh, addItem, kodeExists }),
+    [items, loading, refresh, addItem, kodeExists],
   );
 
   return (

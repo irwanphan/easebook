@@ -6,7 +6,7 @@ export function MasterLainnyaPage() {
     <div className="mx-auto flex max-w-4xl flex-col gap-6">
       <PageHeader
         title="Master lainnya"
-        description="Ruang untuk master data tambahan (satuan khusus, lokasi gudang, pajak, dll.)."
+        description="Ruang untuk master data tambahan (satuan khusus, pajak, wilayah kirim, dll.)."
       />
       <Card>
         <p className="text-sm leading-relaxed text-zinc-600">

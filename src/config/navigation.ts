@@ -54,6 +54,7 @@ export const primaryNavEntries: PrimaryNavEntry[] = [
     children: [
       { id: "mj-kategori", label: "Kategori / grup barang", path: "/manajemen/kategori" },
       { id: "mj-merk", label: "Merek", path: "/manajemen/merek" },
+      { id: "mj-gudang", label: "Gudang", path: "/manajemen/gudang" },
       { id: "mj-lain", label: "Master lainnya", path: "/manajemen/lainnya" },
     ],
   },

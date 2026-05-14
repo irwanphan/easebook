@@ -1,8 +1,9 @@
+import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { mockBarangJasa } from "@/data/mockData";
+import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -13,12 +14,19 @@ function formatRupiah(n: number) {
 }
 
 export function BarangJasaPage() {
+  const navigate = useNavigate();
+  const { items } = useBarangJasa();
+
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Barang & jasa"
         description="Kelola katalog produk dan layanan yang dijual."
-        actions={<Button>Tambah item</Button>}
+        actions={
+          <Button type="button" onClick={() => navigate("/barang-jasa/tambah")}>
+            Tambah item
+          </Button>
+        }
       />
       <Card className="p-0 overflow-hidden">
         <div className="overflow-x-auto">
@@ -35,7 +43,7 @@ export function BarangJasaPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {mockBarangJasa.map((row) => (
+              {items.map((row) => (
                 <tr key={row.kode} className="bg-white hover:bg-zinc-50/50">
                   <td className="px-5 py-3 font-mono text-xs font-medium text-zinc-800">
                     {row.kode}

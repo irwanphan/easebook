@@ -2,6 +2,7 @@ import { createHashRouter } from "react-router-dom";
 import { AppShell } from "@/app/layout/AppShell";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { BarangJasaPage } from "@/pages/BarangJasaPage";
+import { TambahBarangJasaPage } from "@/pages/TambahBarangJasaPage";
 import { PenjualanPage } from "@/pages/PenjualanPage";
 import { PembelianPage } from "@/pages/PembelianPage";
 import { PengaturanPage } from "@/pages/PengaturanPage";
@@ -13,6 +14,7 @@ export const router = createHashRouter([
     children: [
       { index: true, element: <DashboardPage /> },
       { path: "barang-jasa", element: <BarangJasaPage /> },
+      { path: "barang-jasa/tambah", element: <TambahBarangJasaPage /> },
       { path: "penjualan", element: <PenjualanPage /> },
       { path: "pembelian", element: <PembelianPage /> },
       { path: "pengaturan", element: <PengaturanPage /> },

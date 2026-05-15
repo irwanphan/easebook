@@ -1222,6 +1222,8 @@ pub fn stok_mutasi_laporan(
             })
         };
 
+        // Filter by waktu pencatatan (bukan tanggal_transaksi / tanggal faktur), supaya mutasi dari
+        // pembelian dengan tanggal faktur lama tetap muncul bila baru diedit/disimpan dalam rentang ini.
         if let Some(ref bk) = filter_kode {
             let mut stmt = conn.prepare(
                 "SELECT m.id, m.waktu, m.tanggal_transaksi, m.barang_kode, b.nama, m.gudang_kode, g.nama,
@@ -1229,7 +1231,7 @@ pub fn stok_mutasi_laporan(
                  FROM stok_mutasi m
                  JOIN barang_jasa b ON lower(b.kode) = lower(m.barang_kode)
                  JOIN gudang g ON lower(g.kode) = lower(m.gudang_kode)
-                 WHERE m.tanggal_transaksi BETWEEN ?1 AND ?2 AND lower(m.barang_kode) = lower(?3)
+                 WHERE date(m.waktu, 'unixepoch', 'localtime') BETWEEN ?1 AND ?2 AND lower(m.barang_kode) = lower(?3)
                  ORDER BY m.waktu DESC, m.id DESC",
             )?;
             let rows = stmt.query_map(params![dari, sampai, bk.as_str()], map_row)?;
@@ -1241,7 +1243,7 @@ pub fn stok_mutasi_laporan(
                  FROM stok_mutasi m
                  JOIN barang_jasa b ON lower(b.kode) = lower(m.barang_kode)
                  JOIN gudang g ON lower(g.kode) = lower(m.gudang_kode)
-                 WHERE m.tanggal_transaksi BETWEEN ?1 AND ?2
+                 WHERE date(m.waktu, 'unixepoch', 'localtime') BETWEEN ?1 AND ?2
                  ORDER BY m.waktu DESC, m.id DESC",
             )?;
             let rows = stmt.query_map(params![dari, sampai], map_row)?;

@@ -94,7 +94,7 @@ export function LaporanPergerakanStokPage() {
         </Link>
         <PageHeader
           title="Pergerakan stok"
-          description="Laporan mutasi masuk/keluar berdasarkan rentang tanggal; filter opsional per SKU."
+          description="Mutasi difilter menurut tanggal pencatatan di sistem (bukan tanggal faktur), supaya koreksi pembelian lama tetap terlihat saat Anda simpan dalam rentang ini. Kolom tanggal tabel = tanggal transaksi dokumen."
         />
       </div>
 

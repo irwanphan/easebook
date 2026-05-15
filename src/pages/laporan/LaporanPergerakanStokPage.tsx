@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
@@ -54,6 +54,8 @@ export function LaporanPergerakanStokPage() {
   const [rows, setRows] = useState<StokMutasiRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Abaikan hasil invoke jika sudah ada permintaan muat yang lebih baru. */
+  const loadRequestId = useRef(0);
 
   const barangSorted = useMemo(
     () => [...barangItems].sort((a, b) => a.kode.localeCompare(b.kode, undefined, { sensitivity: "base" })),
@@ -61,6 +63,7 @@ export function LaporanPergerakanStokPage() {
   );
 
   const load = useCallback(async () => {
+    const requestId = ++loadRequestId.current;
     setLoading(true);
     setError(null);
     try {
@@ -69,12 +72,16 @@ export function LaporanPergerakanStokPage() {
         tanggalSampai: tanggalSampai.trim(),
         barangKode: filterBarang.trim() ? filterBarang.trim() : null,
       });
+      if (requestId !== loadRequestId.current) return;
       setRows(list);
     } catch (e) {
+      if (requestId !== loadRequestId.current) return;
       setError(tauriErrorMessage(e));
       setRows([]);
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestId.current) {
+        setLoading(false);
+      }
     }
   }, [tanggalDari, tanggalSampai, filterBarang]);
 

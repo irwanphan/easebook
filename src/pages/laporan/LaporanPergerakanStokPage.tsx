@@ -47,12 +47,14 @@ const selectClass =
   "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
 
 export function LaporanPergerakanStokPage() {
-  const { items: barangItems, loading: barangLoading } = useBarangJasa();
+  const { items: barangItems, loading: barangLoading, refresh: refreshBarang } = useBarangJasa();
   const [tanggalDari, setTanggalDari] = useState(defaultTanggalDari);
   const [tanggalSampai, setTanggalSampai] = useState(defaultTanggalSampai);
   const [filterBarang, setFilterBarang] = useState("");
   const [rows, setRows] = useState<StokMutasiRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [sinkronBusy, setSinkronBusy] = useState(false);
+  const [sinkronInfo, setSinkronInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Abaikan hasil invoke jika sudah ada permintaan muat yang lebih baru. */
   const loadRequestId = useRef(0);
@@ -84,6 +86,26 @@ export function LaporanPergerakanStokPage() {
       }
     }
   }, [tanggalDari, tanggalSampai, filterBarang]);
+
+  async function sinkronDariPembelian() {
+    const ok = window.confirm(
+      "Sinkronkan mutasi stok dari semua faktur pembelian?\n\n• Semua baris mutasi bertipe Pembelian akan dihapus dan dibuat ulang dari faktur.\n• Stok master untuk barang fisik akan disetel ulang sesuai total pembelian (urutan tanggal faktur).\n\nLanjutkan?",
+    );
+    if (!ok) return;
+    setSinkronInfo(null);
+    setError(null);
+    setSinkronBusy(true);
+    try {
+      const msg = await invoke<string>("stok_mutasi_sinkron_dari_pembelian");
+      setSinkronInfo(msg);
+      await refreshBarang();
+      await load();
+    } catch (e) {
+      setError(tauriErrorMessage(e));
+    } finally {
+      setSinkronBusy(false);
+    }
+  }
 
   useEffect(() => {
     void load();
@@ -151,16 +173,48 @@ export function LaporanPergerakanStokPage() {
             </select>
           </div>
           <div className="flex sm:col-span-2 lg:col-span-1">
-            <Button type="button" className="mt-6 w-full sm:mt-0 lg:mt-6" onClick={() => void load()}>
+            <Button
+              type="button"
+              className="mt-6 w-full sm:mt-0 lg:mt-6"
+              disabled={sinkronBusy}
+              onClick={() => void load()}
+            >
               Terapkan
             </Button>
           </div>
+        </div>
+
+        <div className="mt-6 flex flex-col gap-3 border-t border-zinc-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="max-w-xl text-sm text-zinc-600">
+            <p className="font-medium text-zinc-800">Mutasi tidak selaras dengan faktur pembelian?</p>
+            <p className="mt-1">
+              Bangun ulang riwayat pembelian dari seluruh faktur yang tersimpan. Berguna setelah koreksi faktur atau data lama.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            className="shrink-0"
+            disabled={sinkronBusy || loading || barangLoading}
+            onClick={() => void sinkronDariPembelian()}
+          >
+            {sinkronBusy ? "Menyinkronkan…" : "Sinkron dari pembelian"}
+          </Button>
         </div>
       </Card>
 
       {error ? (
         <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           {error}
+        </div>
+      ) : null}
+
+      {sinkronInfo ? (
+        <div
+          role="status"
+          className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
+        >
+          {sinkronInfo}
         </div>
       ) : null}
 

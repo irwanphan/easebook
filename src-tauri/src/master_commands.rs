@@ -2,13 +2,27 @@
 
 use crate::db;
 use crate::DbState;
-use chrono::{NaiveDate, Utc};
+use chrono::{Local, NaiveDate, TimeZone, Utc};
 use rusqlite::{params, Connection, Transaction};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
 fn now_ts() -> i64 {
     Utc::now().timestamp()
+}
+
+/// Unix timestamp (zona lokal) untuk tengah hari tanggal faktur — dipakai agar filter laporan mutasi (berdasarkan `waktu`) selaras dengan rentang tanggal faktur setelah sinkron ulang.
+fn waktu_mutasi_dari_tgl_faktur(tanggal_faktur: &str) -> Result<i64, String> {
+    let d = NaiveDate::parse_from_str(tanggal_faktur.trim(), "%Y-%m-%d")
+        .map_err(|_| "Tanggal faktur tidak valid (YYYY-MM-DD).".to_string())?;
+    let na = d
+        .and_hms_opt(12, 0, 0)
+        .ok_or_else(|| "Tanggal faktur tidak valid.".to_string())?;
+    Local
+        .from_local_datetime(&na)
+        .latest()
+        .map(|dt| dt.timestamp())
+        .ok_or_else(|| "Konversi zona waktu gagal.".to_string())
 }
 
 fn with_conn<R, F>(state: &DbState, f: F) -> Result<R, String>
@@ -781,6 +795,7 @@ fn pembelian_validate_and_total(payload: &PembelianInsertPayload) -> Result<(Nai
 }
 
 /// Tambah stok + baris mutasi untuk satu baris pembelian bertipe Barang.
+/// `waktu_mutasi` = cap waktu pada baris `stok_mutasi`; `barang_updated_at` = cap pada master `barang_jasa`.
 fn pembelian_tx_apply_barang_stok(
     tx: &Transaction<'_>,
     nomor: &str,
@@ -788,7 +803,8 @@ fn pembelian_tx_apply_barang_stok(
     qty: i64,
     gudang_kode: &str,
     tanggal_transaksi: &str,
-    ts: i64,
+    waktu_mutasi: i64,
+    barang_updated_at: i64,
 ) -> Result<(), String> {
     let tipe: String = match tx.query_row(
         "SELECT tipe FROM barang_jasa WHERE lower(kode) = lower(?)",
@@ -816,14 +832,14 @@ fn pembelian_tx_apply_barang_stok(
         .ok_or_else(|| "Stok melimpahi batas.".to_string())?;
     tx.execute(
         "UPDATE barang_jasa SET stok = ?, updated_at = ? WHERE lower(kode) = lower(?)",
-        params![next, ts, kode_b],
+        params![next, barang_updated_at, kode_b],
     )
     .map_err(|e| e.to_string())?;
     tx.execute(
         "INSERT INTO stok_mutasi (waktu, tanggal_transaksi, barang_kode, gudang_kode, jenis, referensi, qty_masuk, qty_keluar, saldo_setelah, catatan)
          VALUES (?, ?, ?, ?, 'PEMBELIAN', ?, ?, 0, ?, '')",
         params![
-            ts,
+            waktu_mutasi,
             tanggal_transaksi,
             kode_b,
             gudang_kode,
@@ -924,7 +940,7 @@ pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) 
                 e.to_string()
             }
         })?;
-        pembelian_tx_apply_barang_stok(&tx, &nomor, kode_b, line.qty, gudang_kode, &tanggal_str, ts)?;
+        pembelian_tx_apply_barang_stok(&tx, &nomor, kode_b, line.qty, gudang_kode, &tanggal_str, ts, ts)?;
     }
 
     tx.commit().map_err(|e| e.to_string())?;
@@ -1068,7 +1084,7 @@ pub fn pembelian_update(
     }
 
     tx.execute(
-        "DELETE FROM stok_mutasi WHERE referensi = ? AND jenis = 'PEMBELIAN'",
+        "DELETE FROM stok_mutasi WHERE referensi = ? AND upper(trim(jenis)) = 'PEMBELIAN'",
         params![nomor_trim],
     )
     .map_err(|e| e.to_string())?;
@@ -1118,11 +1134,98 @@ pub fn pembelian_update(
                 e.to_string()
             }
         })?;
-        pembelian_tx_apply_barang_stok(&tx, nomor_trim, kode_b, line.qty, gudang_kode, &tanggal_str, ts)?;
+        pembelian_tx_apply_barang_stok(&tx, nomor_trim, kode_b, line.qty, gudang_kode, &tanggal_str, ts, ts)?;
     }
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Bangun ulang mutasi pembelian dari seluruh faktur di basis data dan set ulang kolom `stok`
+/// untuk master bertipe Barang sesuai total pembelian (dalam urutan tanggal faktur).
+///
+/// Dipakai untuk memperbaiki ketika kartu / laporan stok tidak selaras dengan faktur (misalnya data lama).
+/// Saat ini hanya ada mutasi `PEMBELIAN`; penyesuaian manual lain tidak diikutkan.
+#[tauri::command]
+pub fn stok_mutasi_sinkron_dari_pembelian(state: State<DbState>) -> Result<String, String> {
+    let repair_touch_ts = now_ts();
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "DELETE FROM stok_mutasi WHERE upper(trim(jenis)) = 'PEMBELIAN'",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.execute("UPDATE barang_jasa SET stok = 0 WHERE tipe = 'Barang'", [])
+        .map_err(|e| e.to_string())?;
+
+    let mut inv_stmt = tx
+        .prepare(
+            "SELECT nomor, gudang_kode, tanggal_faktur FROM pembelian ORDER BY tanggal_faktur ASC, nomor ASC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let invoice_heads = inv_stmt
+        .query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut invoices = Vec::new();
+    for row in invoice_heads {
+        invoices.push(row.map_err(|e| e.to_string())?);
+    }
+    drop(inv_stmt);
+
+    let invoice_count = invoices.len();
+
+    for (nomor, gudang_kode, tanggal_faktur) in invoices {
+        let base_waktu = waktu_mutasi_dari_tgl_faktur(tanggal_faktur.trim())?;
+        let mut line_stmt = tx
+            .prepare("SELECT barang_kode, qty FROM pembelian_line WHERE nomor = ? ORDER BY id ASC")
+            .map_err(|e| e.to_string())?;
+        let lines = line_stmt
+            .query_map(params![nomor.as_str()], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut line_idx = 0_i64;
+        for ln in lines {
+            let (kode_b, qty) = ln.map_err(|e| e.to_string())?;
+            line_idx += 1;
+            pembelian_tx_apply_barang_stok(
+                &tx,
+                nomor.as_str(),
+                kode_b.trim(),
+                qty,
+                gudang_kode.trim(),
+                tanggal_faktur.trim(),
+                base_waktu.saturating_add(line_idx),
+                repair_touch_ts,
+            )?;
+        }
+        drop(line_stmt);
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+
+    let mutasi_pembelian: i64 = with_conn_app(&state, |c| {
+        c.query_row(
+            "SELECT COUNT(*) FROM stok_mutasi WHERE upper(trim(jenis)) = 'PEMBELIAN'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())
+    })?;
+
+    Ok(format!(
+        "Sinkron selesai. {} faktur diproses; {} baris mutasi pembelian; stok barang fisik disetel ulang dari faktur (urutan tanggal faktur).",
+        invoice_count, mutasi_pembelian
+    ))
 }
 
 // --- Mutasi stok (kartu stok / laporan) ---

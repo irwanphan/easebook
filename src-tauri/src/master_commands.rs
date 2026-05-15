@@ -3,7 +3,7 @@
 use crate::db;
 use crate::DbState;
 use chrono::{NaiveDate, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Transaction};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -732,8 +732,7 @@ pub struct PembelianInsertPayload {
     pub lines: Vec<PembelianLineInput>,
 }
 
-#[tauri::command]
-pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) -> Result<String, String> {
+fn pembelian_validate_and_total(payload: &PembelianInsertPayload) -> Result<(NaiveDate, NaiveDate, String, i64), String> {
     let pemasok_kode = payload.pemasok_kode.trim();
     let gudang_kode = payload.gudang_kode.trim();
     if pemasok_kode.is_empty() {
@@ -778,6 +777,106 @@ pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) 
             .ok_or_else(|| "Total faktur melimpahi batas.".to_string())?;
     }
 
+    Ok((tgl, jt, metode.to_string(), total))
+}
+
+/// Tambah stok + baris mutasi untuk satu baris pembelian bertipe Barang.
+fn pembelian_tx_apply_barang_stok(
+    tx: &Transaction<'_>,
+    nomor: &str,
+    kode_b: &str,
+    qty: i64,
+    gudang_kode: &str,
+    tanggal_transaksi: &str,
+    ts: i64,
+) -> Result<(), String> {
+    let tipe: String = match tx.query_row(
+        "SELECT tipe FROM barang_jasa WHERE lower(kode) = lower(?)",
+        params![kode_b],
+        |r| r.get(0),
+    ) {
+        Ok(s) => s,
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            return Err("Barang tidak ditemukan setelah insert baris.".into());
+        }
+        Err(e) => return Err(e.to_string()),
+    };
+    if tipe != "Barang" {
+        return Ok(());
+    }
+    let prev: i64 = tx
+        .query_row(
+            "SELECT COALESCE(stok, 0) FROM barang_jasa WHERE lower(kode) = lower(?)",
+            params![kode_b],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let next = prev
+        .checked_add(qty)
+        .ok_or_else(|| "Stok melimpahi batas.".to_string())?;
+    tx.execute(
+        "UPDATE barang_jasa SET stok = ?, updated_at = ? WHERE lower(kode) = lower(?)",
+        params![next, ts, kode_b],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "INSERT INTO stok_mutasi (waktu, tanggal_transaksi, barang_kode, gudang_kode, jenis, referensi, qty_masuk, qty_keluar, saldo_setelah, catatan)
+         VALUES (?, ?, ?, ?, 'PEMBELIAN', ?, ?, 0, ?, '')",
+        params![
+            ts,
+            tanggal_transaksi,
+            kode_b,
+            gudang_kode,
+            nomor,
+            qty,
+            next
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Kurangi stok (balikkan dampak pembelian) untuk baris bertipe Barang.
+fn pembelian_tx_revert_barang_stok(tx: &Transaction<'_>, kode_b: &str, qty: i64, ts: i64) -> Result<(), String> {
+    let tipe: String = match tx.query_row(
+        "SELECT tipe FROM barang_jasa WHERE lower(kode) = lower(?)",
+        params![kode_b],
+        |r| r.get(0),
+    ) {
+        Ok(s) => s,
+        Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(()),
+        Err(e) => return Err(e.to_string()),
+    };
+    if tipe != "Barang" {
+        return Ok(());
+    }
+    let cur: i64 = tx
+        .query_row(
+            "SELECT COALESCE(stok, 0) FROM barang_jasa WHERE lower(kode) = lower(?)",
+            params![kode_b],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if cur < qty {
+        return Err(format!(
+            "Stok tidak cukup untuk mengoreksi faktur ({}). Stok saat ini {} unit; butuh mengurangi {} dari faktur lama.",
+            kode_b, cur, qty
+        ));
+    }
+    let next = cur - qty;
+    tx.execute(
+        "UPDATE barang_jasa SET stok = ?, updated_at = ? WHERE lower(kode) = lower(?)",
+        params![next, ts, kode_b],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) -> Result<String, String> {
+    let (tgl, jt, metode, total) = pembelian_validate_and_total(&payload)?;
+    let pemasok_kode = payload.pemasok_kode.trim();
+    let gudang_kode = payload.gudang_kode.trim();
     let nomor = format!("FB-{}", Utc::now().timestamp_millis());
     let ts = now_ts();
     let tanggal_str = tgl.format("%Y-%m-%d").to_string();
@@ -825,54 +924,205 @@ pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) 
                 e.to_string()
             }
         })?;
-
-        // Tambah stok + catat mutasi hanya untuk tipe Barang
-        let tipe: String = match tx.query_row(
-            "SELECT tipe FROM barang_jasa WHERE lower(kode) = lower(?)",
-            params![kode_b],
-            |r| r.get(0),
-        ) {
-            Ok(s) => s,
-            Err(rusqlite::Error::QueryReturnedNoRows) => {
-                return Err("Barang tidak ditemukan setelah insert baris.".into());
-            }
-            Err(e) => return Err(e.to_string()),
-        };
-        if tipe == "Barang" {
-            let prev: i64 = tx
-                .query_row(
-                    "SELECT COALESCE(stok, 0) FROM barang_jasa WHERE lower(kode) = lower(?)",
-                    params![kode_b],
-                    |r| r.get(0),
-                )
-                .map_err(|e| e.to_string())?;
-            let next = prev
-                .checked_add(line.qty)
-                .ok_or_else(|| "Stok melimpahi batas.".to_string())?;
-            tx.execute(
-                "UPDATE barang_jasa SET stok = ?, updated_at = ? WHERE lower(kode) = lower(?)",
-                params![next, ts, kode_b],
-            )
-            .map_err(|e| e.to_string())?;
-            tx.execute(
-                "INSERT INTO stok_mutasi (waktu, tanggal_transaksi, barang_kode, gudang_kode, jenis, referensi, qty_masuk, qty_keluar, saldo_setelah, catatan)
-                 VALUES (?, ?, ?, ?, 'PEMBELIAN', ?, ?, 0, ?, '')",
-                params![
-                    ts,
-                    tanggal_str,
-                    kode_b,
-                    gudang_kode,
-                    &nomor,
-                    line.qty,
-                    next
-                ],
-            )
-            .map_err(|e| e.to_string())?;
-        }
+        pembelian_tx_apply_barang_stok(&tx, &nomor, kode_b, line.qty, gudang_kode, &tanggal_str, ts)?;
     }
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(nomor)
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PembelianDetailLine {
+    pub barang_kode: String,
+    pub barang_nama: String,
+    pub qty: i64,
+    pub harga_satuan: i64,
+    pub subtotal: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PembelianDetail {
+    pub nomor: String,
+    pub pemasok_kode: String,
+    pub pemasok_nama: String,
+    pub gudang_kode: String,
+    pub gudang_nama: String,
+    pub tanggal_faktur: String,
+    pub jatuh_tempo: String,
+    pub metode_pembayaran: String,
+    pub total: i64,
+    pub status: String,
+    pub lines: Vec<PembelianDetailLine>,
+}
+
+#[tauri::command]
+pub fn pembelian_detail(state: State<DbState>, nomor: String) -> Result<PembelianDetail, String> {
+    let n = nomor.trim();
+    if n.is_empty() {
+        return Err("Nomor faktur wajib diisi.".into());
+    }
+    let conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+
+    let mut detail: PembelianDetail = conn
+        .query_row(
+            "SELECT p.nomor, p.pemasok_kode, s.nama, p.gudang_kode, g.nama, p.tanggal_faktur, p.jatuh_tempo, p.metode_pembayaran, p.total, p.status
+             FROM pembelian p
+             JOIN pemasok s ON lower(s.kode) = lower(p.pemasok_kode)
+             JOIN gudang g ON lower(g.kode) = lower(p.gudang_kode)
+             WHERE p.nomor = ?",
+            params![n],
+            |r| {
+                Ok(PembelianDetail {
+                    nomor: r.get(0)?,
+                    pemasok_kode: r.get(1)?,
+                    pemasok_nama: r.get(2)?,
+                    gudang_kode: r.get(3)?,
+                    gudang_nama: r.get(4)?,
+                    tanggal_faktur: r.get(5)?,
+                    jatuh_tempo: r.get(6)?,
+                    metode_pembayaran: r.get(7)?,
+                    total: r.get(8)?,
+                    status: r.get(9)?,
+                    lines: Vec::new(),
+                })
+            },
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => "Faktur tidak ditemukan.".into(),
+            _ => e.to_string(),
+        })?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT l.barang_kode, b.nama, l.qty, l.harga_satuan, l.subtotal
+             FROM pembelian_line l
+             JOIN barang_jasa b ON lower(b.kode) = lower(l.barang_kode)
+             WHERE l.nomor = ?
+             ORDER BY l.id ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let line_rows = stmt
+        .query_map(params![n], |r| {
+            Ok(PembelianDetailLine {
+                barang_kode: r.get(0)?,
+                barang_nama: r.get(1)?,
+                qty: r.get(2)?,
+                harga_satuan: r.get(3)?,
+                subtotal: r.get(4)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    let mut lines = Vec::new();
+    for lr in line_rows {
+        lines.push(lr.map_err(|e| e.to_string())?);
+    }
+    detail.lines = lines;
+
+    Ok(detail)
+}
+
+#[tauri::command]
+pub fn pembelian_update(
+    state: State<DbState>,
+    nomor: String,
+    payload: PembelianInsertPayload,
+) -> Result<(), String> {
+    let nomor_trim = nomor.trim();
+    if nomor_trim.is_empty() {
+        return Err("Nomor faktur tidak valid.".into());
+    }
+    let (tgl, jt, metode, total) = pembelian_validate_and_total(&payload)?;
+    let pemasok_kode = payload.pemasok_kode.trim();
+    let gudang_kode = payload.gudang_kode.trim();
+    let tanggal_str = tgl.format("%Y-%m-%d").to_string();
+    let jatuh_str = jt.format("%Y-%m-%d").to_string();
+    let ts = now_ts();
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let exists: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM pembelian WHERE nomor = ?",
+            params![nomor_trim],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if exists == 0 {
+        return Err("Faktur pembelian tidak ditemukan.".into());
+    }
+
+    let mut old_lines: Vec<(String, i64)> = Vec::new();
+    {
+        let mut stmt = tx
+            .prepare("SELECT barang_kode, qty FROM pembelian_line WHERE nomor = ?")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![nomor_trim], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            old_lines.push(row.map_err(|e| e.to_string())?);
+        }
+    }
+
+    tx.execute(
+        "DELETE FROM stok_mutasi WHERE referensi = ? AND jenis = 'PEMBELIAN'",
+        params![nomor_trim],
+    )
+    .map_err(|e| e.to_string())?;
+
+    for (kode_b, qty) in &old_lines {
+        pembelian_tx_revert_barang_stok(&tx, kode_b.trim(), *qty, ts)?;
+    }
+
+    tx.execute(
+        "DELETE FROM pembelian_line WHERE nomor = ?",
+        params![nomor_trim],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "UPDATE pembelian SET pemasok_kode = ?, gudang_kode = ?, tanggal_faktur = ?, jatuh_tempo = ?, metode_pembayaran = ?, total = ?, updated_at = ? WHERE nomor = ?",
+        params![
+            pemasok_kode,
+            gudang_kode,
+            tanggal_str,
+            jatuh_str,
+            metode,
+            total,
+            ts,
+            nomor_trim
+        ],
+    )
+    .map_err(|e| {
+        if e.to_string().contains("FOREIGN KEY") {
+            "Pemasok atau gudang tidak ditemukan.".into()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    for line in &payload.lines {
+        let kode_b = line.barang_kode.trim();
+        let sub = line.qty * line.harga_satuan;
+        tx.execute(
+            "INSERT INTO pembelian_line (nomor, barang_kode, qty, harga_satuan, subtotal) VALUES (?, ?, ?, ?, ?)",
+            params![nomor_trim, kode_b, line.qty, line.harga_satuan, sub],
+        )
+        .map_err(|e| {
+            if e.to_string().contains("FOREIGN KEY") {
+                "Salah satu kode barang tidak ditemukan.".into()
+            } else {
+                e.to_string()
+            }
+        })?;
+        pembelian_tx_apply_barang_stok(&tx, nomor_trim, kode_b, line.qty, gudang_kode, &tanggal_str, ts)?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 // --- Mutasi stok (kartu stok / laporan) ---

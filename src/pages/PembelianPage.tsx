@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -114,9 +114,12 @@ export function PembelianPage() {
                       <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
                     </td>
                     <td className="px-5 py-3 text-right">
-                      <Button variant="ghost" className="px-2 py-1 text-xs font-semibold" type="button" disabled>
+                      <Link
+                        to={`/pembelian/detail/${encodeURIComponent(row.nomor)}`}
+                        className="inline-flex rounded-xl px-2 py-1 text-xs font-semibold text-brand-700 transition hover:bg-brand-50"
+                      >
                         Detail
-                      </Button>
+                      </Link>
                     </td>
                   </tr>
                 ))

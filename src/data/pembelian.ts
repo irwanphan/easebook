@@ -21,3 +21,25 @@ export function labelMetodePembayaran(code: string): string {
   const row = METODE_PEMBAYARAN_PEMBELIAN.find((m) => m.value === code);
   return row?.label ?? code;
 }
+
+export type PembelianDetailLine = {
+  barangKode: string;
+  barangNama: string;
+  qty: number;
+  hargaSatuan: number;
+  subtotal: number;
+};
+
+export type PembelianDetail = {
+  nomor: string;
+  pemasokKode: string;
+  pemasokNama: string;
+  gudangKode: string;
+  gudangNama: string;
+  tanggalFaktur: string;
+  jatuhTempo: string;
+  metodePembayaran: string;
+  total: number;
+  status: string;
+  lines: PembelianDetailLine[];
+};

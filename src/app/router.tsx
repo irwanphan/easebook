@@ -6,7 +6,9 @@ import { TambahBarangJasaPage } from "@/pages/TambahBarangJasaPage";
 import { KartuStokBarangPage } from "@/pages/KartuStokBarangPage";
 import { PenjualanPage } from "@/pages/PenjualanPage";
 import { PembelianPage } from "@/pages/PembelianPage";
+import { PembelianDetailPage } from "@/pages/PembelianDetailPage";
 import { TambahPembelianPage } from "@/pages/TambahPembelianPage";
+import { UbahPembelianPage } from "@/pages/UbahPembelianPage";
 import { PengaturanPage } from "@/pages/PengaturanPage";
 import { KategoriGrupPage } from "@/pages/manajemen/KategoriGrupPage";
 import { TambahKategoriGrupPage } from "@/pages/manajemen/TambahKategoriGrupPage";
@@ -40,6 +42,8 @@ export const router = createHashRouter([
       { path: "laporan/pergerakan-stok", element: <LaporanPergerakanStokPage /> },
       { path: "penjualan", element: <PenjualanPage /> },
       { path: "pembelian/tambah", element: <TambahPembelianPage /> },
+      { path: "pembelian/detail/:nomor", element: <PembelianDetailPage /> },
+      { path: "pembelian/ubah/:nomor", element: <UbahPembelianPage /> },
       { path: "pembelian", element: <PembelianPage /> },
       { path: "manajemen/kategori", element: <KategoriGrupPage /> },
       { path: "manajemen/kategori/tambah", element: <TambahKategoriGrupPage /> },

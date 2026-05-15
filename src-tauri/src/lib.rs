@@ -58,6 +58,14 @@ pub fn run() {
             master_commands::stok_mutasi_for_barang,
             master_commands::stok_mutasi_laporan,
             master_commands::stok_mutasi_sinkron_dari_pembelian,
+            master_commands::akun_keuangan_list,
+            master_commands::akun_kas_list,
+            master_commands::akun_kas_insert,
+            master_commands::akun_kas_delete,
+            master_commands::jurnal_konfigurasi_get,
+            master_commands::jurnal_konfigurasi_set,
+            master_commands::jurnal_umum_list,
+            master_commands::jurnal_umum_insert_transaksi,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

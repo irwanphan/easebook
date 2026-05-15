@@ -165,7 +165,107 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_stok_mutasi_barang ON stok_mutasi(barang_kode);
         CREATE INDEX IF NOT EXISTS idx_stok_mutasi_tgl ON stok_mutasi(tanggal_transaksi);
         CREATE INDEX IF NOT EXISTS idx_stok_mutasi_waktu ON stok_mutasi(waktu);
+
+        -- Keuangan: akun & jurnal umum (double-entry)
+        CREATE TABLE IF NOT EXISTS akun_keuangan (
+            kode TEXT PRIMARY KEY NOT NULL COLLATE NOCASE,
+            nama TEXT NOT NULL,
+            peran_jurnal TEXT NOT NULL DEFAULT 'KAS',
+            saldo INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS jurnal_umum (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tanggal TEXT NOT NULL,
+            jenis TEXT NOT NULL DEFAULT '',
+            referensi TEXT NOT NULL DEFAULT '',
+            catatan TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_jurnal_umum_tanggal ON jurnal_umum(tanggal);
+        CREATE INDEX IF NOT EXISTS idx_jurnal_umum_jenis ON jurnal_umum(jenis);
+
+        CREATE TABLE IF NOT EXISTS jurnal_umum_line (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            jurnal_id INTEGER NOT NULL REFERENCES jurnal_umum(id) ON DELETE CASCADE ON UPDATE CASCADE,
+            akun_kode TEXT NOT NULL REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            debit INTEGER NOT NULL DEFAULT 0,
+            kredit INTEGER NOT NULL DEFAULT 0,
+            catatan TEXT NOT NULL DEFAULT ''
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_jurnal_line_jurnal ON jurnal_umum_line(jurnal_id);
+        CREATE INDEX IF NOT EXISTS idx_jurnal_line_akun ON jurnal_umum_line(akun_kode);
+
+        -- Konfigurasi akun untuk template jurnal otomatis
+        CREATE TABLE IF NOT EXISTS jurnal_konfigurasi (
+            id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+            akun_piutang TEXT REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            akun_hutang TEXT REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            akun_pendapatan TEXT REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            akun_pembelian TEXT REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            akun_penerimaan_lainnya TEXT REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            akun_pengeluaran_lainnya TEXT REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
         ",
+    )?;
+    migrate_akun_keuangan_columns(conn)?;
+    Ok(())
+}
+
+/// Kolom tambahan untuk instalasi lama (sebelum peran_jurnal & saldo).
+fn migrate_akun_keuangan_columns(conn: &Connection) -> rusqlite::Result<()> {
+    let exists: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'akun_keuangan'",
+        [],
+        |r| r.get(0),
+    )?;
+    if exists == 0 {
+        return Ok(());
+    }
+
+    let mut stmt = conn.prepare("PRAGMA table_info(akun_keuangan)")?;
+    let cols: Vec<String> = stmt
+        .query_map([], |r| r.get::<_, String>(1))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    if !cols.iter().any(|c| c.eq_ignore_ascii_case("saldo")) {
+        conn.execute(
+            "ALTER TABLE akun_keuangan ADD COLUMN saldo INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    if !cols.iter().any(|c| c.eq_ignore_ascii_case("peran_jurnal")) {
+        conn.execute(
+            "ALTER TABLE akun_keuangan ADD COLUMN peran_jurnal TEXT NOT NULL DEFAULT 'KAS'",
+            [],
+        )?;
+        if cols.iter().any(|c| c.eq_ignore_ascii_case("tipe")) {
+            conn.execute_batch(
+                "
+                UPDATE akun_keuangan SET peran_jurnal = 'BANK'
+                WHERE upper(trim(tipe)) = 'BANK';
+                UPDATE akun_keuangan SET peran_jurnal = 'KAS'
+                WHERE upper(trim(tipe)) IN ('KAS_BANK', 'KAS')
+                   OR peran_jurnal IS NULL OR trim(peran_jurnal) = '';
+                UPDATE akun_keuangan SET peran_jurnal = upper(trim(tipe))
+                WHERE upper(trim(tipe)) NOT IN ('KAS_BANK', 'KAS', 'BANK')
+                  AND (peran_jurnal IS NULL OR trim(peran_jurnal) = '' OR peran_jurnal = 'KAS');
+                ",
+            )?;
+        }
+    }
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_akun_keuangan_peran ON akun_keuangan(peran_jurnal)",
+        [],
     )?;
     Ok(())
 }

@@ -1591,3 +1591,467 @@ pub fn stok_mutasi_laporan(
         }
     })
 }
+
+// --- Keuangan: akun kas & jurnal umum ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AkunKeuanganRow {
+    pub kode: String,
+    pub nama: String,
+    pub peran_jurnal: String,
+    pub saldo: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AkunKasRow {
+    pub kode: String,
+    pub nama: String,
+    pub peran_jurnal: String,
+    pub saldo: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AkunKasInsertPayload {
+    pub kode: String,
+    pub nama: String,
+    pub peran_jurnal: String,
+}
+
+fn is_peran_akun_kas(peran: &str) -> bool {
+    matches!(peran.trim().to_uppercase().as_str(), "KAS" | "BANK")
+}
+
+/// Perbarui saldo akun kas/bank: debit menambah, kredit mengurangi.
+fn akun_kas_apply_saldo_delta(
+    tx: &Transaction<'_>,
+    akun_kode: &str,
+    debit: i64,
+    kredit: i64,
+    ts: i64,
+) -> Result<(), String> {
+    let peran: String = match tx.query_row(
+        "SELECT peran_jurnal FROM akun_keuangan WHERE lower(kode) = lower(?)",
+        params![akun_kode],
+        |r| r.get(0),
+    ) {
+        Ok(p) => p,
+        Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(()),
+        Err(e) => return Err(e.to_string()),
+    };
+    if !is_peran_akun_kas(&peran) {
+        return Ok(());
+    }
+    let delta = debit - kredit;
+    if delta == 0 {
+        return Ok(());
+    }
+    let cur: i64 = tx
+        .query_row(
+            "SELECT COALESCE(saldo, 0) FROM akun_keuangan WHERE lower(kode) = lower(?)",
+            params![akun_kode],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let next = cur
+        .checked_add(delta)
+        .ok_or_else(|| format!("Saldo akun {akun_kode} melimpahi batas."))?;
+    tx.execute(
+        "UPDATE akun_keuangan SET saldo = ?, updated_at = ? WHERE lower(kode) = lower(?)",
+        params![next, ts, akun_kode],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct JurnalKonfigurasiRow {
+    pub akun_piutang: Option<String>,
+    pub akun_hutang: Option<String>,
+    pub akun_pendapatan: Option<String>,
+    pub akun_pembelian: Option<String>,
+    pub akun_penerimaan_lainnya: Option<String>,
+    pub akun_pengeluaran_lainnya: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JurnalKonfigurasiSetPayload {
+    pub akun_piutang: Option<String>,
+    pub akun_hutang: Option<String>,
+    pub akun_pendapatan: Option<String>,
+    pub akun_pembelian: Option<String>,
+    pub akun_penerimaan_lainnya: Option<String>,
+    pub akun_pengeluaran_lainnya: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct JurnalUmumListRow {
+    pub id: i64,
+    pub tanggal: String,
+    pub jenis: String,
+    pub referensi: String,
+    pub catatan: String,
+    pub total_debit: i64,
+    pub total_kredit: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JurnalTransaksiInsertPayload {
+    pub tanggal: String,
+    pub jenis: String,
+    pub referensi: String,
+    pub catatan: String,
+    pub jumlah: i64,
+    pub kas_kode: Option<String>,
+    pub kas_sumber_kode: Option<String>,
+    pub kas_target_kode: Option<String>,
+}
+
+fn konfigurasi_ensure_row(tx: &Transaction<'_>, ts: i64) -> Result<(), String> {
+    tx.execute(
+        "INSERT OR IGNORE INTO jurnal_konfigurasi (id, created_at, updated_at) VALUES (1, ?, ?)",
+        params![ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn konfigurasi_get_row(tx: &Transaction<'_>) -> Result<JurnalKonfigurasiRow, String> {
+    tx.query_row(
+        "SELECT akun_piutang, akun_hutang, akun_pendapatan, akun_pembelian, akun_penerimaan_lainnya, akun_pengeluaran_lainnya
+         FROM jurnal_konfigurasi
+         WHERE id = 1",
+        [],
+        |r| {
+            Ok(JurnalKonfigurasiRow {
+                akun_piutang: r.get(0)?,
+                akun_hutang: r.get(1)?,
+                akun_pendapatan: r.get(2)?,
+                akun_pembelian: r.get(3)?,
+                akun_penerimaan_lainnya: r.get(4)?,
+                akun_pengeluaran_lainnya: r.get(5)?,
+            })
+        },
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn akun_keuangan_list(state: State<DbState>) -> Result<Vec<AkunKeuanganRow>, String> {
+    with_conn(&state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT kode, nama, peran_jurnal, COALESCE(saldo, 0)
+             FROM akun_keuangan
+             ORDER BY kode COLLATE NOCASE ASC",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(AkunKeuanganRow {
+                kode: r.get(0)?,
+                nama: r.get(1)?,
+                peran_jurnal: r.get(2)?,
+                saldo: r.get(3)?,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+#[tauri::command]
+pub fn akun_kas_list(state: State<DbState>) -> Result<Vec<AkunKasRow>, String> {
+    with_conn(&state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT kode, nama, peran_jurnal, COALESCE(saldo, 0)
+             FROM akun_keuangan
+             WHERE upper(trim(peran_jurnal)) IN ('KAS', 'BANK')
+             ORDER BY kode COLLATE NOCASE ASC",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(AkunKasRow {
+                kode: r.get(0)?,
+                nama: r.get(1)?,
+                peran_jurnal: r.get(2)?,
+                saldo: r.get(3)?,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+#[tauri::command]
+pub fn akun_kas_insert(state: State<DbState>, payload: AkunKasInsertPayload) -> Result<(), String> {
+    let kode = payload.kode.trim().to_uppercase();
+    let nama = payload.nama.trim();
+    let peran = payload.peran_jurnal.trim().to_uppercase();
+
+    if kode.is_empty() {
+        return Err("Kode akun wajib diisi.".into());
+    }
+    if nama.is_empty() {
+        return Err("Nama akun wajib diisi.".into());
+    }
+    if !is_peran_akun_kas(&peran) {
+        return Err("Peran jurnal harus Kas atau Bank.".into());
+    }
+
+    let ts = now_ts();
+    with_conn(&state, |conn| {
+        conn.execute(
+            "INSERT INTO akun_keuangan (kode, nama, peran_jurnal, saldo, created_at, updated_at)
+             VALUES (?, ?, ?, 0, ?, ?)",
+            params![kode, nama, peran, ts, ts],
+        )?;
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn akun_kas_delete(state: State<DbState>, kode: String) -> Result<(), String> {
+    let kode = kode.trim().to_uppercase();
+    if kode.is_empty() {
+        return Err("Kode akun wajib diisi.".into());
+    }
+    let conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let peran: String = conn
+        .query_row(
+            "SELECT peran_jurnal FROM akun_keuangan WHERE kode = ?",
+            params![kode],
+            |r| r.get(0),
+        )
+        .map_err(|_| "Akun tidak ditemukan.".to_string())?;
+    if !is_peran_akun_kas(&peran) {
+        return Err("Hanya akun kas/bank yang dapat dihapus dari halaman ini.".into());
+    }
+    let n = conn
+        .execute("DELETE FROM akun_keuangan WHERE kode = ?", params![kode])
+        .map_err(|e| e.to_string())?;
+    if n == 0 {
+        return Err("Akun tidak ditemukan.".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn jurnal_konfigurasi_get(state: State<DbState>) -> Result<JurnalKonfigurasiRow, String> {
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    konfigurasi_ensure_row(&tx, ts)?;
+    let row = konfigurasi_get_row(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(row)
+}
+
+#[tauri::command]
+pub fn jurnal_konfigurasi_set(
+    state: State<DbState>,
+    payload: JurnalKonfigurasiSetPayload,
+) -> Result<(), String> {
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    konfigurasi_ensure_row(&tx, ts)?;
+
+    tx.execute(
+        "UPDATE jurnal_konfigurasi
+         SET akun_piutang = ?, akun_hutang = ?, akun_pendapatan = ?, akun_pembelian = ?,
+             akun_penerimaan_lainnya = ?, akun_pengeluaran_lainnya = ?, updated_at = ?
+         WHERE id = 1",
+        params![
+            payload.akun_piutang.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()),
+            payload.akun_hutang.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()),
+            payload.akun_pendapatan.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()),
+            payload.akun_pembelian.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()),
+            payload.akun_penerimaan_lainnya.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()),
+            payload.akun_pengeluaran_lainnya.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()),
+            ts
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn jurnal_umum_list(state: State<DbState>) -> Result<Vec<JurnalUmumListRow>, String> {
+    with_conn(&state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT j.id, j.tanggal, j.jenis, j.referensi, j.catatan,
+                    COALESCE(SUM(l.debit), 0) AS total_debit,
+                    COALESCE(SUM(l.kredit), 0) AS total_kredit
+             FROM jurnal_umum j
+             LEFT JOIN jurnal_umum_line l ON l.jurnal_id = j.id
+             GROUP BY j.id
+             ORDER BY j.id DESC
+             LIMIT 200",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(JurnalUmumListRow {
+                id: r.get(0)?,
+                tanggal: r.get(1)?,
+                jenis: r.get(2)?,
+                referensi: r.get(3)?,
+                catatan: r.get(4)?,
+                total_debit: r.get(5)?,
+                total_kredit: r.get(6)?,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+#[tauri::command]
+pub fn jurnal_umum_insert_transaksi(
+    state: State<DbState>,
+    payload: JurnalTransaksiInsertPayload,
+) -> Result<String, String> {
+    let tanggal = payload.tanggal.trim();
+    let referensi = payload.referensi.trim();
+    let catatan = payload.catatan.trim();
+    let jenis = payload.jenis.trim();
+    let jumlah = payload.jumlah;
+
+    if tanggal.is_empty() {
+        return Err("Tanggal wajib diisi.".into());
+    }
+    NaiveDate::parse_from_str(tanggal, "%Y-%m-%d")
+        .map_err(|_| "Tanggal tidak valid (gunakan YYYY-MM-DD).".to_string())?;
+    if referensi.is_empty() {
+        return Err("Referensi wajib diisi.".into());
+    }
+    if jenis.is_empty() {
+        return Err("Jenis transaksi wajib diisi.".into());
+    }
+    if jumlah <= 0 {
+        return Err("Jumlah harus lebih dari 0.".into());
+    }
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let ts = now_ts();
+    konfigurasi_ensure_row(&tx, ts)?;
+    let cfg = konfigurasi_get_row(&tx)?;
+
+    let mut lines: Vec<(String, i64, i64)> = Vec::new(); // (akun, debit, kredit)
+
+    let kas_kode = payload
+        .kas_kode
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty());
+    let kas_sumber_kode = payload
+        .kas_sumber_kode
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty());
+    let kas_target_kode = payload
+        .kas_target_kode
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty());
+
+    let mutasi_ok = |total: i64| -> Result<(), String> {
+        if total <= 0 {
+            return Err("Jumlah transaksi tidak valid.".into());
+        }
+        Ok(())
+    };
+    mutasi_ok(jumlah)?;
+
+    match jenis {
+        "PEMBELIAN" => {
+            let akun_pembelian = cfg
+                .akun_pembelian
+                .ok_or_else(|| "Konfigurasi akun pembelian belum diatur.".to_string())?;
+            let akun_hutang = cfg
+                .akun_hutang
+                .ok_or_else(|| "Konfigurasi akun hutang belum diatur.".to_string())?;
+            lines.push((akun_pembelian, jumlah, 0));
+            lines.push((akun_hutang, 0, jumlah));
+        }
+        "PENJUALAN" => {
+            let akun_piutang = cfg
+                .akun_piutang
+                .ok_or_else(|| "Konfigurasi akun piutang belum diatur.".to_string())?;
+            let akun_pendapatan = cfg
+                .akun_pendapatan
+                .ok_or_else(|| "Konfigurasi akun pendapatan belum diatur.".to_string())?;
+            lines.push((akun_piutang, jumlah, 0));
+            lines.push((akun_pendapatan, 0, jumlah));
+        }
+        "PELUNASAN_PIUTANG" => {
+            let akun_piutang = cfg
+                .akun_piutang
+                .ok_or_else(|| "Konfigurasi akun piutang belum diatur.".to_string())?;
+            let kas = kas_kode.ok_or_else(|| "Pilih akun kas untuk pelunasan piutang.".to_string())?;
+            lines.push((kas, jumlah, 0));
+            lines.push((akun_piutang, 0, jumlah));
+        }
+        "PELUNASAN_HUTANG" => {
+            let akun_hutang = cfg
+                .akun_hutang
+                .ok_or_else(|| "Konfigurasi akun hutang belum diatur.".to_string())?;
+            let kas = kas_kode.ok_or_else(|| "Pilih akun kas untuk pelunasan hutang.".to_string())?;
+            lines.push((akun_hutang, jumlah, 0));
+            lines.push((kas, 0, jumlah));
+        }
+        "PENERIMAAN_LAINNYA" => {
+            let akun_penerimaan = cfg
+                .akun_penerimaan_lainnya
+                .ok_or_else(|| "Konfigurasi akun penerimaan lainnya belum diatur.".to_string())?;
+            let kas = kas_kode.ok_or_else(|| "Pilih akun kas untuk penerimaan lain.".to_string())?;
+            lines.push((kas, jumlah, 0));
+            lines.push((akun_penerimaan, 0, jumlah));
+        }
+        "PENGELUARAN_LAINNYA" => {
+            let akun_pengeluaran = cfg
+                .akun_pengeluaran_lainnya
+                .ok_or_else(|| "Konfigurasi akun pengeluaran lainnya belum diatur.".to_string())?;
+            let kas = kas_kode.ok_or_else(|| "Pilih akun kas untuk pengeluaran lain.".to_string())?;
+            lines.push((akun_pengeluaran, jumlah, 0));
+            lines.push((kas, 0, jumlah));
+        }
+        "TRANSFER" => {
+            let sumber = kas_sumber_kode
+                .ok_or_else(|| "Pilih akun kas sumber untuk transfer.".to_string())?;
+            let target = kas_target_kode
+                .ok_or_else(|| "Pilih akun kas target untuk transfer.".to_string())?;
+            if sumber == target {
+                return Err("Akun kas sumber dan target tidak boleh sama.".into());
+            }
+            lines.push((target, jumlah, 0));
+            lines.push((sumber, 0, jumlah));
+        }
+        _ => return Err(format!("Jenis transaksi tidak dikenal: {jenis}")),
+    }
+
+    let total_debit: i64 = lines.iter().map(|(_, d, _)| *d).sum();
+    let total_kredit: i64 = lines.iter().map(|(_, _, k)| *k).sum();
+    if total_debit != total_kredit {
+        return Err("Jurnal tidak balance (debit != kredit).".into());
+    }
+
+    tx.execute(
+        "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)",
+        params![tanggal, jenis, referensi, catatan, ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    let jurnal_id = tx.last_insert_rowid();
+
+    for (akun_kode, debit, kredit) in &lines {
+        tx.execute(
+            "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+             VALUES (?, ?, ?, ?, '')",
+            params![jurnal_id, akun_kode, debit, kredit],
+        )
+        .map_err(|e| e.to_string())?;
+        akun_kas_apply_saldo_delta(&tx, akun_kode, *debit, *kredit, ts)?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(format!("Jurnal tersimpan (ID: {}).", jurnal_id))
+}

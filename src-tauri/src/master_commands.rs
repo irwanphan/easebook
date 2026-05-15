@@ -19,6 +19,15 @@ where
     f(&conn).map_err(|e| e.to_string())
 }
 
+/// Koneksi singkat dengan error aplikasi string (untuk cek baris terpengaruh, dll.).
+fn with_conn_app<R, F>(state: &DbState, f: F) -> Result<R, String>
+where
+    F: FnOnce(&Connection) -> Result<R, String>,
+{
+    let conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    f(&conn)
+}
+
 // --- Kategori ---
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -413,4 +422,259 @@ pub fn barang_jasa_kode_exists(state: State<DbState>, kode: String) -> Result<bo
         )?;
         Ok(n > 0)
     })
+}
+
+// --- Pelanggan & pemasok (kontak master, skema sama) ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct KontakMasterRow {
+    pub kode: String,
+    pub nama: String,
+    pub alamat: String,
+    pub kota: String,
+    pub telepon: String,
+    pub email: String,
+    pub npwp: String,
+    pub catatan: String,
+}
+
+fn kontak_list_conn(conn: &Connection, table: &'static str) -> rusqlite::Result<Vec<KontakMasterRow>> {
+    let sql = format!(
+        "SELECT kode, nama, alamat, kota, telepon, email, npwp, catatan FROM {table} ORDER BY kode COLLATE NOCASE"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([], |r| {
+        Ok(KontakMasterRow {
+            kode: r.get(0)?,
+            nama: r.get(1)?,
+            alamat: r.get(2)?,
+            kota: r.get(3)?,
+            telepon: r.get(4)?,
+            email: r.get(5)?,
+            npwp: r.get(6)?,
+            catatan: r.get(7)?,
+        })
+    })?;
+    rows.collect()
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KontakMasterInsert {
+    pub kode: String,
+    pub nama: String,
+    pub alamat: String,
+    pub kota: String,
+    pub telepon: String,
+    pub email: String,
+    pub npwp: String,
+    pub catatan: String,
+}
+
+fn kontak_insert_conn(
+    conn: &Connection,
+    table: &'static str,
+    row: &KontakMasterInsert,
+    ts: i64,
+) -> rusqlite::Result<()> {
+    let sql = format!(
+        "INSERT INTO {table} (kode, nama, alamat, kota, telepon, email, npwp, catatan, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    );
+    conn.execute(
+        &sql,
+        params![
+            row.kode.trim().to_uppercase(),
+            row.nama.trim(),
+            row.alamat.trim(),
+            row.kota.trim(),
+            row.telepon.trim(),
+            row.email.trim(),
+            row.npwp.trim(),
+            row.catatan.trim(),
+            ts,
+            ts,
+        ],
+    )?;
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KontakMasterUpdate {
+    pub nama: String,
+    pub alamat: String,
+    pub kota: String,
+    pub telepon: String,
+    pub email: String,
+    pub npwp: String,
+    pub catatan: String,
+}
+
+fn kontak_update_conn(
+    conn: &Connection,
+    table: &'static str,
+    kode: &str,
+    row: &KontakMasterUpdate,
+    ts: i64,
+) -> rusqlite::Result<usize> {
+    let sql = format!(
+        "UPDATE {table} SET nama = ?, alamat = ?, kota = ?, telepon = ?, email = ?, npwp = ?, catatan = ?, updated_at = ?
+         WHERE lower(kode) = lower(?)"
+    );
+    let n = conn.execute(
+        &sql,
+        params![
+            row.nama.trim(),
+            row.alamat.trim(),
+            row.kota.trim(),
+            row.telepon.trim(),
+            row.email.trim(),
+            row.npwp.trim(),
+            row.catatan.trim(),
+            ts,
+            kode.trim(),
+        ],
+    )?;
+    Ok(n)
+}
+
+fn kontak_delete_conn(conn: &Connection, table: &'static str, kode: &str) -> rusqlite::Result<usize> {
+    let sql = format!("DELETE FROM {table} WHERE lower(kode) = lower(?)");
+    conn.execute(&sql, params![kode.trim()])
+}
+
+fn kontak_kode_exists_conn(conn: &Connection, table: &'static str, kode: &str) -> rusqlite::Result<bool> {
+    let sql = format!("SELECT COUNT(*) FROM {table} WHERE lower(kode) = lower(?)");
+    let n: i64 = conn.query_row(&sql, params![kode.trim()], |r| r.get(0))?;
+    Ok(n > 0)
+}
+
+fn validate_kontak_insert(row: &KontakMasterInsert) -> Result<String, String> {
+    let kode = row.kode.trim().to_uppercase();
+    if kode.is_empty() {
+        return Err("Kode wajib diisi.".into());
+    }
+    if row.nama.trim().is_empty() {
+        return Err("Nama wajib diisi.".into());
+    }
+    Ok(kode)
+}
+
+fn validate_kontak_update(row: &KontakMasterUpdate) -> Result<(), String> {
+    if row.nama.trim().is_empty() {
+        return Err("Nama wajib diisi.".into());
+    }
+    Ok(())
+}
+
+// Pelanggan
+
+#[tauri::command]
+pub fn pelanggan_list(state: State<DbState>) -> Result<Vec<KontakMasterRow>, String> {
+    with_conn(&state, |conn| kontak_list_conn(conn, "pelanggan"))
+}
+
+#[tauri::command]
+pub fn pelanggan_insert(state: State<DbState>, row: KontakMasterInsert) -> Result<(), String> {
+    let kode = validate_kontak_insert(&row)?;
+    let mut row = row;
+    row.kode = kode;
+    let ts = now_ts();
+    with_conn(&state, |conn| kontak_insert_conn(conn, "pelanggan", &row, ts)).map_err(|e| {
+        if e.contains("UNIQUE") {
+            "Kode sudah dipakai.".into()
+        } else {
+            e
+        }
+    })
+}
+
+#[tauri::command]
+pub fn pelanggan_update(
+    state: State<DbState>,
+    kode: String,
+    row: KontakMasterUpdate,
+) -> Result<(), String> {
+    validate_kontak_update(&row)?;
+    let ts = now_ts();
+    with_conn_app(&state, |conn| {
+        let n = kontak_update_conn(conn, "pelanggan", &kode, &row, ts).map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Pelanggan tidak ditemukan.".into());
+        }
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn pelanggan_delete(state: State<DbState>, kode: String) -> Result<(), String> {
+    with_conn_app(&state, |conn| {
+        let n = kontak_delete_conn(conn, "pelanggan", &kode).map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Pelanggan tidak ditemukan.".into());
+        }
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn pelanggan_kode_exists(state: State<DbState>, kode: String) -> Result<bool, String> {
+    with_conn(&state, |conn| kontak_kode_exists_conn(conn, "pelanggan", &kode))
+}
+
+// Pemasok
+
+#[tauri::command]
+pub fn pemasok_list(state: State<DbState>) -> Result<Vec<KontakMasterRow>, String> {
+    with_conn(&state, |conn| kontak_list_conn(conn, "pemasok"))
+}
+
+#[tauri::command]
+pub fn pemasok_insert(state: State<DbState>, row: KontakMasterInsert) -> Result<(), String> {
+    let kode = validate_kontak_insert(&row)?;
+    let mut row = row;
+    row.kode = kode;
+    let ts = now_ts();
+    with_conn(&state, |conn| kontak_insert_conn(conn, "pemasok", &row, ts)).map_err(|e| {
+        if e.contains("UNIQUE") {
+            "Kode sudah dipakai.".into()
+        } else {
+            e
+        }
+    })
+}
+
+#[tauri::command]
+pub fn pemasok_update(
+    state: State<DbState>,
+    kode: String,
+    row: KontakMasterUpdate,
+) -> Result<(), String> {
+    validate_kontak_update(&row)?;
+    let ts = now_ts();
+    with_conn_app(&state, |conn| {
+        let n = kontak_update_conn(conn, "pemasok", &kode, &row, ts).map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Pemasok tidak ditemukan.".into());
+        }
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn pemasok_delete(state: State<DbState>, kode: String) -> Result<(), String> {
+    with_conn_app(&state, |conn| {
+        let n = kontak_delete_conn(conn, "pemasok", &kode).map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Pemasok tidak ditemukan.".into());
+        }
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn pemasok_kode_exists(state: State<DbState>, kode: String) -> Result<bool, String> {
+    with_conn(&state, |conn| kontak_kode_exists_conn(conn, "pemasok", &kode))
 }

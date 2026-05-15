@@ -67,6 +67,32 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
 
         CREATE INDEX IF NOT EXISTS idx_barang_kategori ON barang_jasa(kategori_kode);
         CREATE INDEX IF NOT EXISTS idx_barang_merek ON barang_jasa(merek_kode);
+
+        CREATE TABLE IF NOT EXISTS pelanggan (
+            kode TEXT PRIMARY KEY NOT NULL COLLATE NOCASE,
+            nama TEXT NOT NULL,
+            alamat TEXT NOT NULL DEFAULT '',
+            kota TEXT NOT NULL DEFAULT '',
+            telepon TEXT NOT NULL DEFAULT '',
+            email TEXT NOT NULL DEFAULT '',
+            npwp TEXT NOT NULL DEFAULT '',
+            catatan TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS pemasok (
+            kode TEXT PRIMARY KEY NOT NULL COLLATE NOCASE,
+            nama TEXT NOT NULL,
+            alamat TEXT NOT NULL DEFAULT '',
+            kota TEXT NOT NULL DEFAULT '',
+            telepon TEXT NOT NULL DEFAULT '',
+            email TEXT NOT NULL DEFAULT '',
+            npwp TEXT NOT NULL DEFAULT '',
+            catatan TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
         ",
     )?;
     Ok(())
@@ -178,6 +204,72 @@ pub fn seed_if_empty(conn: &mut Connection) -> rusqlite::Result<()> {
         "INSERT INTO barang_jasa (kode, nama, tipe, satuan, harga, stok, kategori_kode, merek_kode, default_gudang_kode, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?)",
         params!["BRG-002", "Kemeja denim", "Barang", "pcs", 349000i64, 120i64, ts, ts],
+    )?;
+
+    tx.execute(
+        "INSERT INTO pelanggan (kode, nama, alamat, kota, telepon, email, npwp, catatan, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
+            "PLG-001",
+            "Toko Maju Jaya",
+            "Jl. Merdeka No. 88",
+            "Bandung",
+            "022-1234567",
+            "finance@majujaya.co.id",
+            "",
+            "Termin 30 hari.",
+            ts,
+            ts
+        ],
+    )?;
+    tx.execute(
+        "INSERT INTO pelanggan (kode, nama, alamat, kota, telepon, email, npwp, catatan, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
+            "PLG-002",
+            "CV Sinar Retail",
+            "Ruko Galaxy Blok C12",
+            "Jakarta Timur",
+            "+62 811-9988-001",
+            "",
+            "",
+            "",
+            ts,
+            ts
+        ],
+    )?;
+
+    tx.execute(
+        "INSERT INTO pemasok (kode, nama, alamat, kota, telepon, email, npwp, catatan, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
+            "SUP-001",
+            "PT Distributor Nasional",
+            "Kawasan Industri Jababeka",
+            "Cikarang",
+            "021-8989-0000",
+            "procurement@distnas.id",
+            "",
+            "PO minimal 5 juta.",
+            ts,
+            ts
+        ],
+    )?;
+    tx.execute(
+        "INSERT INTO pemasok (kode, nama, alamat, kota, telepon, email, npwp, catatan, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
+            "SUP-002",
+            "UD Sumber Makmur",
+            "Jl. Industri III No. 5",
+            "Semarang",
+            "024-7654321",
+            "",
+            "",
+            "",
+            ts,
+            ts
+        ],
     )?;
 
     tx.commit()?;

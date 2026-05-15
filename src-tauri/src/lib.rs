@@ -39,6 +39,16 @@ pub fn run() {
             master_commands::barang_jasa_list,
             master_commands::barang_jasa_insert,
             master_commands::barang_jasa_kode_exists,
+            master_commands::pelanggan_list,
+            master_commands::pelanggan_insert,
+            master_commands::pelanggan_update,
+            master_commands::pelanggan_delete,
+            master_commands::pelanggan_kode_exists,
+            master_commands::pemasok_list,
+            master_commands::pemasok_insert,
+            master_commands::pemasok_update,
+            master_commands::pemasok_delete,
+            master_commands::pemasok_kode_exists,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

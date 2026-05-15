@@ -170,11 +170,16 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         CREATE TABLE IF NOT EXISTS akun_keuangan (
             kode TEXT PRIMARY KEY NOT NULL COLLATE NOCASE,
             nama TEXT NOT NULL,
-            peran_jurnal TEXT NOT NULL DEFAULT 'KAS',
+            induk_kode TEXT REFERENCES akun_keuangan(kode) ON DELETE SET NULL ON UPDATE CASCADE,
+            kelompok_lr TEXT NOT NULL DEFAULT '',
+            is_akun_kas INTEGER NOT NULL DEFAULT 0,
             saldo INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
+
+        CREATE INDEX IF NOT EXISTS idx_akun_keuangan_induk ON akun_keuangan(induk_kode);
+        CREATE INDEX IF NOT EXISTS idx_akun_keuangan_kas ON akun_keuangan(is_akun_kas);
 
         CREATE TABLE IF NOT EXISTS jurnal_umum (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -219,7 +224,7 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// Kolom tambahan untuk instalasi lama (sebelum peran_jurnal & saldo).
+/// Kolom tambahan untuk instalasi lama (tipe / peran_jurnal → skema daftar akun baru).
 fn migrate_akun_keuangan_columns(conn: &Connection) -> rusqlite::Result<()> {
     let exists: i64 = conn.query_row(
         "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'akun_keuangan'",
@@ -242,29 +247,51 @@ fn migrate_akun_keuangan_columns(conn: &Connection) -> rusqlite::Result<()> {
             [],
         )?;
     }
-    if !cols.iter().any(|c| c.eq_ignore_ascii_case("peran_jurnal")) {
+    if !cols.iter().any(|c| c.eq_ignore_ascii_case("induk_kode")) {
+        conn.execute("ALTER TABLE akun_keuangan ADD COLUMN induk_kode TEXT", [])?;
+    }
+    if !cols.iter().any(|c| c.eq_ignore_ascii_case("kelompok_lr")) {
         conn.execute(
-            "ALTER TABLE akun_keuangan ADD COLUMN peran_jurnal TEXT NOT NULL DEFAULT 'KAS'",
+            "ALTER TABLE akun_keuangan ADD COLUMN kelompok_lr TEXT NOT NULL DEFAULT ''",
             [],
         )?;
-        if cols.iter().any(|c| c.eq_ignore_ascii_case("tipe")) {
-            conn.execute_batch(
-                "
-                UPDATE akun_keuangan SET peran_jurnal = 'BANK'
-                WHERE upper(trim(tipe)) = 'BANK';
-                UPDATE akun_keuangan SET peran_jurnal = 'KAS'
-                WHERE upper(trim(tipe)) IN ('KAS_BANK', 'KAS')
-                   OR peran_jurnal IS NULL OR trim(peran_jurnal) = '';
-                UPDATE akun_keuangan SET peran_jurnal = upper(trim(tipe))
-                WHERE upper(trim(tipe)) NOT IN ('KAS_BANK', 'KAS', 'BANK')
-                  AND (peran_jurnal IS NULL OR trim(peran_jurnal) = '' OR peran_jurnal = 'KAS');
-                ",
-            )?;
-        }
+    }
+    if !cols.iter().any(|c| c.eq_ignore_ascii_case("is_akun_kas")) {
+        conn.execute(
+            "ALTER TABLE akun_keuangan ADD COLUMN is_akun_kas INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+
+    // Migrasi dari peran_jurnal / tipe lama
+    if cols.iter().any(|c| c.eq_ignore_ascii_case("peran_jurnal")) {
+        conn.execute_batch(
+            "
+            UPDATE akun_keuangan SET is_akun_kas = 1
+            WHERE upper(trim(peran_jurnal)) IN ('KAS', 'BANK', 'KAS_BANK');
+            UPDATE akun_keuangan SET kelompok_lr = 'PENDAPATAN'
+            WHERE trim(kelompok_lr) = '' AND upper(trim(peran_jurnal)) = 'PENDAPATAN';
+            UPDATE akun_keuangan SET kelompok_lr = 'BEBAN'
+            WHERE trim(kelompok_lr) = '' AND upper(trim(peran_jurnal)) IN ('PEMBELIAN', 'PENGELUARAN_LAINNYA');
+            UPDATE akun_keuangan SET kelompok_lr = 'PENDAPATAN'
+            WHERE trim(kelompok_lr) = '' AND upper(trim(peran_jurnal)) = 'PENERIMAAN_LAINNYA';
+            ",
+        )?;
+    } else if cols.iter().any(|c| c.eq_ignore_ascii_case("tipe")) {
+        conn.execute_batch(
+            "
+            UPDATE akun_keuangan SET is_akun_kas = 1
+            WHERE upper(trim(tipe)) IN ('KAS_BANK', 'KAS', 'BANK');
+            ",
+        )?;
     }
 
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_akun_keuangan_peran ON akun_keuangan(peran_jurnal)",
+        "CREATE INDEX IF NOT EXISTS idx_akun_keuangan_induk ON akun_keuangan(induk_kode)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_akun_keuangan_kas ON akun_keuangan(is_akun_kas)",
         [],
     )?;
     Ok(())

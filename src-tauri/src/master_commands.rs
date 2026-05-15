@@ -1599,32 +1599,55 @@ pub fn stok_mutasi_laporan(
 pub struct AkunKeuanganRow {
     pub kode: String,
     pub nama: String,
-    pub peran_jurnal: String,
-    pub saldo: i64,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct AkunKasRow {
-    pub kode: String,
-    pub nama: String,
-    pub peran_jurnal: String,
+    pub induk_kode: Option<String>,
+    pub induk_nama: Option<String>,
+    pub kelompok_lr: String,
+    pub is_akun_kas: bool,
     pub saldo: i64,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AkunKasInsertPayload {
+pub struct AkunKeuanganInsertPayload {
     pub kode: String,
     pub nama: String,
-    pub peran_jurnal: String,
+    pub induk_kode: Option<String>,
+    pub kelompok_lr: Option<String>,
+    pub is_akun_kas: bool,
 }
 
-fn is_peran_akun_kas(peran: &str) -> bool {
-    matches!(peran.trim().to_uppercase().as_str(), "KAS" | "BANK")
+fn normalize_kelompok_lr(raw: Option<&str>) -> String {
+    match raw.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()) {
+        Some(k) if k == "PENDAPATAN" || k == "BEBAN" || k == "HPP" => k,
+        Some(_) => String::new(),
+        None => String::new(),
+    }
 }
 
-/// Perbarui saldo akun kas/bank: debit menambah, kredit mengurangi.
+fn validate_akun_insert(
+    tx: &Transaction<'_>,
+    kode: &str,
+    induk_kode: Option<&str>,
+) -> Result<(), String> {
+    if let Some(induk) = induk_kode {
+        if induk.eq_ignore_ascii_case(kode) {
+            return Err("Akun induk tidak boleh sama dengan kode akun.".into());
+        }
+        let ada: i64 = tx
+            .query_row(
+                "SELECT COUNT(*) FROM akun_keuangan WHERE lower(kode) = lower(?)",
+                params![induk],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if ada == 0 {
+            return Err("Akun induk tidak ditemukan.".into());
+        }
+    }
+    Ok(())
+}
+
+/// Perbarui saldo untuk akun yang ditandai sebagai akun kas: debit menambah, kredit mengurangi.
 fn akun_kas_apply_saldo_delta(
     tx: &Transaction<'_>,
     akun_kode: &str,
@@ -1632,16 +1655,16 @@ fn akun_kas_apply_saldo_delta(
     kredit: i64,
     ts: i64,
 ) -> Result<(), String> {
-    let peran: String = match tx.query_row(
-        "SELECT peran_jurnal FROM akun_keuangan WHERE lower(kode) = lower(?)",
+    let is_kas: i64 = match tx.query_row(
+        "SELECT COALESCE(is_akun_kas, 0) FROM akun_keuangan WHERE lower(kode) = lower(?)",
         params![akun_kode],
         |r| r.get(0),
     ) {
-        Ok(p) => p,
+        Ok(v) => v,
         Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(()),
         Err(e) => return Err(e.to_string()),
     };
-    if !is_peran_akun_kas(&peran) {
+    if is_kas == 0 {
         return Ok(());
     }
     let delta = debit - kredit;
@@ -1746,16 +1769,21 @@ fn konfigurasi_get_row(tx: &Transaction<'_>) -> Result<JurnalKonfigurasiRow, Str
 pub fn akun_keuangan_list(state: State<DbState>) -> Result<Vec<AkunKeuanganRow>, String> {
     with_conn(&state, |conn| {
         let mut stmt = conn.prepare(
-            "SELECT kode, nama, peran_jurnal, COALESCE(saldo, 0)
-             FROM akun_keuangan
-             ORDER BY kode COLLATE NOCASE ASC",
+            "SELECT a.kode, a.nama, a.induk_kode, p.nama, COALESCE(a.kelompok_lr, ''),
+                    COALESCE(a.is_akun_kas, 0), COALESCE(a.saldo, 0)
+             FROM akun_keuangan a
+             LEFT JOIN akun_keuangan p ON lower(p.kode) = lower(a.induk_kode)
+             ORDER BY a.kode COLLATE NOCASE ASC",
         )?;
         let rows = stmt.query_map([], |r| {
             Ok(AkunKeuanganRow {
                 kode: r.get(0)?,
                 nama: r.get(1)?,
-                peran_jurnal: r.get(2)?,
-                saldo: r.get(3)?,
+                induk_kode: r.get(2)?,
+                induk_nama: r.get(3)?,
+                kelompok_lr: r.get(4)?,
+                is_akun_kas: r.get::<_, i64>(5)? != 0,
+                saldo: r.get(6)?,
             })
         })?;
         rows.collect()
@@ -1763,31 +1791,19 @@ pub fn akun_keuangan_list(state: State<DbState>) -> Result<Vec<AkunKeuanganRow>,
 }
 
 #[tauri::command]
-pub fn akun_kas_list(state: State<DbState>) -> Result<Vec<AkunKasRow>, String> {
-    with_conn(&state, |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT kode, nama, peran_jurnal, COALESCE(saldo, 0)
-             FROM akun_keuangan
-             WHERE upper(trim(peran_jurnal)) IN ('KAS', 'BANK')
-             ORDER BY kode COLLATE NOCASE ASC",
-        )?;
-        let rows = stmt.query_map([], |r| {
-            Ok(AkunKasRow {
-                kode: r.get(0)?,
-                nama: r.get(1)?,
-                peran_jurnal: r.get(2)?,
-                saldo: r.get(3)?,
-            })
-        })?;
-        rows.collect()
-    })
-}
-
-#[tauri::command]
-pub fn akun_kas_insert(state: State<DbState>, payload: AkunKasInsertPayload) -> Result<(), String> {
+pub fn akun_keuangan_insert(
+    state: State<DbState>,
+    payload: AkunKeuanganInsertPayload,
+) -> Result<(), String> {
     let kode = payload.kode.trim().to_uppercase();
     let nama = payload.nama.trim();
-    let peran = payload.peran_jurnal.trim().to_uppercase();
+    let induk = payload
+        .induk_kode
+        .as_ref()
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty());
+    let kelompok = normalize_kelompok_lr(payload.kelompok_lr.as_deref());
+    let is_kas = if payload.is_akun_kas { 1 } else { 0 };
 
     if kode.is_empty() {
         return Err("Kode akun wajib diisi.".into());
@@ -1795,41 +1811,59 @@ pub fn akun_kas_insert(state: State<DbState>, payload: AkunKasInsertPayload) -> 
     if nama.is_empty() {
         return Err("Nama akun wajib diisi.".into());
     }
-    if !is_peran_akun_kas(&peran) {
-        return Err("Peran jurnal harus Kas atau Bank.".into());
-    }
 
     let ts = now_ts();
-    with_conn(&state, |conn| {
-        conn.execute(
-            "INSERT INTO akun_keuangan (kode, nama, peran_jurnal, saldo, created_at, updated_at)
-             VALUES (?, ?, ?, 0, ?, ?)",
-            params![kode, nama, peran, ts, ts],
-        )?;
-        Ok(())
-    })
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    validate_akun_insert(
+        &tx,
+        &kode,
+        induk.as_deref(),
+    )?;
+    tx.execute(
+        "INSERT INTO akun_keuangan (kode, nama, induk_kode, kelompok_lr, is_akun_kas, saldo, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+        params![kode, nama, induk, kelompok, is_kas, ts, ts],
+    )
+    .map_err(|e| {
+        if e.to_string().contains("UNIQUE") {
+            "Kode akun bentrok.".to_string()
+        } else if e.to_string().contains("FOREIGN KEY") {
+            "Akun induk tidak valid.".to_string()
+        } else {
+            e.to_string()
+        }
+    })?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
-pub fn akun_kas_delete(state: State<DbState>, kode: String) -> Result<(), String> {
+pub fn akun_keuangan_delete(state: State<DbState>, kode: String) -> Result<(), String> {
     let kode = kode.trim().to_uppercase();
     if kode.is_empty() {
         return Err("Kode akun wajib diisi.".into());
     }
     let conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
-    let peran: String = conn
+    let child: i64 = conn
         .query_row(
-            "SELECT peran_jurnal FROM akun_keuangan WHERE kode = ?",
+            "SELECT COUNT(*) FROM akun_keuangan WHERE lower(induk_kode) = lower(?)",
             params![kode],
             |r| r.get(0),
         )
-        .map_err(|_| "Akun tidak ditemukan.".to_string())?;
-    if !is_peran_akun_kas(&peran) {
-        return Err("Hanya akun kas/bank yang dapat dihapus dari halaman ini.".into());
+        .map_err(|e| e.to_string())?;
+    if child > 0 {
+        return Err("Akun masih dipakai sebagai induk akun lain.".into());
     }
     let n = conn
         .execute("DELETE FROM akun_keuangan WHERE kode = ?", params![kode])
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            if e.to_string().contains("FOREIGN KEY") {
+                "Akun masih direferensikan (jurnal atau konfigurasi).".to_string()
+            } else {
+                e.to_string()
+            }
+        })?;
     if n == 0 {
         return Err("Akun tidak ditemukan.".into());
     }

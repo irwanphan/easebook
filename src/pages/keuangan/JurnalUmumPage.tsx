@@ -12,7 +12,6 @@ import type {
   JurnalTransaksiInsertPayload,
   JurnalUmumListRow,
 } from "@/data/keuangan";
-import { labelPeranJurnal } from "@/data/keuangan";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
 const inputClass =
@@ -75,10 +74,7 @@ export function JurnalUmumPage() {
   const [catatan, setCatatan] = useState("");
   const [jumlah, setJumlah] = useState(0);
 
-  const kasList = useMemo(
-    () => akunList.filter((a) => a.peranJurnal === "KAS" || a.peranJurnal === "BANK"),
-    [akunList],
-  );
+  const kasList = useMemo(() => akunList.filter((a) => a.isAkunKas), [akunList]);
 
   const [kasKode, setKasKode] = useState<string>("");
   const [kasSumberKode, setKasSumberKode] = useState<string>("");
@@ -279,7 +275,7 @@ export function JurnalUmumPage() {
                 <option value="">— Pilih akun —</option>
                 {akunList.map((a) => (
                   <option key={a.kode} value={a.kode}>
-                    {a.kode} — {a.nama} ({labelPeranJurnal(a.peranJurnal)})
+                    {a.kode} — {a.nama}
                   </option>
                 ))}
               </select>
@@ -299,7 +295,7 @@ export function JurnalUmumPage() {
                 <option value="">— Pilih akun —</option>
                 {akunList.map((a) => (
                   <option key={a.kode} value={a.kode}>
-                    {a.kode} — {a.nama} ({labelPeranJurnal(a.peranJurnal)})
+                    {a.kode} — {a.nama}
                   </option>
                 ))}
               </select>
@@ -319,7 +315,7 @@ export function JurnalUmumPage() {
                 <option value="">— Pilih akun —</option>
                 {akunList.map((a) => (
                   <option key={a.kode} value={a.kode}>
-                    {a.kode} — {a.nama} ({labelPeranJurnal(a.peranJurnal)})
+                    {a.kode} — {a.nama}
                   </option>
                 ))}
               </select>
@@ -339,7 +335,7 @@ export function JurnalUmumPage() {
                 <option value="">— Pilih akun —</option>
                 {akunList.map((a) => (
                   <option key={a.kode} value={a.kode}>
-                    {a.kode} — {a.nama} ({labelPeranJurnal(a.peranJurnal)})
+                    {a.kode} — {a.nama}
                   </option>
                 ))}
               </select>
@@ -361,7 +357,7 @@ export function JurnalUmumPage() {
                 <option value="">— Pilih akun —</option>
                 {akunList.map((a) => (
                   <option key={a.kode} value={a.kode}>
-                    {a.kode} — {a.nama} ({labelPeranJurnal(a.peranJurnal)})
+                    {a.kode} — {a.nama}
                   </option>
                 ))}
               </select>
@@ -383,7 +379,7 @@ export function JurnalUmumPage() {
                 <option value="">— Pilih akun —</option>
                 {akunList.map((a) => (
                   <option key={a.kode} value={a.kode}>
-                    {a.kode} — {a.nama} ({labelPeranJurnal(a.peranJurnal)})
+                    {a.kode} — {a.nama}
                   </option>
                 ))}
               </select>
@@ -459,7 +455,7 @@ export function JurnalUmumPage() {
                 <select value={kasKode} onChange={(e) => setKasKode(e.target.value)} className={inputClass} disabled={loading}>
                   {kasList.map((a) => (
                     <option key={a.kode} value={a.kode}>
-                      {a.kode} — {a.nama} ({labelPeranJurnal(a.peranJurnal)})
+                      {a.kode} — {a.nama}
                     </option>
                   ))}
                 </select>
@@ -473,7 +469,7 @@ export function JurnalUmumPage() {
                   <select value={kasSumberKode} onChange={(e) => setKasSumberKode(e.target.value)} className={inputClass} disabled={loading}>
                     {kasList.map((a) => (
                       <option key={a.kode} value={a.kode}>
-                        {a.kode} — {a.nama} ({labelPeranJurnal(a.peranJurnal)})
+                        {a.kode} — {a.nama}
                       </option>
                     ))}
                   </select>
@@ -483,7 +479,7 @@ export function JurnalUmumPage() {
                   <select value={kasTargetKode} onChange={(e) => setKasTargetKode(e.target.value)} className={inputClass} disabled={loading}>
                     {kasList.map((a) => (
                       <option key={a.kode} value={a.kode}>
-                        {a.kode} — {a.nama} ({labelPeranJurnal(a.peranJurnal)})
+                        {a.kode} — {a.nama}
                       </option>
                     ))}
                   </select>

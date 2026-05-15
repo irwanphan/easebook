@@ -1,41 +1,35 @@
-/** Semua akun keuangan (untuk konfigurasi jurnal). */
+/** Baris daftar akun (chart of accounts). */
 export type AkunKeuanganRow = {
   kode: string;
   nama: string;
-  peranJurnal: string;
+  indukKode: string | null;
+  indukNama: string | null;
+  /** Kosong jika tidak dipakai di laba rugi. */
+  kelompokLr: string;
+  isAkunKas: boolean;
+  /** Saldo kas; hanya berarti untuk akun yang ditandai akun kas. */
   saldo: number;
 };
 
-/** Akun kas/bank (halaman Akun kas). */
-export type AkunKasRow = {
+export type AkunKeuanganInsertPayload = {
   kode: string;
   nama: string;
-  peranJurnal: string;
-  saldo: number;
+  indukKode?: string | null;
+  kelompokLr?: string | null;
+  isAkunKas: boolean;
 };
 
-export type AkunKasInsertPayload = {
-  kode: string;
-  nama: string;
-  /** Dicatat sebagai di jurnal: `KAS` atau `BANK`. */
-  peranJurnal: string;
-};
-
-export const PERAN_JURNAL_KAS_OPTIONS = [
-  { value: "KAS", label: "Kas" },
-  { value: "BANK", label: "Bank" },
+/** Kelompok laba rugi (opsional). */
+export const KELOMPOK_LABA_RUGI = [
+  { value: "", label: "— Tidak dipakai di laba rugi —" },
+  { value: "PENDAPATAN", label: "Pendapatan" },
+  { value: "HPP", label: "Harga pokok penjualan (HPP)" },
+  { value: "BEBAN", label: "Beban / biaya" },
 ] as const;
 
-export function labelPeranJurnal(peran: string): string {
-  const row = PERAN_JURNAL_KAS_OPTIONS.find((o) => o.value === peran);
-  if (row) return row.label;
-  if (peran === "PIUTANG") return "Piutang";
-  if (peran === "HUTANG") return "Hutang";
-  if (peran === "PENDAPATAN") return "Pendapatan";
-  if (peran === "PEMBELIAN") return "Pembelian";
-  if (peran === "PENERIMAAN_LAINNYA") return "Penerimaan lain";
-  if (peran === "PENGELUARAN_LAINNYA") return "Pengeluaran lain";
-  return peran;
+export function labelKelompokLr(kelompok: string): string {
+  const row = KELOMPOK_LABA_RUGI.find((o) => o.value === kelompok);
+  return row?.label ?? "—";
 }
 
 export type JurnalKonfigurasi = {

@@ -825,8 +825,177 @@ pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) 
                 e.to_string()
             }
         })?;
+
+        // Tambah stok + catat mutasi hanya untuk tipe Barang
+        let tipe: String = match tx.query_row(
+            "SELECT tipe FROM barang_jasa WHERE lower(kode) = lower(?)",
+            params![kode_b],
+            |r| r.get(0),
+        ) {
+            Ok(s) => s,
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                return Err("Barang tidak ditemukan setelah insert baris.".into());
+            }
+            Err(e) => return Err(e.to_string()),
+        };
+        if tipe == "Barang" {
+            let prev: i64 = tx
+                .query_row(
+                    "SELECT COALESCE(stok, 0) FROM barang_jasa WHERE lower(kode) = lower(?)",
+                    params![kode_b],
+                    |r| r.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            let next = prev
+                .checked_add(line.qty)
+                .ok_or_else(|| "Stok melimpahi batas.".to_string())?;
+            tx.execute(
+                "UPDATE barang_jasa SET stok = ?, updated_at = ? WHERE lower(kode) = lower(?)",
+                params![next, ts, kode_b],
+            )
+            .map_err(|e| e.to_string())?;
+            tx.execute(
+                "INSERT INTO stok_mutasi (waktu, tanggal_transaksi, barang_kode, gudang_kode, jenis, referensi, qty_masuk, qty_keluar, saldo_setelah, catatan)
+                 VALUES (?, ?, ?, ?, 'PEMBELIAN', ?, ?, 0, ?, '')",
+                params![
+                    ts,
+                    tanggal_str,
+                    kode_b,
+                    gudang_kode,
+                    &nomor,
+                    line.qty,
+                    next
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+        }
     }
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(nomor)
+}
+
+// --- Mutasi stok (kartu stok / laporan) ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct StokMutasiRow {
+    pub id: i64,
+    pub waktu: i64,
+    pub tanggal_transaksi: String,
+    pub barang_kode: String,
+    pub barang_nama: String,
+    pub gudang_kode: String,
+    pub gudang_nama: String,
+    pub jenis: String,
+    pub referensi: String,
+    pub qty_masuk: i64,
+    pub qty_keluar: i64,
+    pub saldo_setelah: i64,
+    pub catatan: String,
+}
+
+#[tauri::command]
+pub fn stok_mutasi_for_barang(state: State<DbState>, kode: String) -> Result<Vec<StokMutasiRow>, String> {
+    let k = kode.trim();
+    if k.is_empty() {
+        return Err("Kode barang wajib diisi.".into());
+    }
+    with_conn(&state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT m.id, m.waktu, m.tanggal_transaksi, m.barang_kode, b.nama, m.gudang_kode, g.nama,
+                    m.jenis, m.referensi, m.qty_masuk, m.qty_keluar, m.saldo_setelah, m.catatan
+             FROM stok_mutasi m
+             JOIN barang_jasa b ON lower(b.kode) = lower(m.barang_kode)
+             JOIN gudang g ON lower(g.kode) = lower(m.gudang_kode)
+             WHERE lower(m.barang_kode) = lower(?)
+             ORDER BY m.waktu ASC, m.id ASC",
+        )?;
+        let rows = stmt.query_map(params![k], |r| {
+            Ok(StokMutasiRow {
+                id: r.get(0)?,
+                waktu: r.get(1)?,
+                tanggal_transaksi: r.get(2)?,
+                barang_kode: r.get(3)?,
+                barang_nama: r.get(4)?,
+                gudang_kode: r.get(5)?,
+                gudang_nama: r.get(6)?,
+                jenis: r.get(7)?,
+                referensi: r.get(8)?,
+                qty_masuk: r.get(9)?,
+                qty_keluar: r.get(10)?,
+                saldo_setelah: r.get(11)?,
+                catatan: r.get(12)?,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+#[tauri::command]
+pub fn stok_mutasi_laporan(
+    state: State<DbState>,
+    tanggal_dari: String,
+    tanggal_sampai: String,
+    barang_kode: Option<String>,
+) -> Result<Vec<StokMutasiRow>, String> {
+    let dari = tanggal_dari.trim();
+    let sampai = tanggal_sampai.trim();
+    let d1 = NaiveDate::parse_from_str(dari, "%Y-%m-%d")
+        .map_err(|_| "Tanggal mulai tidak valid (YYYY-MM-DD).".to_string())?;
+    let d2 = NaiveDate::parse_from_str(sampai, "%Y-%m-%d")
+        .map_err(|_| "Tanggal akhir tidak valid (YYYY-MM-DD).".to_string())?;
+    if d2 < d1 {
+        return Err("Tanggal akhir tidak boleh sebelum tanggal mulai.".into());
+    }
+    let filter_kode = barang_kode
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    with_conn(&state, |conn| {
+        let map_row = |r: &rusqlite::Row| -> rusqlite::Result<StokMutasiRow> {
+            Ok(StokMutasiRow {
+                id: r.get(0)?,
+                waktu: r.get(1)?,
+                tanggal_transaksi: r.get(2)?,
+                barang_kode: r.get(3)?,
+                barang_nama: r.get(4)?,
+                gudang_kode: r.get(5)?,
+                gudang_nama: r.get(6)?,
+                jenis: r.get(7)?,
+                referensi: r.get(8)?,
+                qty_masuk: r.get(9)?,
+                qty_keluar: r.get(10)?,
+                saldo_setelah: r.get(11)?,
+                catatan: r.get(12)?,
+            })
+        };
+
+        if let Some(ref bk) = filter_kode {
+            let mut stmt = conn.prepare(
+                "SELECT m.id, m.waktu, m.tanggal_transaksi, m.barang_kode, b.nama, m.gudang_kode, g.nama,
+                        m.jenis, m.referensi, m.qty_masuk, m.qty_keluar, m.saldo_setelah, m.catatan
+                 FROM stok_mutasi m
+                 JOIN barang_jasa b ON lower(b.kode) = lower(m.barang_kode)
+                 JOIN gudang g ON lower(g.kode) = lower(m.gudang_kode)
+                 WHERE m.tanggal_transaksi BETWEEN ?1 AND ?2 AND lower(m.barang_kode) = lower(?3)
+                 ORDER BY m.waktu DESC, m.id DESC",
+            )?;
+            let rows = stmt.query_map(params![dari, sampai, bk.as_str()], map_row)?;
+            rows.collect()
+        } else {
+            let mut stmt = conn.prepare(
+                "SELECT m.id, m.waktu, m.tanggal_transaksi, m.barang_kode, b.nama, m.gudang_kode, g.nama,
+                        m.jenis, m.referensi, m.qty_masuk, m.qty_keluar, m.saldo_setelah, m.catatan
+                 FROM stok_mutasi m
+                 JOIN barang_jasa b ON lower(b.kode) = lower(m.barang_kode)
+                 JOIN gudang g ON lower(g.kode) = lower(m.gudang_kode)
+                 WHERE m.tanggal_transaksi BETWEEN ?1 AND ?2
+                 ORDER BY m.waktu DESC, m.id DESC",
+            )?;
+            let rows = stmt.query_map(params![dari, sampai], map_row)?;
+            rows.collect()
+        }
+    })
 }

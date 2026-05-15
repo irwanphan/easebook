@@ -8,6 +8,7 @@ import {
   Wallet,
   Settings,
   LogOut,
+  LineChart,
 } from "lucide-react";
 
 /** Item tautan tunggal (sidebar + logout). */
@@ -47,6 +48,15 @@ export const primaryNavEntries: PrimaryNavEntry[] = [
   { kind: "link", id: "barang-jasa", label: "Barang & jasa", path: "/barang-jasa", icon: Package },
   { kind: "link", id: "penjualan", label: "Penjualan", path: "/penjualan", icon: ShoppingCart },
   { kind: "link", id: "pembelian", label: "Pembelian", path: "/pembelian", icon: Truck },
+  {
+    kind: "group",
+    id: "laporan",
+    label: "Laporan",
+    icon: LineChart,
+    children: [
+      { id: "lap-stok", label: "Pergerakan stok", path: "/laporan/pergerakan-stok" },
+    ],
+  },
   {
     kind: "group",
     id: "manajemen",

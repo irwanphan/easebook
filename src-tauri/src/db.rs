@@ -118,6 +118,26 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
 
         CREATE INDEX IF NOT EXISTS idx_pembelian_tgl ON pembelian(tanggal_faktur);
         CREATE INDEX IF NOT EXISTS idx_pembelian_line_nomor ON pembelian_line(nomor);
+
+        CREATE TABLE IF NOT EXISTS stok_mutasi (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            waktu INTEGER NOT NULL,
+            tanggal_transaksi TEXT NOT NULL,
+            barang_kode TEXT NOT NULL COLLATE NOCASE,
+            gudang_kode TEXT NOT NULL COLLATE NOCASE,
+            jenis TEXT NOT NULL,
+            referensi TEXT NOT NULL,
+            qty_masuk INTEGER NOT NULL DEFAULT 0,
+            qty_keluar INTEGER NOT NULL DEFAULT 0,
+            saldo_setelah INTEGER NOT NULL,
+            catatan TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY (barang_kode) REFERENCES barang_jasa(kode) ON UPDATE CASCADE,
+            FOREIGN KEY (gudang_kode) REFERENCES gudang(kode) ON UPDATE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_stok_mutasi_barang ON stok_mutasi(barang_kode);
+        CREATE INDEX IF NOT EXISTS idx_stok_mutasi_tgl ON stok_mutasi(tanggal_transaksi);
+        CREATE INDEX IF NOT EXISTS idx_stok_mutasi_waktu ON stok_mutasi(waktu);
         ",
     )?;
     Ok(())

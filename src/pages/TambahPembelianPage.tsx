@@ -45,7 +45,7 @@ export function TambahPembelianPage() {
   const navigate = useNavigate();
   const { items: pemasokItems, loading: loadPemasok } = usePemasok();
   const { items: gudangItems, loading: loadGudang } = useGudang();
-  const { items: barangItems, loading: loadBarang } = useBarangJasa();
+  const { items: barangItems, loading: loadBarang, refresh: refreshBarang } = useBarangJasa();
 
   const [pemasokKode, setPemasokKode] = useState("");
   const [gudangKode, setGudangKode] = useState("");
@@ -157,6 +157,7 @@ export function TambahPembelianPage() {
           lines: payloadLines,
         },
       });
+      await refreshBarang();
       navigate("/pembelian");
     } catch (err) {
       setError(tauriErrorMessage(err));

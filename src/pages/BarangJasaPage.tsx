@@ -1,4 +1,6 @@
-import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { LineChart } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -15,7 +17,14 @@ function formatRupiah(n: number) {
 
 export function BarangJasaPage() {
   const navigate = useNavigate();
-  const { items, loading } = useBarangJasa();
+  const location = useLocation();
+  const { items, loading, refresh } = useBarangJasa();
+
+  useEffect(() => {
+    if (location.pathname === "/barang-jasa") {
+      void refresh().catch(() => {});
+    }
+  }, [location.pathname, refresh]);
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -23,15 +32,26 @@ export function BarangJasaPage() {
         title="Barang & jasa"
         description="Kelola katalog produk dan layanan yang dijual."
         actions={
-          <Button type="button" onClick={() => navigate("/barang-jasa/tambah")}>
-            Tambah item
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              className="gap-2"
+              onClick={() => navigate("/laporan/pergerakan-stok")}
+            >
+              <LineChart className="h-4 w-4" aria-hidden />
+              Pergerakan stok
+            </Button>
+            <Button type="button" onClick={() => navigate("/barang-jasa/tambah")}>
+              Tambah item
+            </Button>
+          </div>
         }
       />
       {loading ? (
         <p className="text-sm text-zinc-500">Memuat data dari database lokal…</p>
       ) : null}
-      <Card className="p-0 overflow-hidden">
+      <Card className="overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
@@ -48,24 +68,28 @@ export function BarangJasaPage() {
             <tbody className="divide-y divide-zinc-100">
               {items.map((row) => (
                 <tr key={row.kode} className="bg-white hover:bg-zinc-50/50">
-                  <td className="px-5 py-3 font-mono text-xs font-medium text-zinc-800">
-                    {row.kode}
-                  </td>
+                  <td className="px-5 py-3 font-mono text-xs font-medium text-zinc-800">{row.kode}</td>
                   <td className="px-5 py-3 font-medium text-zinc-900">{row.nama}</td>
                   <td className="px-5 py-3">
-                    <Badge variant={row.tipe === "Barang" ? "neutral" : "processing"}>
-                      {row.tipe}
-                    </Badge>
+                    <Badge variant={row.tipe === "Barang" ? "neutral" : "processing"}>{row.tipe}</Badge>
                   </td>
                   <td className="px-5 py-3 text-zinc-600">{row.satuan}</td>
                   <td className="px-5 py-3 font-medium text-zinc-900">{formatRupiah(row.harga)}</td>
-                  <td className="px-5 py-3 text-zinc-600">
-                    {row.stok != null ? row.stok : "—"}
-                  </td>
+                  <td className="px-5 py-3 text-zinc-600">{row.stok != null ? row.stok : "—"}</td>
                   <td className="px-5 py-3 text-right">
-                    <Button variant="ghost" className="px-2 py-1 text-xs font-semibold">
-                      Ubah
-                    </Button>
+                    <div className="flex flex-wrap items-center justify-end gap-1">
+                      {row.tipe === "Barang" ? (
+                        <Link
+                          to={`/barang-jasa/kartu-stok/${encodeURIComponent(row.kode)}`}
+                          className="rounded-lg px-2 py-1 text-xs font-semibold text-brand-700 transition hover:bg-brand-50"
+                        >
+                          Kartu stok
+                        </Link>
+                      ) : null}
+                      <Button variant="ghost" className="px-2 py-1 text-xs font-semibold" type="button">
+                        Ubah
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}

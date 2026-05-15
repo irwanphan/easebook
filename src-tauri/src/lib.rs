@@ -51,6 +51,8 @@ pub fn run() {
             master_commands::pemasok_kode_exists,
             master_commands::pembelian_list,
             master_commands::pembelian_insert,
+            master_commands::stok_mutasi_for_barang,
+            master_commands::stok_mutasi_laporan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

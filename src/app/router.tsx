@@ -3,6 +3,7 @@ import { AppShell } from "@/app/layout/AppShell";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { BarangJasaPage } from "@/pages/BarangJasaPage";
 import { TambahBarangJasaPage } from "@/pages/TambahBarangJasaPage";
+import { KartuStokBarangPage } from "@/pages/KartuStokBarangPage";
 import { PenjualanPage } from "@/pages/PenjualanPage";
 import { PembelianPage } from "@/pages/PembelianPage";
 import { TambahPembelianPage } from "@/pages/TambahPembelianPage";
@@ -25,6 +26,7 @@ import { KeuanganPenerimaanPage } from "@/pages/keuangan/KeuanganPenerimaanPage"
 import { KeuanganPelunasanPiutangPage } from "@/pages/keuangan/KeuanganPelunasanPiutangPage";
 import { KeuanganPelunasanHutangPage } from "@/pages/keuangan/KeuanganPelunasanHutangPage";
 import { KeuanganTransferPage } from "@/pages/keuangan/KeuanganTransferPage";
+import { LaporanPergerakanStokPage } from "@/pages/laporan/LaporanPergerakanStokPage";
 
 export const router = createHashRouter([
   {
@@ -32,8 +34,10 @@ export const router = createHashRouter([
     element: <AppShell />,
     children: [
       { index: true, element: <DashboardPage /> },
-      { path: "barang-jasa", element: <BarangJasaPage /> },
       { path: "barang-jasa/tambah", element: <TambahBarangJasaPage /> },
+      { path: "barang-jasa/kartu-stok/:kode", element: <KartuStokBarangPage /> },
+      { path: "barang-jasa", element: <BarangJasaPage /> },
+      { path: "laporan/pergerakan-stok", element: <LaporanPergerakanStokPage /> },
       { path: "penjualan", element: <PenjualanPage /> },
       { path: "pembelian/tambah", element: <TambahPembelianPage /> },
       { path: "pembelian", element: <PembelianPage /> },

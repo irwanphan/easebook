@@ -178,9 +178,6 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             updated_at INTEGER NOT NULL
         );
 
-        CREATE INDEX IF NOT EXISTS idx_akun_keuangan_induk ON akun_keuangan(induk_kode);
-        CREATE INDEX IF NOT EXISTS idx_akun_keuangan_kas ON akun_keuangan(is_akun_kas);
-
         CREATE TABLE IF NOT EXISTS jurnal_umum (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             tanggal TEXT NOT NULL,

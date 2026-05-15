@@ -2,7 +2,7 @@
 
 use crate::db;
 use crate::DbState;
-use chrono::Utc;
+use chrono::{NaiveDate, Utc};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -677,4 +677,156 @@ pub fn pemasok_delete(state: State<DbState>, kode: String) -> Result<(), String>
 #[tauri::command]
 pub fn pemasok_kode_exists(state: State<DbState>, kode: String) -> Result<bool, String> {
     with_conn(&state, |conn| kontak_kode_exists_conn(conn, "pemasok", &kode))
+}
+
+// --- Pembelian (faktur beli) ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PembelianListRow {
+    pub nomor: String,
+    pub tanggal_faktur: String,
+    pub pemasok_nama: String,
+    pub total: i64,
+    pub status: String,
+}
+
+#[tauri::command]
+pub fn pembelian_list(state: State<DbState>) -> Result<Vec<PembelianListRow>, String> {
+    with_conn(&state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT p.nomor, p.tanggal_faktur, s.nama, p.total, p.status
+             FROM pembelian p
+             JOIN pemasok s ON lower(s.kode) = lower(p.pemasok_kode)
+             ORDER BY p.created_at DESC",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(PembelianListRow {
+                nomor: r.get(0)?,
+                tanggal_faktur: r.get(1)?,
+                pemasok_nama: r.get(2)?,
+                total: r.get(3)?,
+                status: r.get(4)?,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PembelianLineInput {
+    pub barang_kode: String,
+    pub qty: i64,
+    pub harga_satuan: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PembelianInsertPayload {
+    pub pemasok_kode: String,
+    pub gudang_kode: String,
+    pub tanggal_faktur: String,
+    pub jatuh_tempo: String,
+    pub metode_pembayaran: String,
+    pub lines: Vec<PembelianLineInput>,
+}
+
+#[tauri::command]
+pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) -> Result<String, String> {
+    let pemasok_kode = payload.pemasok_kode.trim();
+    let gudang_kode = payload.gudang_kode.trim();
+    if pemasok_kode.is_empty() {
+        return Err("Pemasok wajib dipilih.".into());
+    }
+    if gudang_kode.is_empty() {
+        return Err("Gudang wajib dipilih.".into());
+    }
+    let tgl = NaiveDate::parse_from_str(payload.tanggal_faktur.trim(), "%Y-%m-%d")
+        .map_err(|_| "Tanggal faktur tidak valid (gunakan YYYY-MM-DD).".to_string())?;
+    let jt = NaiveDate::parse_from_str(payload.jatuh_tempo.trim(), "%Y-%m-%d")
+        .map_err(|_| "Jatuh tempo tidak valid (gunakan YYYY-MM-DD).".to_string())?;
+    if jt < tgl {
+        return Err("Jatuh tempo tidak boleh sebelum tanggal faktur.".into());
+    }
+    let metode = payload.metode_pembayaran.trim();
+    if metode.is_empty() {
+        return Err("Metode pembayaran wajib dipilih.".into());
+    }
+    if payload.lines.is_empty() {
+        return Err("Tambahkan minimal satu baris item.".into());
+    }
+
+    let mut total: i64 = 0;
+    for line in &payload.lines {
+        let kode_b = line.barang_kode.trim();
+        if kode_b.is_empty() {
+            return Err("Kode barang pada baris tidak boleh kosong.".into());
+        }
+        if line.qty <= 0 {
+            return Err("Jumlah tiap baris harus lebih dari 0.".into());
+        }
+        if line.harga_satuan < 0 {
+            return Err("Harga satuan tidak valid.".into());
+        }
+        let sub = line
+            .qty
+            .checked_mul(line.harga_satuan)
+            .ok_or_else(|| "Total baris melimpahi batas.".to_string())?;
+        total = total
+            .checked_add(sub)
+            .ok_or_else(|| "Total faktur melimpahi batas.".to_string())?;
+    }
+
+    let nomor = format!("FB-{}", Utc::now().timestamp_millis());
+    let ts = now_ts();
+    let tanggal_str = tgl.format("%Y-%m-%d").to_string();
+    let jatuh_str = jt.format("%Y-%m-%d").to_string();
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "INSERT INTO pembelian (nomor, pemasok_kode, gudang_kode, tanggal_faktur, jatuh_tempo, metode_pembayaran, total, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'Dipesan', ?, ?)",
+        params![
+            &nomor,
+            pemasok_kode,
+            gudang_kode,
+            tanggal_str,
+            jatuh_str,
+            metode,
+            total,
+            ts,
+            ts
+        ],
+    )
+    .map_err(|e| {
+        if e.to_string().contains("FOREIGN KEY") {
+            "Pemasok, gudang, atau barang tidak ditemukan.".into()
+        } else if e.to_string().contains("UNIQUE") {
+            "Nomor faktur bentrok — coba simpan lagi.".into()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    for line in &payload.lines {
+        let kode_b = line.barang_kode.trim();
+        let sub = line.qty * line.harga_satuan;
+        tx.execute(
+            "INSERT INTO pembelian_line (nomor, barang_kode, qty, harga_satuan, subtotal) VALUES (?, ?, ?, ?, ?)",
+            params![&nomor, kode_b, line.qty, line.harga_satuan, sub],
+        )
+        .map_err(|e| {
+            if e.to_string().contains("FOREIGN KEY") {
+                "Salah satu kode barang tidak ditemukan.".into()
+            } else {
+                e.to_string()
+            }
+        })?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(nomor)
 }

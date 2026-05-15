@@ -93,6 +93,31 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS pembelian (
+            nomor TEXT PRIMARY KEY NOT NULL,
+            pemasok_kode TEXT NOT NULL REFERENCES pemasok(kode) ON UPDATE CASCADE,
+            gudang_kode TEXT NOT NULL REFERENCES gudang(kode) ON UPDATE CASCADE,
+            tanggal_faktur TEXT NOT NULL,
+            jatuh_tempo TEXT NOT NULL,
+            metode_pembayaran TEXT NOT NULL,
+            total INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'Dipesan',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS pembelian_line (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nomor TEXT NOT NULL REFERENCES pembelian(nomor) ON DELETE CASCADE ON UPDATE CASCADE,
+            barang_kode TEXT NOT NULL REFERENCES barang_jasa(kode) ON UPDATE CASCADE,
+            qty INTEGER NOT NULL,
+            harga_satuan INTEGER NOT NULL,
+            subtotal INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pembelian_tgl ON pembelian(tanggal_faktur);
+        CREATE INDEX IF NOT EXISTS idx_pembelian_line_nomor ON pembelian_line(nomor);
         ",
     )?;
     Ok(())

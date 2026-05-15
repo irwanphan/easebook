@@ -128,16 +128,3 @@ export const mockPenjualan: PenjualanRow[] = [
   { noFaktur: "SO-2024-001", tanggal: "2024-08-02", pelanggan: "PT Mitra Jaya", total: 12500000, status: "Lunas" },
   { noFaktur: "SO-2024-002", tanggal: "2024-08-05", pelanggan: "CV Sinar", total: 3200000, status: "Menunggu" },
 ];
-
-export type PembelianRow = {
-  noPO: string;
-  tanggal: string;
-  supplier: string;
-  total: number;
-  status: "Dipesan" | "Diterima" | "Dibatalkan";
-};
-
-export const mockPembelian: PembelianRow[] = [
-  { noPO: "PO-2024-011", tanggal: "2024-08-01", supplier: "PT Supplier Utama", total: 8700000, status: "Diterima" },
-  { noPO: "PO-2024-012", tanggal: "2024-08-06", supplier: "UD Makmur", total: 2100000, status: "Dipesan" },
-];

@@ -1141,6 +1141,243 @@ pub fn pembelian_update(
     Ok(())
 }
 
+// --- Penjualan (faktur jual) ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PenjualanListRow {
+    pub nomor: String,
+    pub tanggal_faktur: String,
+    pub pelanggan_nama: String,
+    pub salesman: String,
+    pub total: i64,
+    pub status: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PenjualanLineInput {
+    pub barang_kode: String,
+    pub qty: i64,
+    pub harga_satuan: i64,
+    pub catatan: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PenjualanInsertPayload {
+    pub pelanggan_kode: String,
+    pub gudang_kode: String,
+    pub salesman: String,
+    pub tanggal_faktur: String,
+    pub jatuh_tempo: String,
+    pub catatan_faktur: String,
+    pub lines: Vec<PenjualanLineInput>,
+}
+
+fn penjualan_validate_and_total(payload: &PenjualanInsertPayload) -> Result<(NaiveDate, NaiveDate, i64), String> {
+    let pelanggan_kode = payload.pelanggan_kode.trim();
+    let gudang_kode = payload.gudang_kode.trim();
+    if pelanggan_kode.is_empty() {
+        return Err("Pelanggan wajib dipilih.".into());
+    }
+    if gudang_kode.is_empty() {
+        return Err("Gudang wajib dipilih.".into());
+    }
+    let tgl = NaiveDate::parse_from_str(payload.tanggal_faktur.trim(), "%Y-%m-%d")
+        .map_err(|_| "Tanggal faktur tidak valid (gunakan YYYY-MM-DD).".to_string())?;
+    let jt = NaiveDate::parse_from_str(payload.jatuh_tempo.trim(), "%Y-%m-%d")
+        .map_err(|_| "Jatuh tempo tidak valid (gunakan YYYY-MM-DD).".to_string())?;
+    if jt < tgl {
+        return Err("Jatuh tempo tidak boleh sebelum tanggal faktur.".into());
+    }
+    if payload.lines.is_empty() {
+        return Err("Tambahkan minimal satu baris item.".into());
+    }
+
+    let mut total: i64 = 0;
+    for line in &payload.lines {
+        let kode_b = line.barang_kode.trim();
+        if kode_b.is_empty() {
+            return Err("Kode barang pada baris tidak boleh kosong.".into());
+        }
+        if line.qty <= 0 {
+            return Err("Jumlah tiap baris harus lebih dari 0.".into());
+        }
+        if line.harga_satuan < 0 {
+            return Err("Harga satuan tidak valid.".into());
+        }
+        let sub = line
+            .qty
+            .checked_mul(line.harga_satuan)
+            .ok_or_else(|| "Total baris melimpahi batas.".to_string())?;
+        total = total
+            .checked_add(sub)
+            .ok_or_else(|| "Total faktur melimpahi batas.".to_string())?;
+    }
+
+    Ok((tgl, jt, total))
+}
+
+/// Kurangi stok + baris mutasi keluar untuk satu baris penjualan bertipe Barang.
+fn penjualan_tx_apply_barang_stok(
+    tx: &Transaction<'_>,
+    nomor: &str,
+    kode_b: &str,
+    qty: i64,
+    gudang_kode: &str,
+    tanggal_transaksi: &str,
+    catatan: &str,
+    waktu_mutasi: i64,
+    barang_updated_at: i64,
+) -> Result<(), String> {
+    let tipe: String = match tx.query_row(
+        "SELECT tipe FROM barang_jasa WHERE lower(kode) = lower(?)",
+        params![kode_b],
+        |r| r.get(0),
+    ) {
+        Ok(s) => s,
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            return Err("Barang tidak ditemukan setelah insert baris.".into());
+        }
+        Err(e) => return Err(e.to_string()),
+    };
+    if tipe != "Barang" {
+        return Ok(());
+    }
+    let prev: i64 = tx
+        .query_row(
+            "SELECT COALESCE(stok, 0) FROM barang_jasa WHERE lower(kode) = lower(?)",
+            params![kode_b],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if prev < qty {
+        return Err(format!(
+            "Stok tidak cukup untuk {} ({}). Stok saat ini {} unit; diminta {} unit.",
+            kode_b, nomor, prev, qty
+        ));
+    }
+    let next = prev - qty;
+    tx.execute(
+        "UPDATE barang_jasa SET stok = ?, updated_at = ? WHERE lower(kode) = lower(?)",
+        params![next, barang_updated_at, kode_b],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "INSERT INTO stok_mutasi (waktu, tanggal_transaksi, barang_kode, gudang_kode, jenis, referensi, qty_masuk, qty_keluar, saldo_setelah, catatan)
+         VALUES (?, ?, ?, ?, 'PENJUALAN', ?, 0, ?, ?, ?)",
+        params![
+            waktu_mutasi,
+            tanggal_transaksi,
+            kode_b,
+            gudang_kode,
+            nomor,
+            qty,
+            next,
+            catatan
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn penjualan_list(state: State<DbState>) -> Result<Vec<PenjualanListRow>, String> {
+    with_conn(&state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT p.nomor, p.tanggal_faktur, c.nama, p.salesman, p.total, p.status
+             FROM penjualan p
+             JOIN pelanggan c ON lower(c.kode) = lower(p.pelanggan_kode)
+             ORDER BY p.created_at DESC",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(PenjualanListRow {
+                nomor: r.get(0)?,
+                tanggal_faktur: r.get(1)?,
+                pelanggan_nama: r.get(2)?,
+                salesman: r.get(3)?,
+                total: r.get(4)?,
+                status: r.get(5)?,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+#[tauri::command]
+pub fn penjualan_insert(state: State<DbState>, payload: PenjualanInsertPayload) -> Result<String, String> {
+    let (tgl, jt, total) = penjualan_validate_and_total(&payload)?;
+    let pelanggan_kode = payload.pelanggan_kode.trim();
+    let gudang_kode = payload.gudang_kode.trim();
+    let salesman = payload.salesman.trim();
+    let catatan_faktur = payload.catatan_faktur.trim();
+    let nomor = format!("FJ-{}", Utc::now().timestamp_millis());
+    let ts = now_ts();
+    let tanggal_str = tgl.format("%Y-%m-%d").to_string();
+    let jatuh_str = jt.format("%Y-%m-%d").to_string();
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "INSERT INTO penjualan (nomor, pelanggan_kode, gudang_kode, salesman, tanggal_faktur, jatuh_tempo, catatan_faktur, total, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Dipesan', ?, ?)",
+        params![
+            &nomor,
+            pelanggan_kode,
+            gudang_kode,
+            salesman,
+            tanggal_str,
+            jatuh_str,
+            catatan_faktur,
+            total,
+            ts,
+            ts
+        ],
+    )
+    .map_err(|e| {
+        if e.to_string().contains("FOREIGN KEY") {
+            "Pelanggan, gudang, atau barang tidak ditemukan.".into()
+        } else if e.to_string().contains("UNIQUE") {
+            "Nomor faktur bentrok — coba simpan lagi.".into()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    for line in &payload.lines {
+        let kode_b = line.barang_kode.trim();
+        let sub = line.qty * line.harga_satuan;
+        let line_catatan = line.catatan.trim();
+        tx.execute(
+            "INSERT INTO penjualan_line (nomor, barang_kode, qty, harga_satuan, subtotal, catatan) VALUES (?, ?, ?, ?, ?, ?)",
+            params![&nomor, kode_b, line.qty, line.harga_satuan, sub, line_catatan],
+        )
+        .map_err(|e| {
+            if e.to_string().contains("FOREIGN KEY") {
+                "Salah satu kode barang tidak ditemukan.".into()
+            } else {
+                e.to_string()
+            }
+        })?;
+        penjualan_tx_apply_barang_stok(
+            &tx,
+            &nomor,
+            kode_b,
+            line.qty,
+            gudang_kode,
+            &tanggal_str,
+            line_catatan,
+            ts,
+            ts,
+        )?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(nomor)
+}
+
 /// Bangun ulang mutasi pembelian dari seluruh faktur di basis data dan set ulang kolom `stok`
 /// untuk master bertipe Barang sesuai total pembelian (dalam urutan tanggal faktur).
 ///

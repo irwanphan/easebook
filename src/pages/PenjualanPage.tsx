@@ -1,8 +1,12 @@
+import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { mockPenjualan } from "@/data/mockData";
+import type { PenjualanListRow } from "@/data/penjualan";
+import { tauriErrorMessage } from "@/lib/tauriError";
 
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -12,52 +16,107 @@ function formatRupiah(n: number) {
   }).format(n);
 }
 
-function statusVariant(s: (typeof mockPenjualan)[number]["status"]) {
+function formatTanggal(iso: string) {
+  const d = new Date(iso + "T12:00:00");
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function statusVariant(s: string) {
   if (s === "Lunas") return "success" as const;
-  if (s === "Menunggu") return "warning" as const;
+  if (s === "Dipesan") return "processing" as const;
+  if (s === "Dibatalkan") return "delayed" as const;
   return "neutral" as const;
 }
 
 export function PenjualanPage() {
+  const navigate = useNavigate();
+  const [rows, setRows] = useState<PenjualanListRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const list = await invoke<PenjualanListRow[]>("penjualan_list");
+      setRows(list);
+    } catch (e) {
+      setLoadError(tauriErrorMessage(e));
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Penjualan"
-        description="Daftar pesanan penjualan dan faktur."
-        actions={<Button>Pesanan baru</Button>}
+        description="Faktur jual ke pelanggan — mengurangi stok barang fisik dan tercatat di pergerakan stok."
+        actions={
+          <Button type="button" onClick={() => navigate("/penjualan/tambah")}>
+            Penjualan baru
+          </Button>
+        }
       />
-      <Card className="p-0 overflow-hidden">
+
+      {loadError ? (
+        <div
+          role="alert"
+          className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        >
+          {loadError}
+        </div>
+      ) : null}
+
+      {loading ? <p className="text-sm text-zinc-500">Memuat daftar faktur…</p> : null}
+
+      <Card className="overflow-hidden p-0">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-left text-sm">
+          <table className="w-full min-w-[800px] text-left text-sm">
             <thead>
               <tr className="border-b border-zinc-100 bg-zinc-50/90 text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 <th className="px-5 py-3">No. faktur</th>
                 <th className="px-5 py-3">Tanggal</th>
                 <th className="px-5 py-3">Pelanggan</th>
+                <th className="px-5 py-3">Salesman</th>
                 <th className="px-5 py-3">Total</th>
                 <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {mockPenjualan.map((row) => (
-                <tr key={row.noFaktur} className="bg-white hover:bg-zinc-50/50">
-                  <td className="px-5 py-3 font-mono text-xs font-semibold text-brand-700">
-                    {row.noFaktur}
-                  </td>
-                  <td className="px-5 py-3 text-zinc-600">{row.tanggal}</td>
-                  <td className="px-5 py-3 font-medium text-zinc-900">{row.pelanggan}</td>
-                  <td className="px-5 py-3 font-medium text-zinc-900">{formatRupiah(row.total)}</td>
-                  <td className="px-5 py-3">
-                    <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
-                  </td>
-                  <td className="px-5 py-3 text-right">
-                    <Button variant="ghost" className="px-2 py-1 text-xs font-semibold">
-                      Detail
-                    </Button>
+              {!loading && rows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-12 text-center text-sm text-zinc-500">
+                    Belum ada faktur penjualan.{" "}
+                    <button
+                      type="button"
+                      className="font-semibold text-brand-600 hover:text-brand-700"
+                      onClick={() => navigate("/penjualan/tambah")}
+                    >
+                      Buat penjualan baru
+                    </button>
+                    .
                   </td>
                 </tr>
-              ))}
+              ) : (
+                rows.map((row) => (
+                  <tr key={row.nomor} className="bg-white hover:bg-zinc-50/50">
+                    <td className="px-5 py-3 font-mono text-xs font-semibold text-brand-700">{row.nomor}</td>
+                    <td className="px-5 py-3 text-zinc-600">{formatTanggal(row.tanggalFaktur)}</td>
+                    <td className="px-5 py-3 font-medium text-zinc-900">{row.pelangganNama}</td>
+                    <td className="px-5 py-3 text-zinc-600">{row.salesman || "—"}</td>
+                    <td className="px-5 py-3 font-medium text-zinc-900">{formatRupiah(row.total)}</td>
+                    <td className="px-5 py-3">
+                      <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

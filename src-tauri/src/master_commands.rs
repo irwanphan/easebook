@@ -2005,13 +2005,16 @@ pub struct JurnalKonfigurasiSetPayload {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct JurnalUmumListRow {
-    pub id: i64,
+    pub line_id: i64,
+    pub jurnal_id: i64,
     pub tanggal: String,
     pub jenis: String,
     pub referensi: String,
     pub catatan: String,
-    pub total_debit: i64,
-    pub total_kredit: i64,
+    pub akun_kode: String,
+    pub akun_nama: String,
+    pub debit: i64,
+    pub kredit: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2355,24 +2358,26 @@ pub fn jurnal_konfigurasi_set(
 pub fn jurnal_umum_list(state: State<DbState>) -> Result<Vec<JurnalUmumListRow>, String> {
     with_conn(&state, |conn| {
         let mut stmt = conn.prepare(
-            "SELECT j.id, j.tanggal, j.jenis, j.referensi, j.catatan,
-                    COALESCE(SUM(l.debit), 0) AS total_debit,
-                    COALESCE(SUM(l.kredit), 0) AS total_kredit
-             FROM jurnal_umum j
-             LEFT JOIN jurnal_umum_line l ON l.jurnal_id = j.id
-             GROUP BY j.id
-             ORDER BY j.id DESC
-             LIMIT 200",
+            "SELECT l.id, j.id, j.tanggal, j.jenis, j.referensi, j.catatan,
+                    l.akun_kode, a.nama, l.debit, l.kredit
+             FROM jurnal_umum_line l
+             INNER JOIN jurnal_umum j ON j.id = l.jurnal_id
+             INNER JOIN akun_keuangan a ON lower(a.kode) = lower(l.akun_kode)
+             ORDER BY j.id DESC, l.debit DESC, l.kredit DESC, l.id ASC
+             LIMIT 400",
         )?;
         let rows = stmt.query_map([], |r| {
             Ok(JurnalUmumListRow {
-                id: r.get(0)?,
-                tanggal: r.get(1)?,
-                jenis: r.get(2)?,
-                referensi: r.get(3)?,
-                catatan: r.get(4)?,
-                total_debit: r.get(5)?,
-                total_kredit: r.get(6)?,
+                line_id: r.get(0)?,
+                jurnal_id: r.get(1)?,
+                tanggal: r.get(2)?,
+                jenis: r.get(3)?,
+                referensi: r.get(4)?,
+                catatan: r.get(5)?,
+                akun_kode: r.get(6)?,
+                akun_nama: r.get(7)?,
+                debit: r.get(8)?,
+                kredit: r.get(9)?,
             })
         })?;
         rows.collect()

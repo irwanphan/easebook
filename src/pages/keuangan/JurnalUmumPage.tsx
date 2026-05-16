@@ -511,7 +511,9 @@ export function JurnalUmumPage() {
         <div className="p-6 border-b border-zinc-100 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold text-zinc-900">Riwayat jurnal</h2>
-            <p className="mt-1 text-sm text-zinc-500">Menampilkan jurnal terakhir yang tersimpan.</p>
+            <p className="mt-1 text-sm text-zinc-500">
+              Setiap transaksi ditampilkan per baris akun (debit dan kredit terpisah).
+            </p>
           </div>
           <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={listLoading}>
             {listLoading ? "Memuat…" : "Refresh"}
@@ -519,12 +521,13 @@ export function JurnalUmumPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-left text-sm">
+          <table className="w-full min-w-[960px] text-left text-sm">
             <thead>
               <tr className="border-b border-zinc-100 bg-zinc-50/90 text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 <th className="px-5 py-3">Tanggal</th>
                 <th className="px-5 py-3">Jenis</th>
                 <th className="px-5 py-3">Referensi</th>
+                <th className="px-5 py-3">Akun</th>
                 <th className="px-5 py-3">Catatan</th>
                 <th className="px-5 py-3 text-right">Debit</th>
                 <th className="px-5 py-3 text-right">Kredit</th>
@@ -533,27 +536,37 @@ export function JurnalUmumPage() {
             <tbody className="divide-y divide-zinc-100">
               {listLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-sm text-zinc-500">
+                  <td colSpan={7} className="px-5 py-10 text-center text-sm text-zinc-500">
                     Memuat jurnal…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center text-sm text-zinc-500">
+                  <td colSpan={7} className="px-5 py-12 text-center text-sm text-zinc-500">
                     Belum ada jurnal.
                   </td>
                 </tr>
               ) : (
                 rows.map((r) => (
-                  <tr key={r.id} className="bg-white hover:bg-zinc-50/50">
+                  <tr key={r.lineId} className="bg-white hover:bg-zinc-50/50">
                     <td className="px-5 py-3 text-zinc-600">{r.tanggal}</td>
                     <td className="px-5 py-3">
                       <Badge variant={jenisBadgeVariant(r.jenis)}>{jenisLabel(r.jenis)}</Badge>
                     </td>
-                    <td className="px-5 py-3 font-mono text-xs font-semibold text-brand-700">{r.referensi || "—"}</td>
+                    <td className="px-5 py-3 font-mono text-xs font-semibold text-brand-700">
+                      {r.referensi || "—"}
+                    </td>
+                    <td className="px-5 py-3 text-zinc-800">
+                      <span className="font-mono text-xs font-medium">{r.akunKode}</span>
+                      <span className="text-zinc-500"> — {r.akunNama}</span>
+                    </td>
                     <td className="px-5 py-3 text-zinc-600">{r.catatan || "—"}</td>
-                    <td className="px-5 py-3 text-right font-medium text-zinc-900">{formatRupiah(r.totalDebit)}</td>
-                    <td className="px-5 py-3 text-right font-medium text-zinc-900">{formatRupiah(r.totalKredit)}</td>
+                    <td className="px-5 py-3 text-right font-medium text-zinc-900">
+                      {r.debit > 0 ? formatRupiah(r.debit) : "—"}
+                    </td>
+                    <td className="px-5 py-3 text-right font-medium text-zinc-900">
+                      {r.kredit > 0 ? formatRupiah(r.kredit) : "—"}
+                    </td>
                   </tr>
                 ))
               )}

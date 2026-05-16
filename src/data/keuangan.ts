@@ -101,14 +101,18 @@ export type JurnalJenisTransaksi =
   | "PENGELUARAN_LAINNYA"
   | "TRANSFER";
 
+/** Satu baris debit atau kredit dalam jurnal umum. */
 export type JurnalUmumListRow = {
-  id: number;
+  lineId: number;
+  jurnalId: number;
   tanggal: string;
   jenis: string;
   referensi: string;
   catatan: string;
-  totalDebit: number;
-  totalKredit: number;
+  akunKode: string;
+  akunNama: string;
+  debit: number;
+  kredit: number;
 };
 
 export type JurnalTransaksiInsertPayload = {

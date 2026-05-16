@@ -34,14 +34,29 @@ function isJatuhTempoLewat(jatuhTempo: string) {
   return jatuhTempo < todayLocalISODate();
 }
 
+type FilterTampilan = "semua" | "jatuh_tempo";
+
+const inputClass =
+  "rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
+
 export function KeuanganPelunasanPiutangPage() {
   const [rows, setRows] = useState<PiutangBelumLunasRow[]>([]);
+  const [filter, setFilter] = useState<FilterTampilan>("semua");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [selected, setSelected] = useState<PiutangBelumLunasRow | null>(null);
 
-  const totalPiutang = useMemo(() => rows.reduce((s, r) => s + r.total, 0), [rows]);
+  const filteredRows = useMemo(() => {
+    if (filter === "jatuh_tempo") {
+      return rows.filter((r) => isJatuhTempoLewat(r.jatuhTempo));
+    }
+    return rows;
+  }, [rows, filter]);
+
+  const totalPiutang = useMemo(() => filteredRows.reduce((s, r) => s + r.total, 0), [filteredRows]);
+
+  const jatuhTempoCount = useMemo(() => rows.filter((r) => isJatuhTempoLewat(r.jatuhTempo)).length, [rows]);
 
   const fetchRows = useCallback(async () => {
     setLoading(true);
@@ -67,8 +82,8 @@ export function KeuanganPelunasanPiutangPage() {
   }
 
   function openPelunasanBaru() {
-    if (rows.length === 0) return;
-    openPelunasan(rows[0]);
+    if (filteredRows.length === 0) return;
+    openPelunasan(filteredRows[0]);
   }
 
   return (
@@ -93,17 +108,35 @@ export function KeuanganPelunasanPiutangPage() {
                 ? "Memuat…"
                 : rows.length === 0
                   ? "Tidak ada piutang terbuka."
-                  : `${rows.length} faktur · total ${formatRupiah(totalPiutang)}`}
+                  : filter === "jatuh_tempo" && filteredRows.length === 0
+                    ? `Tidak ada faktur jatuh tempo (${rows.length} piutang lain masih dalam tempo).`
+                    : `${filteredRows.length} faktur ditampilkan · total ${formatRupiah(totalPiutang)}`}
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
-            <Button type="button" onClick={() => openPelunasanBaru()} disabled={loading || rows.length === 0}>
+            <Button type="button" onClick={() => openPelunasanBaru()} disabled={loading || filteredRows.length === 0}>
               Buat pelunasan
             </Button>
             <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
               {loading ? "Memuat…" : "Refresh"}
             </Button>
           </div>
+        </div>
+
+        <div className="border-b border-zinc-100 px-6 pb-5">
+          <label htmlFor="pp-filter" className="block text-sm font-medium text-zinc-700">
+            Tampilkan
+          </label>
+          <select
+            id="pp-filter"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value as FilterTampilan)}
+            className={`${inputClass} mt-1 max-w-xs`}
+            disabled={loading}
+          >
+            <option value="semua">Semua piutang belum lunas</option>
+            <option value="jatuh_tempo">Hanya jatuh tempo lewat ({jatuhTempoCount})</option>
+          </select>
         </div>
 
         <div className="overflow-x-auto">
@@ -132,8 +165,14 @@ export function KeuanganPelunasanPiutangPage() {
                     Semua faktur sudah lunas atau penjualan dicatat tunai saat faktur dibuat.
                   </td>
                 </tr>
+              ) : filteredRows.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-5 py-12 text-center text-sm text-zinc-500">
+                    Tidak ada faktur jatuh tempo. Ubah filter ke &quot;Semua piutang&quot; untuk melihat faktur lain.
+                  </td>
+                </tr>
               ) : (
-                rows.map((row) => {
+                filteredRows.map((row) => {
                   const lewat = isJatuhTempoLewat(row.jatuhTempo);
                   return (
                     <tr key={row.nomor} className="bg-white hover:bg-zinc-50/50">

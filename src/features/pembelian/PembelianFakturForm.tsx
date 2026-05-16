@@ -8,9 +8,11 @@ import { Button } from "@/components/ui/Button";
 import {
   METODE_PEMBAYARAN_PEMBELIAN,
   pembelianFakturTotal,
+  pembelianHitungPajakPpn,
   pembelianLineSubtotal,
   type PembelianDetail,
 } from "@/data/pembelian";
+import { loadPengaturanTransaksi } from "@/features/pengaturan/pengaturanTransaksiStorage";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { useGudang } from "@/features/gudang/GudangContext";
 import { usePemasok } from "@/features/pemasok/PemasokContext";
@@ -68,8 +70,8 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
   const [metodePembayaran, setMetodePembayaran] = useState<string>("TUNAI");
   const [lines, setLines] = useState<LineDraft[]>(() => [newLine()]);
   const [diskonFaktur, setDiskonFaktur] = useState(0);
-  const [pajak, setPajak] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const ppnPersen = loadPengaturanTransaksi().ppnPersen;
   const [hydrating, setHydrating] = useState(mode === "edit");
 
   const pf = mode === "edit" ? "fbe" : "fb";
@@ -102,7 +104,6 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
         setJatuhTempo(d.jatuhTempo);
         setMetodePembayaran(d.metodePembayaran || "LAINNYA");
         setDiskonFaktur(d.diskonFaktur ?? 0);
-        setPajak(d.pajak ?? 0);
         setLines(
           d.lines.length > 0
             ? d.lines.map((l) => ({
@@ -170,6 +171,11 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
     [lines],
   );
 
+  const pajak = useMemo(
+    () => pembelianHitungPajakPpn(subtotalBarang, diskonFaktur, ppnPersen),
+    [subtotalBarang, diskonFaktur, ppnPersen],
+  );
+
   const grandTotal = useMemo(
     () => pembelianFakturTotal(subtotalBarang, diskonFaktur, pajak),
     [subtotalBarang, diskonFaktur, pajak],
@@ -233,13 +239,9 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
     }
 
     const diskonFakturVal = Math.round(diskonFaktur);
-    const pajakVal = Math.round(pajak);
+    const pajakVal = pembelianHitungPajakPpn(subtotalBarang, diskonFakturVal, ppnPersen);
     if (diskonFakturVal < 0) {
       setError("Diskon faktur tidak valid.");
-      return;
-    }
-    if (pajakVal < 0) {
-      setError("Pajak tidak valid.");
       return;
     }
     if (diskonFakturVal > subtotalBarang) {
@@ -550,19 +552,8 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
               />
             </div>
             <div className="flex items-center justify-between gap-4 text-sm">
-              <label htmlFor={`${pf}-pajak`} className="shrink-0 text-zinc-500">
-                Pajak
-              </label>
-              <input
-                id={`${pf}-pajak`}
-                type="number"
-                min={0}
-                step={1}
-                value={pajak}
-                onChange={(e) => setPajak(Math.max(0, Math.round(Number(e.target.value) || 0)))}
-                className={`${inputClass} mt-0 w-36 text-right`}
-                disabled={hydrating}
-              />
+              <span className="shrink-0 text-zinc-500">Pajak (PPN {ppnPersen}%)</span>
+              <span className="font-medium text-zinc-900">{formatRupiah(pajak)}</span>
             </div>
             <div className="flex items-center justify-between gap-4 border-t border-zinc-100 pt-3">
               <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">Total faktur</span>

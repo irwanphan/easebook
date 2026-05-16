@@ -40,6 +40,19 @@ export function pembelianLineSubtotal(qty: number, hargaSatuan: number, diskon: 
   return q * Math.max(0, h - d);
 }
 
+/** Pajak PPN: (subtotal barang − diskon faktur) × tarif%. */
+export function pembelianHitungPajakPpn(
+  subtotalBarang: number,
+  diskonFaktur: number,
+  ppnPersen: number,
+): number {
+  const sub = Math.max(0, Math.round(subtotalBarang));
+  const diskon = Math.min(Math.max(0, Math.round(diskonFaktur)), sub);
+  const dasar = sub - diskon;
+  const rate = Math.min(100, Math.max(0, ppnPersen));
+  return Math.round((dasar * rate) / 100);
+}
+
 /** Total faktur: subtotal barang − diskon faktur + pajak. */
 export function pembelianFakturTotal(
   subtotalBarang: number,

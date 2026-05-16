@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -7,6 +7,28 @@ import { Badge } from "@/components/ui/Badge";
 import { JurnalTambahModal } from "@/features/keuangan/JurnalTambahModal";
 import type { AkunKeuanganRow, JurnalUmumListRow } from "@/data/keuangan";
 import { tauriErrorMessage } from "@/lib/tauriError";
+
+const inputClass =
+  "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
+
+function toIsoDate(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Tanggal 1 bulan berjalan (YYYY-MM-DD). */
+function defaultTanggalDariBulanIni() {
+  const now = new Date();
+  return toIsoDate(new Date(now.getFullYear(), now.getMonth(), 1));
+}
+
+/** Tanggal terakhir bulan berjalan (YYYY-MM-DD). */
+function defaultTanggalSampaiBulanIni() {
+  const now = new Date();
+  return toIsoDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+}
 
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -48,8 +70,15 @@ export function JurnalUmumPage() {
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
+  const [tanggalDari, setTanggalDari] = useState(defaultTanggalDariBulanIni);
+  const [tanggalSampai, setTanggalSampai] = useState(defaultTanggalSampaiBulanIni);
   const [rows, setRows] = useState<JurnalUmumListRow[]>([]);
   const [listLoading, setListLoading] = useState(true);
+
+  const rentangInvalid = useMemo(() => {
+    if (!tanggalDari || !tanggalSampai) return true;
+    return tanggalSampai < tanggalDari;
+  }, [tanggalDari, tanggalSampai]);
 
   const fetchAkun = useCallback(async () => {
     setAkunLoading(true);
@@ -66,10 +95,18 @@ export function JurnalUmumPage() {
   }, []);
 
   const fetchRows = useCallback(async () => {
+    if (rentangInvalid) {
+      setError("Tanggal akhir tidak boleh sebelum tanggal mulai.");
+      setRows([]);
+      return;
+    }
     setListLoading(true);
     setError(null);
     try {
-      const list = await invoke<JurnalUmumListRow[]>("jurnal_umum_list");
+      const list = await invoke<JurnalUmumListRow[]>("jurnal_umum_list", {
+        tanggalDari: tanggalDari.trim(),
+        tanggalSampai: tanggalSampai.trim(),
+      });
       setRows(list);
     } catch (e) {
       setError(tauriErrorMessage(e));
@@ -77,12 +114,12 @@ export function JurnalUmumPage() {
     } finally {
       setListLoading(false);
     }
-  }, []);
+  }, [rentangInvalid, tanggalDari, tanggalSampai]);
 
   useEffect(() => {
     void fetchAkun();
     void fetchRows();
-  }, [fetchAkun, fetchRows]);
+  }, []);
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -109,10 +146,46 @@ export function JurnalUmumPage() {
             <Button type="button" onClick={() => setModalOpen(true)} disabled={akunLoading}>
               Tambah jurnal
             </Button>
-            <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={listLoading}>
+            <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={listLoading || rentangInvalid}>
               {listLoading ? "Memuat…" : "Refresh"}
             </Button>
           </div>
+        </div>
+
+        <div className="border-b border-zinc-100 px-6 pb-5">
+          <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-end">
+            <div>
+              <label htmlFor="jurnal-dari" className="block text-sm font-medium text-zinc-700">
+                Tanggal mulai
+              </label>
+              <input
+                id="jurnal-dari"
+                type="date"
+                value={tanggalDari}
+                onChange={(e) => setTanggalDari(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label htmlFor="jurnal-sampai" className="block text-sm font-medium text-zinc-700">
+                Tanggal akhir
+              </label>
+              <input
+                id="jurnal-sampai"
+                type="date"
+                value={tanggalSampai}
+                min={tanggalDari}
+                onChange={(e) => setTanggalSampai(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+            <Button type="button" className="w-full lg:w-auto h-11 flex self-end" disabled={listLoading || rentangInvalid} onClick={() => void fetchRows()}>
+              Terapkan filter
+            </Button>
+          </div>
+          {rentangInvalid ? (
+            <p className="mt-2 text-sm text-amber-700">Tanggal akhir harus sama atau setelah tanggal mulai.</p>
+          ) : null}
         </div>
 
         <div className="overflow-x-auto">
@@ -138,7 +211,7 @@ export function JurnalUmumPage() {
               ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-5 py-12 text-center text-sm text-zinc-500">
-                    Belum ada jurnal.
+                    Tidak ada jurnal pada rentang {tanggalDari} s/d {tanggalSampai}.
                   </td>
                 </tr>
               ) : (

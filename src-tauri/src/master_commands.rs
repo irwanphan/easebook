@@ -2355,19 +2355,34 @@ pub fn jurnal_konfigurasi_set(
 }
 
 #[tauri::command]
-pub fn jurnal_umum_list(state: State<DbState>) -> Result<Vec<JurnalUmumListRow>, String> {
+pub fn jurnal_umum_list(
+    state: State<DbState>,
+    tanggal_dari: String,
+    tanggal_sampai: String,
+) -> Result<Vec<JurnalUmumListRow>, String> {
+    let dari = tanggal_dari.trim();
+    let sampai = tanggal_sampai.trim();
+    let d1 = NaiveDate::parse_from_str(dari, "%Y-%m-%d")
+        .map_err(|_| "Tanggal mulai tidak valid (YYYY-MM-DD).".to_string())?;
+    let d2 = NaiveDate::parse_from_str(sampai, "%Y-%m-%d")
+        .map_err(|_| "Tanggal akhir tidak valid (YYYY-MM-DD).".to_string())?;
+    if d2 < d1 {
+        return Err("Tanggal akhir tidak boleh sebelum tanggal mulai.".into());
+    }
+
     with_conn(&state, |conn| {
         let mut stmt = conn.prepare(
-            "             SELECT l.id, j.id, j.tanggal, j.jenis, j.referensi,
+            "SELECT l.id, j.id, j.tanggal, j.jenis, j.referensi,
                     COALESCE(NULLIF(TRIM(l.catatan), ''), j.catatan),
                     l.akun_kode, a.nama, l.debit, l.kredit
              FROM jurnal_umum_line l
              INNER JOIN jurnal_umum j ON j.id = l.jurnal_id
              INNER JOIN akun_keuangan a ON lower(a.kode) = lower(l.akun_kode)
-             ORDER BY j.id DESC, l.debit DESC, l.kredit DESC, l.id ASC
-             LIMIT 400",
+             WHERE j.tanggal >= ? AND j.tanggal <= ?
+             ORDER BY j.tanggal DESC, j.id DESC, l.debit DESC, l.kredit DESC, l.id ASC
+             LIMIT 2000",
         )?;
-        let rows = stmt.query_map([], |r| {
+        let rows = stmt.query_map(params![dari, sampai], |r| {
             Ok(JurnalUmumListRow {
                 line_id: r.get(0)?,
                 jurnal_id: r.get(1)?,

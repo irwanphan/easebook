@@ -6,9 +6,11 @@ type ModalProps = {
   children: ReactNode;
   onClose: () => void;
   footer?: ReactNode;
+  /** Kelas tambahan pada panel dialog (mis. lebar). */
+  panelClassName?: string;
 };
 
-export function Modal({ open, title, children, onClose, footer }: ModalProps) {
+export function Modal({ open, title, children, onClose, footer, panelClassName = "" }: ModalProps) {
   useEffect(() => {
     if (!open) return;
     function onKey(ev: KeyboardEvent) {
@@ -32,7 +34,7 @@ export function Modal({ open, title, children, onClose, footer }: ModalProps) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
-        className="relative z-10 flex max-h-[min(90vh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-zinc-200/90 bg-white shadow-xl shadow-zinc-950/15"
+        className={`relative z-10 flex max-h-[min(90vh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-zinc-200/90 bg-white shadow-xl shadow-zinc-950/15 ${panelClassName}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b border-zinc-100 px-5 py-4">

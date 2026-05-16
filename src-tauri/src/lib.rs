@@ -70,6 +70,7 @@ pub fn run() {
             master_commands::jurnal_konfigurasi_set,
             master_commands::jurnal_umum_list,
             master_commands::jurnal_umum_insert_transaksi,
+            master_commands::jurnal_umum_insert_manual,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

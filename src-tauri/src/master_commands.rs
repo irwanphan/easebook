@@ -2358,7 +2358,8 @@ pub fn jurnal_konfigurasi_set(
 pub fn jurnal_umum_list(state: State<DbState>) -> Result<Vec<JurnalUmumListRow>, String> {
     with_conn(&state, |conn| {
         let mut stmt = conn.prepare(
-            "SELECT l.id, j.id, j.tanggal, j.jenis, j.referensi, j.catatan,
+            "             SELECT l.id, j.id, j.tanggal, j.jenis, j.referensi,
+                    COALESCE(NULLIF(TRIM(l.catatan), ''), j.catatan),
                     l.akun_kode, a.nama, l.debit, l.kredit
              FROM jurnal_umum_line l
              INNER JOIN jurnal_umum j ON j.id = l.jurnal_id
@@ -2532,6 +2533,118 @@ pub fn jurnal_umum_insert_transaksi(
             "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
              VALUES (?, ?, ?, ?, '')",
             params![jurnal_id, akun_kode, debit, kredit],
+        )
+        .map_err(|e| e.to_string())?;
+        akun_kas_apply_saldo_delta(&tx, akun_kode, *debit, *kredit, ts)?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(format!("Jurnal tersimpan (ID: {}).", jurnal_id))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JurnalManualLineInput {
+    pub akun_kode: String,
+    pub debit: i64,
+    pub kredit: i64,
+    pub catatan: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JurnalManualInsertPayload {
+    pub tanggal: String,
+    pub referensi: String,
+    pub catatan: String,
+    pub lines: Vec<JurnalManualLineInput>,
+}
+
+fn validate_akun_exists(tx: &Transaction<'_>, kode: &str) -> Result<(), String> {
+    let n: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM akun_keuangan WHERE lower(kode) = lower(?)",
+            params![kode],
+            |r| r.get(0),
+        )
+        .map_err(|_| format!("Akun '{kode}' tidak ditemukan."))?;
+    if n == 0 {
+        return Err(format!("Akun '{kode}' tidak ditemukan."));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn jurnal_umum_insert_manual(
+    state: State<DbState>,
+    payload: JurnalManualInsertPayload,
+) -> Result<String, String> {
+    let tanggal = payload.tanggal.trim();
+    let referensi = payload.referensi.trim();
+    let catatan_header = payload.catatan.trim();
+
+    if tanggal.is_empty() {
+        return Err("Tanggal wajib diisi.".into());
+    }
+    NaiveDate::parse_from_str(tanggal, "%Y-%m-%d")
+        .map_err(|_| "Tanggal tidak valid (gunakan YYYY-MM-DD).".to_string())?;
+    if referensi.is_empty() {
+        return Err("Referensi wajib diisi.".into());
+    }
+    if payload.lines.is_empty() {
+        return Err("Minimal satu baris jurnal.".into());
+    }
+
+    let mut normalized: Vec<(String, i64, i64, String)> = Vec::new();
+    for line in &payload.lines {
+        let akun = line.akun_kode.trim().to_uppercase();
+        if akun.is_empty() {
+            return Err("Setiap baris harus memilih akun.".into());
+        }
+        let debit = line.debit;
+        let kredit = line.kredit;
+        if debit < 0 || kredit < 0 {
+            return Err("Nilai debit/kredit tidak boleh negatif.".into());
+        }
+        if (debit > 0 && kredit > 0) || (debit == 0 && kredit == 0) {
+            return Err("Setiap baris hanya boleh berisi debit atau kredit (salah satu > 0).".into());
+        }
+        let line_catatan = line.catatan.trim();
+        normalized.push((akun, debit, kredit, line_catatan.to_string()));
+    }
+
+    let total_debit: i64 = normalized.iter().map(|(_, d, _, _)| *d).sum();
+    let total_kredit: i64 = normalized.iter().map(|(_, _, k, _)| *k).sum();
+    if total_debit <= 0 || total_kredit <= 0 {
+        return Err("Total debit dan kredit harus lebih dari 0.".into());
+    }
+    if total_debit != total_kredit {
+        return Err(format!(
+            "Jurnal tidak balance: debit {total_debit} ≠ kredit {total_kredit}."
+        ));
+    }
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let ts = now_ts();
+
+    for (akun, _, _, _) in &normalized {
+        validate_akun_exists(&tx, akun)?;
+    }
+
+    tx.execute(
+        "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
+         VALUES (?, 'MANUAL', ?, ?, ?, ?)",
+        params![tanggal, referensi, catatan_header, ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    let jurnal_id = tx.last_insert_rowid();
+
+    for (akun_kode, debit, kredit, line_catatan) in &normalized {
+        tx.execute(
+            "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+             VALUES (?, ?, ?, ?, ?)",
+            params![jurnal_id, akun_kode, debit, kredit, line_catatan],
         )
         .map_err(|e| e.to_string())?;
         akun_kas_apply_saldo_delta(&tx, akun_kode, *debit, *kredit, ts)?;

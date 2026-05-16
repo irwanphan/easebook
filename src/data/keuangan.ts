@@ -125,3 +125,17 @@ export type JurnalTransaksiInsertPayload = {
   kasSumberKode?: string | null;
   kasTargetKode?: string | null;
 };
+
+export type JurnalManualLinePayload = {
+  akunKode: string;
+  debit: number;
+  kredit: number;
+  catatan: string;
+};
+
+export type JurnalManualInsertPayload = {
+  tanggal: string;
+  referensi: string;
+  catatan: string;
+  lines: JurnalManualLinePayload[];
+};

@@ -59,6 +59,8 @@ pub fn run() {
             master_commands::pembelian_update,
             master_commands::penjualan_list,
             master_commands::penjualan_insert,
+            master_commands::piutang_belum_lunas_list,
+            master_commands::pelunasan_piutang_apply,
             master_commands::stok_mutasi_for_barang,
             master_commands::stok_mutasi_laporan,
             master_commands::stok_mutasi_sinkron_dari_pembelian,

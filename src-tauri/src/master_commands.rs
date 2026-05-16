@@ -1691,6 +1691,173 @@ pub fn penjualan_insert(state: State<DbState>, payload: PenjualanInsertPayload) 
     Ok(nomor)
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PiutangBelumLunasRow {
+    pub nomor: String,
+    pub tanggal_faktur: String,
+    pub jatuh_tempo: String,
+    pub pelanggan_kode: String,
+    pub pelanggan_nama: String,
+    pub total: i64,
+    pub catatan_faktur: String,
+}
+
+#[tauri::command]
+pub fn piutang_belum_lunas_list(state: State<DbState>) -> Result<Vec<PiutangBelumLunasRow>, String> {
+    with_conn(&state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT p.nomor, p.tanggal_faktur, p.jatuh_tempo, p.pelanggan_kode, c.nama, p.total, p.catatan_faktur
+             FROM penjualan p
+             INNER JOIN pelanggan c ON lower(c.kode) = lower(p.pelanggan_kode)
+             WHERE (p.akun_kas_kode IS NULL OR trim(p.akun_kas_kode) = '')
+               AND upper(trim(p.status)) != 'LUNAS'
+             ORDER BY p.jatuh_tempo ASC, p.tanggal_faktur ASC, p.nomor ASC",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(PiutangBelumLunasRow {
+                nomor: r.get(0)?,
+                tanggal_faktur: r.get(1)?,
+                jatuh_tempo: r.get(2)?,
+                pelanggan_kode: r.get(3)?,
+                pelanggan_nama: r.get(4)?,
+                total: r.get(5)?,
+                catatan_faktur: r.get(6)?,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PelunasanPiutangPayload {
+    pub nomor_faktur: String,
+    pub tanggal: String,
+    pub kas_kode: String,
+    pub jumlah: i64,
+    pub catatan: String,
+}
+
+/// Jurnal pelunasan piutang: D kas, K piutang.
+fn pelunasan_piutang_tx_post_jurnal(
+    tx: &Transaction<'_>,
+    tanggal: &str,
+    referensi: &str,
+    pelanggan_kode: &str,
+    jumlah: i64,
+    kas_kode: &str,
+    catatan_extra: &str,
+    ts: i64,
+) -> Result<(), String> {
+    if jumlah <= 0 {
+        return Err("Jumlah pelunasan harus lebih dari 0.".into());
+    }
+    konfigurasi_ensure_row(tx, ts)?;
+    let cfg = konfigurasi_get_row(tx)?;
+    let akun_piutang = cfg
+        .akun_piutang
+        .ok_or_else(|| "Konfigurasi akun piutang belum diatur (Konfigurasi akun jurnal).".to_string())?;
+    validate_akun_kas(tx, kas_kode)?;
+
+    let mut catatan = format!("Pelunasan piutang faktur {referensi} — pelanggan {pelanggan_kode}");
+    if !catatan_extra.is_empty() {
+        catatan.push_str(" — ");
+        catatan.push_str(catatan_extra);
+    }
+
+    tx.execute(
+        "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
+         VALUES (?, 'PELUNASAN_PIUTANG', ?, ?, ?, ?)",
+        params![tanggal, referensi, catatan, ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    let jurnal_id = tx.last_insert_rowid();
+
+    let lines = [(kas_kode, jumlah, 0_i64), (akun_piutang.as_str(), 0_i64, jumlah)];
+    for (akun_kode, debit, kredit) in lines {
+        tx.execute(
+            "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+             VALUES (?, ?, ?, ?, '')",
+            params![jurnal_id, akun_kode, debit, kredit],
+        )
+        .map_err(|e| e.to_string())?;
+        akun_kas_apply_saldo_delta(tx, akun_kode, debit, kredit, ts)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pelunasan_piutang_apply(
+    state: State<DbState>,
+    payload: PelunasanPiutangPayload,
+) -> Result<String, String> {
+    let nomor = payload.nomor_faktur.trim();
+    let tanggal = payload.tanggal.trim();
+    let kas_kode = payload.kas_kode.trim().to_uppercase();
+    let jumlah = payload.jumlah;
+    let catatan = payload.catatan.trim();
+
+    if nomor.is_empty() {
+        return Err("Nomor faktur wajib diisi.".into());
+    }
+    if tanggal.is_empty() {
+        return Err("Tanggal pelunasan wajib diisi.".into());
+    }
+    NaiveDate::parse_from_str(tanggal, "%Y-%m-%d")
+        .map_err(|_| "Tanggal tidak valid (gunakan YYYY-MM-DD).".to_string())?;
+    if kas_kode.is_empty() {
+        return Err("Pilih akun kas penerimaan.".into());
+    }
+    if jumlah <= 0 {
+        return Err("Jumlah pelunasan harus lebih dari 0.".into());
+    }
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let ts = now_ts();
+
+    let (pelanggan_kode, total, sudah_lunas): (String, i64, bool) = tx
+        .query_row(
+            "SELECT pelanggan_kode, total,
+                    CASE WHEN akun_kas_kode IS NOT NULL AND trim(akun_kas_kode) != '' THEN 1
+                         WHEN upper(trim(status)) = 'LUNAS' THEN 1 ELSE 0 END
+             FROM penjualan WHERE nomor = ?",
+            params![nomor],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0)),
+        )
+        .map_err(|_| format!("Faktur penjualan '{nomor}' tidak ditemukan."))?;
+
+    if sudah_lunas {
+        return Err(format!("Faktur '{nomor}' sudah lunas atau bukan piutang."));
+    }
+    if jumlah != total {
+        return Err(format!(
+            "Pelunasan penuh diperlukan: jumlah harus sama dengan total faktur ({total})."
+        ));
+    }
+
+    pelunasan_piutang_tx_post_jurnal(
+        &tx,
+        tanggal,
+        nomor,
+        pelanggan_kode.trim(),
+        jumlah,
+        &kas_kode,
+        catatan,
+        ts,
+    )?;
+
+    tx.execute(
+        "UPDATE penjualan SET akun_kas_kode = ?, status = 'Lunas', updated_at = ? WHERE nomor = ?",
+        params![kas_kode, ts, nomor],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(format!("Pelunasan faktur {nomor} tercatat."))
+}
+
 /// Bangun ulang mutasi pembelian dari seluruh faktur di basis data dan set ulang kolom `stok`
 /// untuk master bertipe Barang sesuai total pembelian (dalam urutan tanggal faktur).
 ///

@@ -2,6 +2,7 @@
 
 mod db;
 mod master_commands;
+mod seed_akun_keuangan;
 
 use std::path::PathBuf;
 use tauri::Manager;
@@ -22,6 +23,9 @@ pub fn run() {
             let mut conn = db::open_connection(&db_path).expect("open sqlite");
             db::migrate(&conn).expect("db migrate");
             db::seed_if_empty(&mut conn).expect("db seed");
+            let ts = chrono::Utc::now().timestamp();
+            seed_akun_keuangan::seed_akun_keuangan_if_empty(&mut conn, ts)
+                .expect("seed akun keuangan");
             drop(conn);
             app.manage(DbState { path: db_path });
             Ok(())

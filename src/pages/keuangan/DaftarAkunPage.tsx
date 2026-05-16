@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { AkunKeuanganFormModal } from "@/features/keuangan/AkunKeuanganFormModal";
 import type { AkunKeuanganRow } from "@/data/keuangan";
-import { labelKelompokLr } from "@/data/keuangan";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { groupAkunByKelompok } from "@/lib/akunKeuanganDisplay";
 
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -43,6 +43,8 @@ export function DaftarAkunPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const sections = useMemo(() => groupAkunByKelompok(rows), [rows]);
 
   const openCreate = useCallback(() => {
     setEditingRow(null);
@@ -80,7 +82,7 @@ export function DaftarAkunPage() {
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Daftar akun"
-        description="Chart of accounts: kode, nama, induk, kelompok laba rugi. Centang akun kas untuk akun yang saldonya dilacak dari jurnal."
+        description="Chart of accounts dikelompokkan seperti TokoPro: aktiva, hutang, modal, pendapatan, dan biaya."
       />
 
       {error ? (
@@ -94,7 +96,7 @@ export function DaftarAkunPage() {
           <div>
             <h2 className="text-sm font-semibold text-zinc-900">Semua akun</h2>
             <p className="mt-1 text-sm text-zinc-500">
-              Akun kas menampilkan saldo (awal 0, berubah dari jurnal). Akun lain dipakai di jurnal umum sesuai konfigurasi.
+              Akun anak diindent (mis. 1001.1 BCA di bawah 1001 Kas Bank). Kolom norm D/K = sisi normal saldo.
             </p>
           </div>
           <Button type="button" onClick={openCreate} className="shrink-0">
@@ -103,19 +105,19 @@ export function DaftarAkunPage() {
         </div>
 
         <div className="mt-5 overflow-x-auto rounded-xl border border-zinc-100">
-          <table className="w-full min-w-[720px] text-left text-sm">
+          <table className="w-full min-w-[860px] text-left text-sm">
             <thead>
               <tr className="border-b border-zinc-100 bg-zinc-50/90 text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 <th className="px-3 py-3">Kode</th>
                 <th className="px-3 py-3">Nama akun</th>
-                <th className="px-3 py-3">Induk</th>
-                <th className="px-3 py-3">Laba rugi</th>
+                <th className="px-3 py-3 text-center">Norm</th>
+                <th className="px-3 py-3">Sub pendapatan/biaya</th>
                 <th className="px-3 py-3">Kas</th>
                 <th className="px-3 py-3 text-right">Saldo kas</th>
                 <th className="px-3 py-3 text-right">Aksi</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            <tbody>
               {loading ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-5 text-center text-sm text-zinc-500">
@@ -125,58 +127,83 @@ export function DaftarAkunPage() {
               ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-10 text-center text-sm text-zinc-500">
-                    Belum ada akun. Gunakan &quot;Tambah akun&quot; untuk menambahkan.
+                    Belum ada akun. Gunakan &quot;Tambah akun&quot; atau hapus database untuk memuat seeder standar.
                   </td>
                 </tr>
               ) : (
-                rows.map((r) => (
-                  <tr key={r.kode} className="bg-white hover:bg-zinc-50/50">
-                    <td className="px-3 py-3 font-mono text-xs font-semibold text-brand-700">{r.kode}</td>
-                    <td className="px-3 py-3 font-medium text-zinc-900">{r.nama}</td>
-                    <td className="px-3 py-3 text-xs text-zinc-600">
-                      {r.indukKode ? (
-                        <span>
-                          <span className="font-mono text-zinc-500">{r.indukKode}</span>
-                          {r.indukNama ? ` · ${r.indukNama}` : null}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-xs text-zinc-600">
-                      {r.kelompokLr ? labelKelompokLr(r.kelompokLr) : "—"}
-                    </td>
-                    <td className="px-3 py-3">
-                      {r.isAkunKas ? (
-                        <Badge variant="success">Akun kas</Badge>
-                      ) : (
-                        <span className="text-zinc-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-right font-medium text-zinc-900">
-                      {r.isAkunKas ? formatRupiah(r.saldo) : "—"}
-                    </td>
-                    <td className="px-3 py-3 text-right">
-                      <div className="flex flex-wrap justify-end gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="px-2 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-100"
-                          onClick={() => openEdit(r)}
+                sections.map((section) => (
+                  <Fragment key={section.kelompok}>
+                    <tr className="bg-zinc-100/90">
+                      <td
+                        colSpan={7}
+                        className="px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-zinc-700"
+                      >
+                        Kelompok: {section.label}
+                      </td>
+                    </tr>
+                    {section.rows.map((r) => (
+                      <tr key={r.kode} className="border-t border-zinc-50 bg-white hover:bg-zinc-50/50">
+                        <td
+                          className="px-3 py-2.5 font-mono text-xs font-semibold text-brand-700"
+                          style={{ paddingLeft: `${12 + r.depth * 20}px` }}
                         >
-                          Ubah
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
-                          onClick={() => void onDelete(r.kode)}
+                          {r.kode}
+                        </td>
+                        <td
+                          className="px-3 py-2.5 font-medium text-zinc-900"
+                          style={{ paddingLeft: `${12 + r.depth * 20}px` }}
                         >
-                          Hapus
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
+                          {r.nama}
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          {r.kolomNorm ? (
+                            <span
+                              className={`inline-flex min-w-[1.75rem] justify-center rounded-md px-1.5 py-0.5 text-xs font-bold ${
+                                r.kolomNorm === "D"
+                                  ? "bg-sky-50 text-sky-800"
+                                  : "bg-violet-50 text-violet-800"
+                              }`}
+                            >
+                              {r.kolomNorm}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-zinc-600">{r.subKelompok || "—"}</td>
+                        <td className="px-3 py-2.5">
+                          {r.isAkunKas ? (
+                            <Badge variant="success">Kas</Badge>
+                          ) : (
+                            <span className="text-zinc-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-medium text-zinc-900">
+                          {r.isAkunKas ? formatRupiah(r.saldo) : "—"}
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <div className="flex flex-wrap justify-end gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              className="px-2 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-100"
+                              onClick={() => openEdit(r)}
+                            >
+                              Ubah
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              className="px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                              onClick={() => void onDelete(r.kode)}
+                            >
+                              Hapus
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </Fragment>
                 ))
               )}
             </tbody>

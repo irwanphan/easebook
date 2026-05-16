@@ -1601,7 +1601,10 @@ pub struct AkunKeuanganRow {
     pub nama: String,
     pub induk_kode: Option<String>,
     pub induk_nama: Option<String>,
+    pub kelompok: String,
+    pub kolom_norm: String,
     pub kelompok_lr: String,
+    pub sub_kelompok: String,
     pub is_akun_kas: bool,
     pub saldo: i64,
 }
@@ -1612,7 +1615,10 @@ pub struct AkunKeuanganInsertPayload {
     pub kode: String,
     pub nama: String,
     pub induk_kode: Option<String>,
+    pub kelompok: Option<String>,
+    pub kolom_norm: Option<String>,
     pub kelompok_lr: Option<String>,
+    pub sub_kelompok: Option<String>,
     pub is_akun_kas: bool,
 }
 
@@ -1622,8 +1628,40 @@ pub struct AkunKeuanganUpdatePayload {
     pub kode: String,
     pub nama: String,
     pub induk_kode: Option<String>,
+    pub kelompok: Option<String>,
+    pub kolom_norm: Option<String>,
     pub kelompok_lr: Option<String>,
+    pub sub_kelompok: Option<String>,
     pub is_akun_kas: bool,
+}
+
+fn normalize_kelompok(raw: Option<&str>) -> String {
+    match raw.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()) {
+        Some(k)
+            if matches!(
+                k.as_str(),
+                "AKTIVA_LANCAR"
+                    | "AKTIVA_TETAP"
+                    | "HUTANG_LANCAR"
+                    | "HUTANG_JANGKA_PANJANG"
+                    | "MODAL"
+                    | "PENDAPATAN"
+                    | "BIAYA"
+            ) =>
+        {
+            k
+        }
+        Some(_) => String::new(),
+        None => String::new(),
+    }
+}
+
+fn normalize_kolom_norm(raw: Option<&str>) -> String {
+    match raw.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()) {
+        Some(k) if k == "D" || k == "K" => k,
+        Some(_) => String::new(),
+        None => String::new(),
+    }
 }
 
 fn normalize_kelompok_lr(raw: Option<&str>) -> String {
@@ -1632,6 +1670,12 @@ fn normalize_kelompok_lr(raw: Option<&str>) -> String {
         Some(_) => String::new(),
         None => String::new(),
     }
+}
+
+fn normalize_sub_kelompok(raw: Option<&str>) -> String {
+    raw.map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_default()
 }
 
 fn validate_akun_insert(
@@ -1813,11 +1857,24 @@ fn konfigurasi_get_row(tx: &Transaction<'_>) -> Result<JurnalKonfigurasiRow, Str
 pub fn akun_keuangan_list(state: State<DbState>) -> Result<Vec<AkunKeuanganRow>, String> {
     with_conn(&state, |conn| {
         let mut stmt = conn.prepare(
-            "SELECT a.kode, a.nama, a.induk_kode, p.nama, COALESCE(a.kelompok_lr, ''),
+            "SELECT a.kode, a.nama, a.induk_kode, p.nama,
+                    COALESCE(a.kelompok, ''), COALESCE(a.kolom_norm, ''),
+                    COALESCE(a.kelompok_lr, ''), COALESCE(a.sub_kelompok, ''),
                     COALESCE(a.is_akun_kas, 0), COALESCE(a.saldo, 0)
              FROM akun_keuangan a
              LEFT JOIN akun_keuangan p ON lower(p.kode) = lower(a.induk_kode)
-             ORDER BY a.kode COLLATE NOCASE ASC",
+             ORDER BY
+               CASE COALESCE(a.kelompok, '')
+                 WHEN 'AKTIVA_LANCAR' THEN 1
+                 WHEN 'AKTIVA_TETAP' THEN 2
+                 WHEN 'HUTANG_LANCAR' THEN 3
+                 WHEN 'HUTANG_JANGKA_PANJANG' THEN 4
+                 WHEN 'MODAL' THEN 5
+                 WHEN 'PENDAPATAN' THEN 6
+                 WHEN 'BIAYA' THEN 7
+                 ELSE 99
+               END,
+               a.kode COLLATE NOCASE ASC",
         )?;
         let rows = stmt.query_map([], |r| {
             Ok(AkunKeuanganRow {
@@ -1825,9 +1882,12 @@ pub fn akun_keuangan_list(state: State<DbState>) -> Result<Vec<AkunKeuanganRow>,
                 nama: r.get(1)?,
                 induk_kode: r.get(2)?,
                 induk_nama: r.get(3)?,
-                kelompok_lr: r.get(4)?,
-                is_akun_kas: r.get::<_, i64>(5)? != 0,
-                saldo: r.get(6)?,
+                kelompok: r.get(4)?,
+                kolom_norm: r.get(5)?,
+                kelompok_lr: r.get(6)?,
+                sub_kelompok: r.get(7)?,
+                is_akun_kas: r.get::<_, i64>(8)? != 0,
+                saldo: r.get(9)?,
             })
         })?;
         rows.collect()
@@ -1846,7 +1906,10 @@ pub fn akun_keuangan_insert(
         .as_ref()
         .map(|s| s.trim().to_uppercase())
         .filter(|s| !s.is_empty());
-    let kelompok = normalize_kelompok_lr(payload.kelompok_lr.as_deref());
+    let kelompok = normalize_kelompok(payload.kelompok.as_deref());
+    let kolom_norm = normalize_kolom_norm(payload.kolom_norm.as_deref());
+    let kelompok_lr = normalize_kelompok_lr(payload.kelompok_lr.as_deref());
+    let sub_kelompok = normalize_sub_kelompok(payload.sub_kelompok.as_deref());
     let is_kas = if payload.is_akun_kas { 1 } else { 0 };
 
     if kode.is_empty() {
@@ -1865,9 +1928,20 @@ pub fn akun_keuangan_insert(
         induk.as_deref(),
     )?;
     tx.execute(
-        "INSERT INTO akun_keuangan (kode, nama, induk_kode, kelompok_lr, is_akun_kas, saldo, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
-        params![kode, nama, induk, kelompok, is_kas, ts, ts],
+        "INSERT INTO akun_keuangan (kode, nama, induk_kode, kelompok, kolom_norm, kelompok_lr, sub_kelompok, is_akun_kas, saldo, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
+        params![
+            kode,
+            nama,
+            induk,
+            kelompok,
+            kolom_norm,
+            kelompok_lr,
+            sub_kelompok,
+            is_kas,
+            ts,
+            ts
+        ],
     )
     .map_err(|e| {
         if e.to_string().contains("UNIQUE") {
@@ -1894,7 +1968,10 @@ pub fn akun_keuangan_update(
         .as_ref()
         .map(|s| s.trim().to_uppercase())
         .filter(|s| !s.is_empty());
-    let kelompok = normalize_kelompok_lr(payload.kelompok_lr.as_deref());
+    let kelompok = normalize_kelompok(payload.kelompok.as_deref());
+    let kolom_norm = normalize_kolom_norm(payload.kolom_norm.as_deref());
+    let kelompok_lr = normalize_kelompok_lr(payload.kelompok_lr.as_deref());
+    let sub_kelompok = normalize_sub_kelompok(payload.sub_kelompok.as_deref());
     let is_kas = if payload.is_akun_kas { 1 } else { 0 };
 
     if kode.is_empty() {
@@ -1923,9 +2000,19 @@ pub fn akun_keuangan_update(
 
     let n = tx
         .execute(
-            "UPDATE akun_keuangan SET nama = ?, induk_kode = ?, kelompok_lr = ?, is_akun_kas = ?, updated_at = ?
+            "UPDATE akun_keuangan SET nama = ?, induk_kode = ?, kelompok = ?, kolom_norm = ?, kelompok_lr = ?, sub_kelompok = ?, is_akun_kas = ?, updated_at = ?
              WHERE lower(kode) = lower(?)",
-            params![nama, induk, kelompok, is_kas, ts, kode],
+            params![
+                nama,
+                induk,
+                kelompok,
+                kolom_norm,
+                kelompok_lr,
+                sub_kelompok,
+                is_kas,
+                ts,
+                kode
+            ],
         )
         .map_err(|e| {
             if e.to_string().contains("FOREIGN KEY") {

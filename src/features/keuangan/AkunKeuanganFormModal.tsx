@@ -7,7 +7,7 @@ import type {
   AkunKeuanganRow,
   AkunKeuanganUpdatePayload,
 } from "@/data/keuangan";
-import { KELOMPOK_LABA_RUGI } from "@/data/keuangan";
+import { KELOMPOK_AKUN, KELOMPOK_LABA_RUGI, KOLOM_NORM } from "@/data/keuangan";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
 const inputClass =
@@ -61,7 +61,10 @@ export function AkunKeuanganFormModal({
   const [kode, setKode] = useState("");
   const [nama, setNama] = useState("");
   const [indukKode, setIndukKode] = useState("");
+  const [kelompok, setKelompok] = useState("");
+  const [kolomNorm, setKolomNorm] = useState("D");
   const [kelompokLr, setKelompokLr] = useState("");
+  const [subKelompok, setSubKelompok] = useState("");
   const [isAkunKas, setIsAkunKas] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,13 +76,19 @@ export function AkunKeuanganFormModal({
       setKode(editingRow.kode);
       setNama(editingRow.nama);
       setIndukKode(editingRow.indukKode?.trim() ?? "");
+      setKelompok(editingRow.kelompok?.trim() ?? "");
+      setKolomNorm(editingRow.kolomNorm?.trim() || "D");
       setKelompokLr(editingRow.kelompokLr?.trim() ?? "");
+      setSubKelompok(editingRow.subKelompok?.trim() ?? "");
       setIsAkunKas(editingRow.isAkunKas);
     } else {
       setKode("");
       setNama("");
       setIndukKode("");
+      setKelompok("");
+      setKolomNorm("D");
       setKelompokLr("");
+      setSubKelompok("");
       setIsAkunKas(false);
     }
   }, [open, mode, editingRow]);
@@ -104,7 +113,10 @@ export function AkunKeuanganFormModal({
         kode: trimmedKode,
         nama: nama.trim(),
         indukKode: indukKode.trim() ? indukKode.trim() : null,
+        kelompok: kelompok.trim() || null,
+        kolomNorm: kolomNorm.trim() || null,
         kelompokLr: kelompokLr.trim() || null,
+        subKelompok: subKelompok.trim() || null,
         isAkunKas,
       };
 
@@ -126,7 +138,10 @@ export function AkunKeuanganFormModal({
             kode: trimmedKode,
             nama: payloadInsert.nama,
             indukKode: payloadInsert.indukKode,
+            kelompok: payloadInsert.kelompok,
+            kolomNorm: payloadInsert.kolomNorm,
             kelompokLr: payloadInsert.kelompokLr,
+            subKelompok: payloadInsert.subKelompok,
             isAkunKas: payloadInsert.isAkunKas,
           };
           await invoke("akun_keuangan_update", { payload: payloadUpdate });
@@ -139,7 +154,20 @@ export function AkunKeuanganFormModal({
         setSubmitting(false);
       }
     },
-    [submitting, kode, nama, indukKode, kelompokLr, isAkunKas, mode, onSaved, onClose],
+    [
+      submitting,
+      kode,
+      nama,
+      indukKode,
+      kelompok,
+      kolomNorm,
+      kelompokLr,
+      subKelompok,
+      isAkunKas,
+      mode,
+      onSaved,
+      onClose,
+    ],
   );
 
   const title = mode === "create" ? "Tambah akun" : "Ubah akun";
@@ -163,7 +191,7 @@ export function AkunKeuanganFormModal({
       }
     >
       <p className="text-sm text-zinc-500">
-        Contoh: 1-100 Kas Toko, 1-110 Bank BCA (centang akun kas), 4-100 Pendapatan penjualan.
+        Contoh: 1000 Kas tunai, 1001.1 BCA (anak dari 1001), 5000 Penjualan (kelompok pendapatan).
       </p>
 
       {error ? (
@@ -185,7 +213,7 @@ export function AkunKeuanganFormModal({
             value={kode}
             onChange={(e) => setKode(e.target.value)}
             className={`${inputClass} disabled:bg-zinc-50 disabled:text-zinc-500`}
-            placeholder="1-100"
+            placeholder="1000 atau 1001.1"
             disabled={submitting || mode === "edit"}
             required
           />
@@ -226,6 +254,45 @@ export function AkunKeuanganFormModal({
             ))}
           </select>
         </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="ak-form-kelompok" className="block text-sm font-medium text-zinc-700">
+              Kelompok
+            </label>
+            <select
+              id="ak-form-kelompok"
+              value={kelompok}
+              onChange={(e) => setKelompok(e.target.value)}
+              className={inputClass}
+              disabled={submitting}
+            >
+              <option value="">— Pilih kelompok —</option>
+              {KELOMPOK_AKUN.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="ak-form-norm" className="block text-sm font-medium text-zinc-700">
+              Kolom norm
+            </label>
+            <select
+              id="ak-form-norm"
+              value={kolomNorm}
+              onChange={(e) => setKolomNorm(e.target.value)}
+              className={inputClass}
+              disabled={submitting}
+            >
+              {KOLOM_NORM.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
         <div>
           <label htmlFor="ak-form-lr" className="block text-sm font-medium text-zinc-700">
             Kelompok laba rugi (opsional)
@@ -243,6 +310,19 @@ export function AkunKeuanganFormModal({
               </option>
             ))}
           </select>
+        </div>
+        <div>
+          <label htmlFor="ak-form-sub" className="block text-sm font-medium text-zinc-700">
+            Sub pendapatan &amp; biaya (opsional)
+          </label>
+          <input
+            id="ak-form-sub"
+            value={subKelompok}
+            onChange={(e) => setSubKelompok(e.target.value)}
+            className={inputClass}
+            placeholder="Pendapatan Usaha, Biaya Operasional, …"
+            disabled={submitting}
+          />
         </div>
         <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-200 bg-zinc-50/80 px-4 py-3">
           <input

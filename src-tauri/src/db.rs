@@ -171,7 +171,10 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             kode TEXT PRIMARY KEY NOT NULL COLLATE NOCASE,
             nama TEXT NOT NULL,
             induk_kode TEXT REFERENCES akun_keuangan(kode) ON DELETE SET NULL ON UPDATE CASCADE,
+            kelompok TEXT NOT NULL DEFAULT '',
+            kolom_norm TEXT NOT NULL DEFAULT '',
             kelompok_lr TEXT NOT NULL DEFAULT '',
+            sub_kelompok TEXT NOT NULL DEFAULT '',
             is_akun_kas INTEGER NOT NULL DEFAULT 0,
             saldo INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
@@ -256,6 +259,24 @@ fn migrate_akun_keuangan_columns(conn: &Connection) -> rusqlite::Result<()> {
     if !cols.iter().any(|c| c.eq_ignore_ascii_case("is_akun_kas")) {
         conn.execute(
             "ALTER TABLE akun_keuangan ADD COLUMN is_akun_kas INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    if !cols.iter().any(|c| c.eq_ignore_ascii_case("kelompok")) {
+        conn.execute(
+            "ALTER TABLE akun_keuangan ADD COLUMN kelompok TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
+    if !cols.iter().any(|c| c.eq_ignore_ascii_case("kolom_norm")) {
+        conn.execute(
+            "ALTER TABLE akun_keuangan ADD COLUMN kolom_norm TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
+    if !cols.iter().any(|c| c.eq_ignore_ascii_case("sub_kelompok")) {
+        conn.execute(
+            "ALTER TABLE akun_keuangan ADD COLUMN sub_kelompok TEXT NOT NULL DEFAULT ''",
             [],
         )?;
     }

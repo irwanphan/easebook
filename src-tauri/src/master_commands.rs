@@ -1394,7 +1394,7 @@ fn penjualan_faktur_total(sub_barang: i64, diskon_faktur: i64, pajak: i64) -> Re
     pembelian_faktur_total(sub_barang, diskon_faktur, pajak)
 }
 
-/// Posting jurnal penjualan: D piutang/kas, K pendapatan.
+/// Posting jurnal penjualan: D piutang/kas, K inventori (akun pembelian/persediaan di konfigurasi).
 fn penjualan_tx_post_jurnal(
     tx: &Transaction<'_>,
     tanggal: &str,
@@ -1409,9 +1409,9 @@ fn penjualan_tx_post_jurnal(
     }
     konfigurasi_ensure_row(tx, ts)?;
     let cfg = konfigurasi_get_row(tx)?;
-    let akun_pendapatan = cfg
-        .akun_pendapatan
-        .ok_or_else(|| "Konfigurasi akun pendapatan belum diatur (Konfigurasi akun jurnal).".to_string())?;
+    let akun_inventori = cfg.akun_pembelian.ok_or_else(|| {
+        "Konfigurasi akun pembelian/inventori belum diatur (Konfigurasi akun jurnal).".to_string()
+    })?;
 
     let (jenis, debit_akun) = if let Some(kas) = akun_kas_kode {
         validate_akun_kas(tx, kas)?;
@@ -1434,7 +1434,7 @@ fn penjualan_tx_post_jurnal(
 
     let lines = [
         (debit_akun.as_str(), total, 0_i64),
-        (akun_pendapatan.as_str(), 0_i64, total),
+        (akun_inventori.as_str(), 0_i64, total),
     ];
     for (akun_kode, debit, kredit) in lines {
         tx.execute(

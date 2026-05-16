@@ -555,8 +555,8 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
         <Card className="p-5 sm:p-6">
           <h2 className="text-sm font-semibold text-zinc-900">Penerimaan pembayaran</h2>
           <p className="mt-1 text-sm text-zinc-500">
-            Kosongkan untuk mencatat piutang (jurnal: piutang debet, pendapatan kredit). Pilih akun kas jika
-            diterima tunai (kas debet, pendapatan kredit).
+            Kosongkan untuk piutang (jurnal: debet piutang, kredit inventori). Pilih akun kas jika diterima tunai
+            (debet kas, kredit inventori). Akun inventori mengikuti konfigurasi Pembelian/inventori di jurnal.
           </p>
           <div className="mt-4 max-w-md">
             <label htmlFor="fj-akun-kas" className="block text-sm font-medium text-zinc-700">

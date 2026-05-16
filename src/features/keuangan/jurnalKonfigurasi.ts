@@ -8,7 +8,11 @@ export const JURNAL_KONFIGURASI_FIELDS: {
   { key: "akunPiutang", label: "Piutang", hint: "Debit saat penjualan kredit" },
   { key: "akunHutang", label: "Hutang", hint: "Kredit saat pembelian kredit" },
   { key: "akunPendapatan", label: "Pendapatan", hint: "Kredit saat penjualan" },
-  { key: "akunPembelian", label: "Pembelian / inventori", hint: "Debit saat pembelian" },
+  {
+    key: "akunPembelian",
+    label: "Pembelian / inventori",
+    hint: "Debit saat pembelian; kredit saat penjualan (keluar persediaan)",
+  },
   { key: "akunPenerimaanLainnya", label: "Penerimaan lain", hint: "Kredit penerimaan non-penjualan" },
   { key: "akunPengeluaranLainnya", label: "Pengeluaran lain", hint: "Debit pengeluaran non-pembelian" },
 ];

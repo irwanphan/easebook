@@ -1,4 +1,4 @@
-import { useCallback, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -8,9 +8,15 @@ import {
   loadInformasiPerusahaan,
   persistInformasiPerusahaan,
 } from "@/features/pengaturan/informasiPerusahaanStorage";
+import type { PengaturanTransaksi } from "@/features/pengaturan/pengaturanTransaksiStorage";
+import {
+  loadPengaturanTransaksi,
+  persistPengaturanTransaksi,
+} from "@/features/pengaturan/pengaturanTransaksiStorage";
 
 const PENGATURAN_TABS = [
   { id: "perusahaan", label: "Informasi perusahaan" },
+  { id: "transaksi", label: "Transaksi" },
   { id: "operasional", label: "Operasional" },
 ] as const;
 
@@ -37,8 +43,14 @@ function isValidEmail(s: string): boolean {
 export function PengaturanPage() {
   const [activeTab, setActiveTab] = useState<string>(PENGATURAN_TABS[0].id);
   const [perusahaan, setPerusahaan] = useState<InformasiPerusahaan>(() => loadInformasiPerusahaan());
+  const [transaksi, setTransaksi] = useState<PengaturanTransaksi>(() => loadPengaturanTransaksi());
   const [savedHint, setSavedHint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSavedHint(null);
+    setError(null);
+  }, [activeTab]);
 
   const updatePerusahaan = useCallback((patch: Partial<InformasiPerusahaan>) => {
     setPerusahaan((prev) => ({ ...prev, ...patch }));
@@ -55,6 +67,20 @@ export function PengaturanPage() {
     }
     persistInformasiPerusahaan(perusahaan);
     setSavedHint("Perubahan informasi perusahaan telah disimpan.");
+  }
+
+  function handleSimpanTransaksi(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const ppn = Number.parseFloat(String(transaksi.ppnPersen));
+    if (!Number.isFinite(ppn) || ppn < 0 || ppn > 100) {
+      setError("Nilai PPN harus antara 0 dan 100 (persen).");
+      return;
+    }
+    const next = { ppnPersen: Math.round(ppn * 100) / 100 };
+    setTransaksi(next);
+    persistPengaturanTransaksi(next);
+    setSavedHint("Pengaturan transaksi telah disimpan.");
   }
 
   return (
@@ -142,6 +168,61 @@ export function PengaturanPage() {
                   className={inputClass}
                   autoComplete="email"
                 />
+              </div>
+
+              <div className="flex justify-end border-t border-zinc-100 pt-5">
+                <Button type="submit">Simpan</Button>
+              </div>
+            </form>
+          ) : null}
+
+          {activeTab === "transaksi" ? (
+            <form onSubmit={handleSimpanTransaksi} className="space-y-5">
+              {error ? (
+                <div
+                  role="alert"
+                  className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+                >
+                  {error}
+                </div>
+              ) : null}
+              {savedHint ? (
+                <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                  {savedHint}
+                </p>
+              ) : null}
+
+              <div>
+                <FieldLabel htmlFor="p-ppn">Nilai PPN (%)</FieldLabel>
+                <p className="mt-1 text-sm text-zinc-500">
+                  Tarif Pajak Pertambahan Nilai default untuk perhitungan pajak pada faktur pembelian dan
+                  penjualan.
+                </p>
+                <div className="relative mt-2 max-w-xs">
+                  <input
+                    id="p-ppn"
+                    name="ppnPersen"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.01}
+                    value={transaksi.ppnPersen}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const n = raw === "" ? 0 : Number.parseFloat(raw);
+                      setTransaksi({ ppnPersen: Number.isFinite(n) ? n : 0 });
+                      setSavedHint(null);
+                      setError(null);
+                    }}
+                    className={`${inputClass} mt-0 pr-10`}
+                  />
+                  <span
+                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-zinc-400"
+                    aria-hidden
+                  >
+                    %
+                  </span>
+                </div>
               </div>
 
               <div className="flex justify-end border-t border-zinc-100 pt-5">

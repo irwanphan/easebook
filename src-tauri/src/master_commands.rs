@@ -2031,12 +2031,26 @@ pub fn akun_keuangan_update(
 
 #[tauri::command]
 pub fn akun_keuangan_delete(state: State<DbState>, kode: String) -> Result<(), String> {
-    let kode = kode.trim().to_uppercase();
+    let kode = kode.trim();
     if kode.is_empty() {
         return Err("Kode akun wajib diisi.".into());
     }
-    let conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
-    let child: i64 = conn
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let exists: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM akun_keuangan WHERE lower(kode) = lower(?)",
+            params![kode],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if exists == 0 {
+        return Err("Akun tidak ditemukan.".into());
+    }
+
+    let child: i64 = tx
         .query_row(
             "SELECT COUNT(*) FROM akun_keuangan WHERE lower(induk_kode) = lower(?)",
             params![kode],
@@ -2044,13 +2058,42 @@ pub fn akun_keuangan_delete(state: State<DbState>, kode: String) -> Result<(), S
         )
         .map_err(|e| e.to_string())?;
     if child > 0 {
-        return Err("Akun masih dipakai sebagai induk akun lain.".into());
+        return Err("Hapus dulu akun anak di bawah akun ini.".into());
     }
-    let n = conn
-        .execute("DELETE FROM akun_keuangan WHERE kode = ?", params![kode])
+
+    let journal_lines: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM jurnal_umum_line WHERE lower(akun_kode) = lower(?)",
+            params![kode],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if journal_lines > 0 {
+        return Err("Akun sudah dipakai di jurnal umum dan tidak dapat dihapus.".into());
+    }
+
+    // Lepas referensi konfigurasi jurnal agar tidak terblokir foreign key.
+    tx.execute(
+        "UPDATE jurnal_konfigurasi
+         SET akun_piutang = CASE WHEN lower(akun_piutang) = lower(?) THEN NULL ELSE akun_piutang END,
+             akun_hutang = CASE WHEN lower(akun_hutang) = lower(?) THEN NULL ELSE akun_hutang END,
+             akun_pendapatan = CASE WHEN lower(akun_pendapatan) = lower(?) THEN NULL ELSE akun_pendapatan END,
+             akun_pembelian = CASE WHEN lower(akun_pembelian) = lower(?) THEN NULL ELSE akun_pembelian END,
+             akun_penerimaan_lainnya = CASE WHEN lower(akun_penerimaan_lainnya) = lower(?) THEN NULL ELSE akun_penerimaan_lainnya END,
+             akun_pengeluaran_lainnya = CASE WHEN lower(akun_pengeluaran_lainnya) = lower(?) THEN NULL ELSE akun_pengeluaran_lainnya END
+         WHERE id = 1",
+        params![kode, kode, kode, kode, kode, kode],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let n = tx
+        .execute(
+            "DELETE FROM akun_keuangan WHERE lower(kode) = lower(?)",
+            params![kode],
+        )
         .map_err(|e| {
             if e.to_string().contains("FOREIGN KEY") {
-                "Akun masih direferensikan (jurnal atau konfigurasi).".to_string()
+                "Akun masih direferensikan data lain.".to_string()
             } else {
                 e.to_string()
             }
@@ -2058,6 +2101,8 @@ pub fn akun_keuangan_delete(state: State<DbState>, kode: String) -> Result<(), S
     if n == 0 {
         return Err("Akun tidak ditemukan.".into());
     }
+
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
 

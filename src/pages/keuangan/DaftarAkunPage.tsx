@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { AkunKeuanganFormModal } from "@/features/keuangan/AkunKeuanganFormModal";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import type { AkunKeuanganRow } from "@/data/keuangan";
 import { tauriErrorMessage } from "@/lib/tauriError";
 import { groupAkunByKelompok } from "@/lib/akunKeuanganDisplay";
@@ -25,6 +26,8 @@ export function DaftarAkunPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<"create" | "edit">("create");
   const [editingRow, setEditingRow] = useState<AkunKeuanganRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AkunKeuanganRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -63,20 +66,20 @@ export function DaftarAkunPage() {
     setEditingRow(null);
   }, []);
 
-  const onDelete = useCallback(
-    async (kodeRow: string) => {
-      const ok = window.confirm(`Hapus akun ${kodeRow}?`);
-      if (!ok) return;
-      setError(null);
-      try {
-        await invoke("akun_keuangan_delete", { kode: kodeRow });
-        await refresh();
-      } catch (err) {
-        setError(tauriErrorMessage(err));
-      }
-    },
-    [refresh],
-  );
+  const confirmDelete = useCallback(async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await invoke("akun_keuangan_delete", { kode: deleteTarget.kode });
+      setDeleteTarget(null);
+      await refresh();
+    } catch (err) {
+      setError(tauriErrorMessage(err));
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleteTarget, deleting, refresh]);
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -195,7 +198,10 @@ export function DaftarAkunPage() {
                               type="button"
                               variant="ghost"
                               className="px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
-                              onClick={() => void onDelete(r.kode)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteTarget(r);
+                              }}
                             >
                               Hapus
                             </Button>
@@ -218,6 +224,23 @@ export function DaftarAkunPage() {
         rows={rows}
         onClose={closeForm}
         onSaved={refresh}
+      />
+
+      <ConfirmModal
+        open={deleteTarget !== null}
+        title="Hapus akun"
+        message={
+          deleteTarget
+            ? `Yakin hapus akun ${deleteTarget.kode} — ${deleteTarget.nama}? Tindakan ini tidak dapat dibatalkan.`
+            : ""
+        }
+        confirmLabel="Hapus"
+        variant="danger"
+        loading={deleting}
+        onCancel={() => {
+          if (!deleting) setDeleteTarget(null);
+        }}
+        onConfirm={() => void confirmDelete()}
       />
     </div>
   );

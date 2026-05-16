@@ -19,6 +19,14 @@ export type AkunKeuanganInsertPayload = {
   isAkunKas: boolean;
 };
 
+export type AkunKeuanganUpdatePayload = {
+  kode: string;
+  nama: string;
+  indukKode?: string | null;
+  kelompokLr?: string | null;
+  isAkunKas: boolean;
+};
+
 /** Kelompok laba rugi (opsional). */
 export const KELOMPOK_LABA_RUGI = [
   { value: "", label: "— Tidak dipakai di laba rugi —" },

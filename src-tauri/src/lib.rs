@@ -60,6 +60,7 @@ pub fn run() {
             master_commands::stok_mutasi_sinkron_dari_pembelian,
             master_commands::akun_keuangan_list,
             master_commands::akun_keuangan_insert,
+            master_commands::akun_keuangan_update,
             master_commands::akun_keuangan_delete,
             master_commands::jurnal_konfigurasi_get,
             master_commands::jurnal_konfigurasi_set,

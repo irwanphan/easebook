@@ -1616,6 +1616,16 @@ pub struct AkunKeuanganInsertPayload {
     pub is_akun_kas: bool,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AkunKeuanganUpdatePayload {
+    pub kode: String,
+    pub nama: String,
+    pub induk_kode: Option<String>,
+    pub kelompok_lr: Option<String>,
+    pub is_akun_kas: bool,
+}
+
 fn normalize_kelompok_lr(raw: Option<&str>) -> String {
     match raw.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()) {
         Some(k) if k == "PENDAPATAN" || k == "BEBAN" || k == "HPP" => k,
@@ -1643,6 +1653,40 @@ fn validate_akun_insert(
         if ada == 0 {
             return Err("Akun induk tidak ditemukan.".into());
         }
+    }
+    Ok(())
+}
+
+fn akun_induk_kode_optional(tx: &Transaction<'_>, kode: &str) -> Result<Option<String>, String> {
+    match tx.query_row(
+        "SELECT induk_kode FROM akun_keuangan WHERE lower(kode) = lower(?)",
+        params![kode],
+        |r| r.get::<_, Option<String>>(0),
+    ) {
+        Ok(v) => Ok(v),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Pastikan induk ada, bukan diri sendiri, dan tidak membentuk siklus (induk tidak boleh berada di subtree akun ini).
+fn validate_akun_induk_chain(
+    tx: &Transaction<'_>,
+    akun_kode: &str,
+    induk_kode: Option<&str>,
+) -> Result<(), String> {
+    validate_akun_insert(tx, akun_kode, induk_kode)?;
+    let mut cur = induk_kode.map(|s| s.to_string());
+    let mut depth = 0u32;
+    while let Some(ref node) = cur {
+        if depth > 512 {
+            return Err("Rantai induk akun terlalu dalam.".into());
+        }
+        if node.eq_ignore_ascii_case(akun_kode) {
+            return Err("Induk akun tidak boleh berada di bawah akun ini (siklus).".into());
+        }
+        cur = akun_induk_kode_optional(tx, node)?;
+        depth += 1;
     }
     Ok(())
 }
@@ -1815,7 +1859,7 @@ pub fn akun_keuangan_insert(
     let ts = now_ts();
     let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
-    validate_akun_insert(
+    validate_akun_induk_chain(
         &tx,
         &kode,
         induk.as_deref(),
@@ -1834,6 +1878,66 @@ pub fn akun_keuangan_insert(
             e.to_string()
         }
     })?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn akun_keuangan_update(
+    state: State<DbState>,
+    payload: AkunKeuanganUpdatePayload,
+) -> Result<(), String> {
+    let kode = payload.kode.trim().to_uppercase();
+    let nama = payload.nama.trim();
+    let induk = payload
+        .induk_kode
+        .as_ref()
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty());
+    let kelompok = normalize_kelompok_lr(payload.kelompok_lr.as_deref());
+    let is_kas = if payload.is_akun_kas { 1 } else { 0 };
+
+    if kode.is_empty() {
+        return Err("Kode akun wajib diisi.".into());
+    }
+    if nama.is_empty() {
+        return Err("Nama akun wajib diisi.".into());
+    }
+
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let exists: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM akun_keuangan WHERE lower(kode) = lower(?)",
+            params![kode],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if exists == 0 {
+        return Err("Akun tidak ditemukan.".into());
+    }
+
+    validate_akun_induk_chain(&tx, &kode, induk.as_deref())?;
+
+    let n = tx
+        .execute(
+            "UPDATE akun_keuangan SET nama = ?, induk_kode = ?, kelompok_lr = ?, is_akun_kas = ?, updated_at = ?
+             WHERE lower(kode) = lower(?)",
+            params![nama, induk, kelompok, is_kas, ts, kode],
+        )
+        .map_err(|e| {
+            if e.to_string().contains("FOREIGN KEY") {
+                "Akun induk tidak valid.".to_string()
+            } else {
+                e.to_string()
+            }
+        })?;
+    if n == 0 {
+        return Err("Akun tidak ditemukan.".into());
+    }
+
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }

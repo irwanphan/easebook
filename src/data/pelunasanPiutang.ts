@@ -16,3 +16,16 @@ export type PelunasanPiutangPayload = {
   jumlah: number;
   catatan: string;
 };
+
+export type PelunasanPiutangBatchPayload = {
+  pelangganKode: string;
+  tanggal: string;
+  kasKode: string;
+  catatan: string;
+  nomorFaktur: string[];
+};
+
+export type BuatPelunasanPiutangLocationState = {
+  pelangganKode?: string;
+  preselectNomor?: string[];
+};

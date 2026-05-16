@@ -1787,6 +1787,48 @@ fn pelunasan_piutang_tx_post_jurnal(
     Ok(())
 }
 
+fn pelunasan_piutang_tx_settle_one(
+    tx: &Transaction<'_>,
+    nomor: &str,
+    tanggal: &str,
+    kas_kode: &str,
+    catatan: &str,
+    ts: i64,
+) -> Result<(), String> {
+    let (pelanggan_kode, total, sudah_lunas): (String, i64, bool) = tx
+        .query_row(
+            "SELECT pelanggan_kode, total,
+                    CASE WHEN akun_kas_kode IS NOT NULL AND trim(akun_kas_kode) != '' THEN 1
+                         WHEN upper(trim(status)) = 'LUNAS' THEN 1 ELSE 0 END
+             FROM penjualan WHERE nomor = ?",
+            params![nomor],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0)),
+        )
+        .map_err(|_| format!("Faktur penjualan '{nomor}' tidak ditemukan."))?;
+
+    if sudah_lunas {
+        return Err(format!("Faktur '{nomor}' sudah lunas atau bukan piutang."));
+    }
+
+    pelunasan_piutang_tx_post_jurnal(
+        tx,
+        tanggal,
+        nomor,
+        pelanggan_kode.trim(),
+        total,
+        kas_kode,
+        catatan,
+        ts,
+    )?;
+
+    tx.execute(
+        "UPDATE penjualan SET akun_kas_kode = ?, status = 'Lunas', updated_at = ? WHERE nomor = ?",
+        params![kas_kode, ts, nomor],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn pelunasan_piutang_apply(
     state: State<DbState>,
@@ -1817,45 +1859,94 @@ pub fn pelunasan_piutang_apply(
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let ts = now_ts();
 
-    let (pelanggan_kode, total, sudah_lunas): (String, i64, bool) = tx
+    let total: i64 = tx
         .query_row(
-            "SELECT pelanggan_kode, total,
-                    CASE WHEN akun_kas_kode IS NOT NULL AND trim(akun_kas_kode) != '' THEN 1
-                         WHEN upper(trim(status)) = 'LUNAS' THEN 1 ELSE 0 END
-             FROM penjualan WHERE nomor = ?",
+            "SELECT total FROM penjualan WHERE nomor = ?",
             params![nomor],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0)),
+            |r| r.get(0),
         )
         .map_err(|_| format!("Faktur penjualan '{nomor}' tidak ditemukan."))?;
-
-    if sudah_lunas {
-        return Err(format!("Faktur '{nomor}' sudah lunas atau bukan piutang."));
-    }
     if jumlah != total {
         return Err(format!(
             "Pelunasan penuh diperlukan: jumlah harus sama dengan total faktur ({total})."
         ));
     }
 
-    pelunasan_piutang_tx_post_jurnal(
-        &tx,
-        tanggal,
-        nomor,
-        pelanggan_kode.trim(),
-        jumlah,
-        &kas_kode,
-        catatan,
-        ts,
-    )?;
-
-    tx.execute(
-        "UPDATE penjualan SET akun_kas_kode = ?, status = 'Lunas', updated_at = ? WHERE nomor = ?",
-        params![kas_kode, ts, nomor],
-    )
-    .map_err(|e| e.to_string())?;
+    pelunasan_piutang_tx_settle_one(&tx, nomor, tanggal, &kas_kode, catatan, ts)?;
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(format!("Pelunasan faktur {nomor} tercatat."))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PelunasanPiutangBatchPayload {
+    pub pelanggan_kode: String,
+    pub tanggal: String,
+    pub kas_kode: String,
+    pub catatan: String,
+    pub nomor_faktur: Vec<String>,
+}
+
+#[tauri::command]
+pub fn pelunasan_piutang_apply_batch(
+    state: State<DbState>,
+    payload: PelunasanPiutangBatchPayload,
+) -> Result<String, String> {
+    let pelanggan_kode = payload.pelanggan_kode.trim();
+    let tanggal = payload.tanggal.trim();
+    let kas_kode = payload.kas_kode.trim().to_uppercase();
+    let catatan = payload.catatan.trim();
+    let mut nomor_list: Vec<String> = payload
+        .nomor_faktur
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    nomor_list.sort();
+    nomor_list.dedup();
+
+    if pelanggan_kode.is_empty() {
+        return Err("Pilih pelanggan.".into());
+    }
+    if tanggal.is_empty() {
+        return Err("Tanggal pelunasan wajib diisi.".into());
+    }
+    NaiveDate::parse_from_str(tanggal, "%Y-%m-%d")
+        .map_err(|_| "Tanggal tidak valid (gunakan YYYY-MM-DD).".to_string())?;
+    if kas_kode.is_empty() {
+        return Err("Pilih akun kas penerimaan.".into());
+    }
+    if nomor_list.is_empty() {
+        return Err("Pilih minimal satu faktur piutang.".into());
+    }
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let ts = now_ts();
+
+    validate_akun_kas(&tx, &kas_kode)?;
+
+    let mut settled = 0_i64;
+    for nomor in &nomor_list {
+        let pk: String = tx
+            .query_row(
+                "SELECT pelanggan_kode FROM penjualan WHERE nomor = ?",
+                params![nomor],
+                |r| r.get(0),
+            )
+            .map_err(|_| format!("Faktur '{nomor}' tidak ditemukan."))?;
+        if pk.trim().to_uppercase() != pelanggan_kode.to_uppercase() {
+            return Err(format!(
+                "Faktur '{nomor}' bukan milik pelanggan {pelanggan_kode}."
+            ));
+        }
+        pelunasan_piutang_tx_settle_one(&tx, nomor, tanggal, &kas_kode, catatan, ts)?;
+        settled += 1;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(format!("{settled} faktur berhasil dilunasi."))
 }
 
 /// Bangun ulang mutasi pembelian dari seluruh faktur di basis data dan set ulang kolom `stok`

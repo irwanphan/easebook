@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { PelunasanPiutangModal } from "@/features/keuangan/PelunasanPiutangModal";
-import type { PiutangBelumLunasRow } from "@/data/pelunasanPiutang";
+import type { BuatPelunasanPiutangLocationState, PiutangBelumLunasRow } from "@/data/pelunasanPiutang";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
 function todayLocalISODate(): string {
@@ -40,13 +40,12 @@ const inputClass =
   "rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
 
 export function KeuanganPelunasanPiutangPage() {
+  const navigate = useNavigate();
   const [rows, setRows] = useState<PiutangBelumLunasRow[]>([]);
   const [filter, setFilter] = useState<FilterTampilan>("semua");
   const [filterPelangganKode, setFilterPelangganKode] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [selected, setSelected] = useState<PiutangBelumLunasRow | null>(null);
 
   const pelangganOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -103,14 +102,18 @@ export function KeuanganPelunasanPiutangPage() {
     }
   }, [pelangganOptions, filterPelangganKode]);
 
+  function goBuatPelunasan(state?: BuatPelunasanPiutangLocationState) {
+    navigate("/keuangan/pelunasan-piutang/buat", { state });
+  }
+
   function openPelunasan(row: PiutangBelumLunasRow) {
-    setSelected(row);
-    setModalOpen(true);
+    goBuatPelunasan({ pelangganKode: row.pelangganKode, preselectNomor: [row.nomor] });
   }
 
   function openPelunasanBaru() {
-    if (filteredRows.length === 0) return;
-    openPelunasan(filteredRows[0]);
+    goBuatPelunasan(
+      filterPelangganKode ? { pelangganKode: filterPelangganKode } : undefined,
+    );
   }
 
   return (
@@ -149,7 +152,7 @@ export function KeuanganPelunasanPiutangPage() {
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
-            <Button type="button" onClick={() => openPelunasanBaru()} disabled={loading || filteredRows.length === 0}>
+            <Button type="button" onClick={() => openPelunasanBaru()} disabled={loading || rows.length === 0}>
               Buat pelunasan
             </Button>
             <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
@@ -264,16 +267,6 @@ export function KeuanganPelunasanPiutangPage() {
           </table>
         </div>
       </Card>
-
-      <PelunasanPiutangModal
-        open={modalOpen}
-        faktur={selected}
-        onClose={() => {
-          setModalOpen(false);
-          setSelected(null);
-        }}
-        onSaved={fetchRows}
-      />
     </div>
   );
 }

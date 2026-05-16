@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -6,12 +7,12 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import type {
   AkunKeuanganRow,
-  JurnalKonfigurasiSetPayload,
   JurnalJenisTransaksi,
   JurnalKonfigurasi,
   JurnalTransaksiInsertPayload,
   JurnalUmumListRow,
 } from "@/data/keuangan";
+import { isJurnalKonfigurasiComplete } from "@/features/keuangan/jurnalKonfigurasi";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
 const inputClass =
@@ -135,52 +136,14 @@ export function JurnalUmumPage() {
     if (!kasTargetKode && kasList.length > 1) setKasTargetKode(kasList[1].kode);
   }, [kasList, kasKode, kasSumberKode, kasTargetKode]);
 
-  const configMissing = useMemo(() => {
-    if (!config) return true;
-    const req: Array<[keyof JurnalKonfigurasi, string]> = [
-      ["akunPiutang", "Piutang"],
-      ["akunHutang", "Hutang"],
-      ["akunPendapatan", "Pendapatan"],
-      ["akunPembelian", "Pembelian"],
-      ["akunPenerimaanLainnya", "Penerimaan lain"],
-      ["akunPengeluaranLainnya", "Pengeluaran lain"],
-    ];
-    const missing = req.filter(([k]) => !config[k]);
-    return missing.length > 0;
-  }, [config]);
-
-  const onSaveConfig = useCallback(
-    async (e: FormEvent) => {
-      e.preventDefault();
-      if (!config) return;
-      setLoading(true);
-      setError(null);
-      try {
-        const payload: JurnalKonfigurasiSetPayload = {
-          akunPiutang: config.akunPiutang,
-          akunHutang: config.akunHutang,
-          akunPendapatan: config.akunPendapatan,
-          akunPembelian: config.akunPembelian,
-          akunPenerimaanLainnya: config.akunPenerimaanLainnya,
-          akunPengeluaranLainnya: config.akunPengeluaranLainnya,
-        };
-        await invoke("jurnal_konfigurasi_set", { payload });
-        await fetchRows();
-      } catch (err) {
-        setError(tauriErrorMessage(err));
-      } finally {
-        setLoading(false);
-      }
-    },
-    [config, fetchRows],
-  );
+  const configMissing = useMemo(() => !isJurnalKonfigurasiComplete(config), [config]);
 
   const onInsert = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
       if (loading) return;
-      if (!config || configMissing) {
-        setError("Konfigurasi akun jurnal belum lengkap. Isi dulu di panel konfigurasi.");
+      if (configMissing) {
+        setError("Konfigurasi akun jurnal belum lengkap. Atur di halaman Konfigurasi akun jurnal.");
         return;
       }
       if (!tanggal.trim()) {
@@ -241,15 +204,25 @@ export function JurnalUmumPage() {
         setLoading(false);
       }
     },
-    [catatan, config, configMissing, fetchRows, jumlah, kasKode, kasSumberKode, kasTargetKode, jenis, loading, referensi, tanggal],
+    [catatan, configMissing, fetchRows, jumlah, kasKode, kasSumberKode, kasTargetKode, jenis, loading, referensi, tanggal],
   );
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Jurnal umum"
-        description="Catat semua transaksi keuangan. Gunakan konfigurasi akun untuk menentukan pasangan debit/kredit otomatis."
+        description="Catat semua transaksi keuangan. Pasangan debit/kredit mengikuti konfigurasi akun jurnal."
       />
+
+      {configMissing && !configLoading ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Konfigurasi akun jurnal belum lengkap.{" "}
+          <Link to="/keuangan/konfigurasi-akun-jurnal" className="font-semibold text-brand-700 hover:underline">
+            Atur konfigurasi akun jurnal
+          </Link>{" "}
+          sebelum menyimpan transaksi template.
+        </div>
+      ) : null}
 
       {error ? (
         <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -257,157 +230,7 @@ export function JurnalUmumPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="p-6">
-          <h2 className="text-sm font-semibold text-zinc-900">Konfigurasi akun jurnal</h2>
-          <p className="mt-1 text-sm text-zinc-500">
-            Set akun untuk Piutang, Hutang, Pendapatan, Pembelian, dan akun lain. Setelah itu template jurnal akan membuat debit/kredit otomatis.
-          </p>
-
-          <form onSubmit={onSaveConfig} className="mt-5 flex flex-col gap-4">
-            <div>
-              <label className="block text-sm font-medium text-zinc-700">Piutang</label>
-              <select
-                value={config?.akunPiutang ?? ""}
-                onChange={(e) =>
-                  setConfig((prev) =>
-                    prev
-                      ? { ...prev, akunPiutang: e.target.value ? e.target.value : null }
-                      : prev,
-                  )
-                }
-                className={inputClass}
-                disabled={configLoading || loading}
-              >
-                <option value="">— Pilih akun —</option>
-                {akunList.map((a) => (
-                  <option key={a.kode} value={a.kode}>
-                    {a.kode} — {a.nama}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-zinc-700">Hutang</label>
-              <select
-                value={config?.akunHutang ?? ""}
-                onChange={(e) =>
-                  setConfig((prev) =>
-                    prev ? { ...prev, akunHutang: e.target.value ? e.target.value : null } : prev,
-                  )
-                }
-                className={inputClass}
-                disabled={configLoading || loading}
-              >
-                <option value="">— Pilih akun —</option>
-                {akunList.map((a) => (
-                  <option key={a.kode} value={a.kode}>
-                    {a.kode} — {a.nama}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-zinc-700">Pendapatan</label>
-              <select
-                value={config?.akunPendapatan ?? ""}
-                onChange={(e) =>
-                  setConfig((prev) =>
-                    prev ? { ...prev, akunPendapatan: e.target.value ? e.target.value : null } : prev,
-                  )
-                }
-                className={inputClass}
-                disabled={configLoading || loading}
-              >
-                <option value="">— Pilih akun —</option>
-                {akunList.map((a) => (
-                  <option key={a.kode} value={a.kode}>
-                    {a.kode} — {a.nama}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-zinc-700">Pembelian</label>
-              <select
-                value={config?.akunPembelian ?? ""}
-                onChange={(e) =>
-                  setConfig((prev) =>
-                    prev ? { ...prev, akunPembelian: e.target.value ? e.target.value : null } : prev,
-                  )
-                }
-                className={inputClass}
-                disabled={configLoading || loading}
-              >
-                <option value="">— Pilih akun —</option>
-                {akunList.map((a) => (
-                  <option key={a.kode} value={a.kode}>
-                    {a.kode} — {a.nama}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-zinc-700">Penerimaan lain</label>
-              <select
-                value={config?.akunPenerimaanLainnya ?? ""}
-                onChange={(e) =>
-                  setConfig((prev) =>
-                    prev
-                      ? { ...prev, akunPenerimaanLainnya: e.target.value ? e.target.value : null }
-                      : prev,
-                  )
-                }
-                className={inputClass}
-                disabled={configLoading || loading}
-              >
-                <option value="">— Pilih akun —</option>
-                {akunList.map((a) => (
-                  <option key={a.kode} value={a.kode}>
-                    {a.kode} — {a.nama}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-zinc-700">Pengeluaran lain</label>
-              <select
-                value={config?.akunPengeluaranLainnya ?? ""}
-                onChange={(e) =>
-                  setConfig((prev) =>
-                    prev
-                      ? { ...prev, akunPengeluaranLainnya: e.target.value ? e.target.value : null }
-                      : prev,
-                  )
-                }
-                className={inputClass}
-                disabled={configLoading || loading}
-              >
-                <option value="">— Pilih akun —</option>
-                {akunList.map((a) => (
-                  <option key={a.kode} value={a.kode}>
-                    {a.kode} — {a.nama}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="pt-1">
-              <Button type="submit" disabled={configLoading || loading} className="w-full">
-                {loading ? "Menyimpan…" : "Simpan konfigurasi"}
-              </Button>
-            </div>
-          </form>
-
-          {configMissing ? (
-            <p className="mt-4 text-sm text-amber-700">
-              Konfigurasi belum lengkap. Isi semua akun agar template jurnal bisa disimpan.
-            </p>
-          ) : (
-            <p className="mt-4 text-sm text-emerald-700">Konfigurasi siap.</p>
-          )}
-        </Card>
-
+      <div className="mx-auto max-w-2xl">
         <Card className="p-6">
           <h2 className="text-sm font-semibold text-zinc-900">Tambah jurnal (template)</h2>
           <p className="mt-1 text-sm text-zinc-500">

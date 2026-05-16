@@ -31,6 +31,7 @@ import { KeuanganPelunasanHutangPage } from "@/pages/keuangan/KeuanganPelunasanH
 import { KeuanganTransferPage } from "@/pages/keuangan/KeuanganTransferPage";
 import { DaftarAkunPage } from "@/pages/keuangan/DaftarAkunPage";
 import { JurnalUmumPage } from "@/pages/keuangan/JurnalUmumPage";
+import { KonfigurasiAkunJurnalPage } from "@/pages/keuangan/KonfigurasiAkunJurnalPage";
 import { LaporanPergerakanStokPage } from "@/pages/laporan/LaporanPergerakanStokPage";
 
 export const router = createHashRouter([
@@ -69,6 +70,7 @@ export const router = createHashRouter([
       { path: "keuangan/transfer", element: <KeuanganTransferPage /> },
       { path: "keuangan/daftar-akun", element: <DaftarAkunPage /> },
       { path: "keuangan/akun-kas", element: <DaftarAkunPage /> },
+      { path: "keuangan/konfigurasi-akun-jurnal", element: <KonfigurasiAkunJurnalPage /> },
       { path: "keuangan/jurnal-umum", element: <JurnalUmumPage /> },
       { path: "pengaturan", element: <PengaturanPage /> },
     ],

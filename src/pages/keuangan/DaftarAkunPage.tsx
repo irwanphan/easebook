@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -19,6 +20,7 @@ function formatRupiah(n: number) {
 }
 
 export function DaftarAkunPage() {
+  const navigate = useNavigate();
   const [rows, setRows] = useState<AkunKeuanganRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +104,14 @@ export function DaftarAkunPage() {
               Akun anak diindent (mis. 1001.1 BCA di bawah 1001 Kas Bank). Kolom norm D/K = sisi normal saldo.
             </p>
           </div>
+          <Button
+            type="button"
+            variant="secondary"
+            className="shrink-0"
+            onClick={() => navigate("/keuangan/konfigurasi-akun-jurnal")}
+          >
+            Konfigurasi akun jurnal
+          </Button>
           <Button type="button" onClick={openCreate} className="shrink-0">
             Tambah akun
           </Button>

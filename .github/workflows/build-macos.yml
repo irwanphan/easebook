@@ -1,0 +1,64 @@
+# Build installer macOS (.dmg) — jalankan manual dari tab Actions.
+# Hasil: Artifacts → easybook-macos-dmg
+
+name: Build macOS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Build Tauri (macOS Apple Silicon)
+        run: bun run tauri build -- --target aarch64-apple-darwin
+
+      - name: Resolve bundle path
+        id: bundle
+        run: |
+          BUNDLE_DIR=$(find src-tauri/target -type d -path '*/release/bundle' | head -1)
+          if [ -z "$BUNDLE_DIR" ]; then
+            echo "Bundle folder not found under src-tauri/target"
+            find src-tauri/target -maxdepth 4 -type d 2>/dev/null || true
+            exit 1
+          fi
+          echo "dir=$BUNDLE_DIR" >> "$GITHUB_OUTPUT"
+          echo "Found: $BUNDLE_DIR"
+          ls -la "$BUNDLE_DIR"
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: easybook-macos-dmg
+          path: ${{ steps.bundle.outputs.dir }}/dmg/*.dmg
+          if-no-files-found: error
+
+      - name: Upload .app (opsional)
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: easybook-macos-app
+          path: ${{ steps.bundle.outputs.dir }}/macos/*.app
+          if-no-files-found: ignore

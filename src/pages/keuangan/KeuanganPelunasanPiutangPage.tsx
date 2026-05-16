@@ -42,21 +42,41 @@ const inputClass =
 export function KeuanganPelunasanPiutangPage() {
   const [rows, setRows] = useState<PiutangBelumLunasRow[]>([]);
   const [filter, setFilter] = useState<FilterTampilan>("semua");
+  const [filterPelangganKode, setFilterPelangganKode] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [selected, setSelected] = useState<PiutangBelumLunasRow | null>(null);
 
-  const filteredRows = useMemo(() => {
-    if (filter === "jatuh_tempo") {
-      return rows.filter((r) => isJatuhTempoLewat(r.jatuhTempo));
+  const pelangganOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of rows) {
+      if (!map.has(r.pelangganKode)) map.set(r.pelangganKode, r.pelangganNama);
     }
-    return rows;
-  }, [rows, filter]);
+    return [...map.entries()]
+      .map(([kode, nama]) => ({ kode, nama }))
+      .sort((a, b) => a.nama.localeCompare(b.nama, "id"));
+  }, [rows]);
+
+  const rowsByPelanggan = useMemo(() => {
+    if (!filterPelangganKode) return rows;
+    return rows.filter((r) => r.pelangganKode === filterPelangganKode);
+  }, [rows, filterPelangganKode]);
+
+  const filteredRows = useMemo(() => {
+    let list = rowsByPelanggan;
+    if (filter === "jatuh_tempo") {
+      list = list.filter((r) => isJatuhTempoLewat(r.jatuhTempo));
+    }
+    return list;
+  }, [rowsByPelanggan, filter]);
 
   const totalPiutang = useMemo(() => filteredRows.reduce((s, r) => s + r.total, 0), [filteredRows]);
 
-  const jatuhTempoCount = useMemo(() => rows.filter((r) => isJatuhTempoLewat(r.jatuhTempo)).length, [rows]);
+  const jatuhTempoCount = useMemo(
+    () => rowsByPelanggan.filter((r) => isJatuhTempoLewat(r.jatuhTempo)).length,
+    [rowsByPelanggan],
+  );
 
   const fetchRows = useCallback(async () => {
     setLoading(true);
@@ -75,6 +95,13 @@ export function KeuanganPelunasanPiutangPage() {
   useEffect(() => {
     void fetchRows();
   }, [fetchRows]);
+
+  useEffect(() => {
+    if (!filterPelangganKode) return;
+    if (!pelangganOptions.some((p) => p.kode === filterPelangganKode)) {
+      setFilterPelangganKode("");
+    }
+  }, [pelangganOptions, filterPelangganKode]);
 
   function openPelunasan(row: PiutangBelumLunasRow) {
     setSelected(row);
@@ -108,8 +135,16 @@ export function KeuanganPelunasanPiutangPage() {
                 ? "Memuat…"
                 : rows.length === 0
                   ? "Tidak ada piutang terbuka."
-                  : filter === "jatuh_tempo" && filteredRows.length === 0
-                    ? `Tidak ada faktur jatuh tempo (${rows.length} piutang lain masih dalam tempo).`
+                  : filteredRows.length === 0
+                    ? rowsByPelanggan.length === 0
+                      ? filterPelangganKode
+                        ? "Tidak ada piutang untuk pelanggan ini."
+                        : filter === "jatuh_tempo"
+                          ? `Tidak ada faktur jatuh tempo (${rows.length} piutang lain masih dalam tempo).`
+                          : "Tidak ada faktur sesuai filter."
+                      : filter === "jatuh_tempo"
+                        ? `Tidak ada faktur jatuh tempo untuk filter ini (${rowsByPelanggan.length} faktur masih dalam tempo).`
+                        : "Tidak ada faktur sesuai filter."
                     : `${filteredRows.length} faktur ditampilkan · total ${formatRupiah(totalPiutang)}`}
             </p>
           </div>
@@ -124,19 +159,42 @@ export function KeuanganPelunasanPiutangPage() {
         </div>
 
         <div className="border-b border-zinc-100 px-6 pb-5">
-          <label htmlFor="pp-filter" className="block text-sm font-medium text-zinc-700">
-            Tampilkan
-          </label>
-          <select
-            id="pp-filter"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value as FilterTampilan)}
-            className={`${inputClass} mt-1 max-w-xs`}
-            disabled={loading}
-          >
-            <option value="semua">Semua piutang belum lunas</option>
-            <option value="jatuh_tempo">Hanya jatuh tempo lewat ({jatuhTempoCount})</option>
-          </select>
+          <div className="grid gap-4 sm:grid-cols-2 lg:max-w-3xl">
+            <div>
+              <label htmlFor="pp-pelanggan" className="block text-sm font-medium text-zinc-700">
+                Pelanggan
+              </label>
+              <select
+                id="pp-pelanggan"
+                value={filterPelangganKode}
+                onChange={(e) => setFilterPelangganKode(e.target.value)}
+                className={`${inputClass} mt-1 w-full`}
+                disabled={loading}
+              >
+                <option value="">Semua pelanggan</option>
+                {pelangganOptions.map((p) => (
+                  <option key={p.kode} value={p.kode}>
+                    {p.kode} — {p.nama}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="pp-filter" className="block text-sm font-medium text-zinc-700">
+                Jatuh tempo
+              </label>
+              <select
+                id="pp-filter"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value as FilterTampilan)}
+                className={`${inputClass} mt-1 w-full`}
+                disabled={loading}
+              >
+                <option value="semua">Semua piutang belum lunas</option>
+                <option value="jatuh_tempo">Hanya jatuh tempo lewat ({jatuhTempoCount})</option>
+              </select>
+            </div>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -168,7 +226,7 @@ export function KeuanganPelunasanPiutangPage() {
               ) : filteredRows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-5 py-12 text-center text-sm text-zinc-500">
-                    Tidak ada faktur jatuh tempo. Ubah filter ke &quot;Semua piutang&quot; untuk melihat faktur lain.
+                    Tidak ada faktur sesuai filter. Ubah pelanggan atau jatuh tempo untuk melihat faktur lain.
                   </td>
                 </tr>
               ) : (

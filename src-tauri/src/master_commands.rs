@@ -2203,6 +2203,218 @@ pub fn pelunasan_hutang_apply_batch(
     Ok(format!("{settled} faktur berhasil dilunasi."))
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PengeluaranListRow {
+    pub nomor: String,
+    pub tanggal: String,
+    pub akun_kas_kode: String,
+    pub akun_kas_nama: String,
+    pub total: i64,
+    pub catatan: String,
+    pub jumlah_baris: i64,
+}
+
+#[tauri::command]
+pub fn pengeluaran_list(
+    state: State<DbState>,
+    tanggal_dari: String,
+    tanggal_sampai: String,
+) -> Result<Vec<PengeluaranListRow>, String> {
+    let dari = tanggal_dari.trim();
+    let sampai = tanggal_sampai.trim();
+    let d1 = NaiveDate::parse_from_str(dari, "%Y-%m-%d")
+        .map_err(|_| "Tanggal mulai tidak valid (YYYY-MM-DD).".to_string())?;
+    let d2 = NaiveDate::parse_from_str(sampai, "%Y-%m-%d")
+        .map_err(|_| "Tanggal akhir tidak valid (YYYY-MM-DD).".to_string())?;
+    if d2 < d1 {
+        return Err("Tanggal akhir tidak boleh sebelum tanggal mulai.".into());
+    }
+
+    with_conn(&state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT p.nomor, p.tanggal, p.akun_kas_kode, COALESCE(k.nama, ''), p.total, p.catatan,
+                    (SELECT COUNT(*) FROM pengeluaran_line pl WHERE pl.nomor = p.nomor)
+             FROM pengeluaran p
+             LEFT JOIN akun_keuangan k ON lower(k.kode) = lower(p.akun_kas_kode)
+             WHERE p.tanggal >= ? AND p.tanggal <= ?
+             ORDER BY p.tanggal DESC, p.nomor DESC",
+        )?;
+        let rows = stmt.query_map(params![dari, sampai], |r| {
+            Ok(PengeluaranListRow {
+                nomor: r.get(0)?,
+                tanggal: r.get(1)?,
+                akun_kas_kode: r.get(2)?,
+                akun_kas_nama: r.get(3)?,
+                total: r.get(4)?,
+                catatan: r.get(5)?,
+                jumlah_baris: r.get(6)?,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PengeluaranLineInput {
+    pub akun_kode: String,
+    pub jumlah: i64,
+    pub catatan: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PengeluaranInsertPayload {
+    pub tanggal: String,
+    pub kas_kode: String,
+    pub catatan: String,
+    pub lines: Vec<PengeluaranLineInput>,
+}
+
+fn validate_akun_biaya_pengeluaran(tx: &Transaction<'_>, kode: &str) -> Result<(), String> {
+    let row: (String, i64, String) = tx
+        .query_row(
+            "SELECT COALESCE(kelompok, ''), COALESCE(is_akun_kas, 0), COALESCE(kelompok_lr, '')
+             FROM akun_keuangan WHERE lower(kode) = lower(?)",
+            params![kode],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .map_err(|_| format!("Akun biaya '{kode}' tidak ditemukan."))?;
+    if row.1 != 0 {
+        return Err(format!("Akun '{kode}' adalah akun kas, bukan akun biaya."));
+    }
+    let kelompok = row.0.to_uppercase();
+    let kelompok_lr = row.2.to_uppercase();
+    if kelompok != "BIAYA" && kelompok_lr != "BEBAN" && kelompok_lr != "HPP" {
+        return Err(format!(
+            "Akun '{kode}' bukan akun biaya/beban (pilih akun kelompok Biaya)."
+        ));
+    }
+    Ok(())
+}
+
+/// Jurnal pengeluaran: D biaya per baris, K kas total.
+fn pengeluaran_tx_post_jurnal(
+    tx: &Transaction<'_>,
+    tanggal: &str,
+    referensi: &str,
+    catatan_header: &str,
+    kas_kode: &str,
+    lines: &[(String, i64, String)],
+    ts: i64,
+) -> Result<(), String> {
+    let total: i64 = lines.iter().map(|(_, j, _)| *j).sum();
+    if total <= 0 {
+        return Err("Total pengeluaran harus lebih dari 0.".into());
+    }
+    validate_akun_kas(tx, kas_kode)?;
+
+    tx.execute(
+        "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
+         VALUES (?, 'PENGELUARAN', ?, ?, ?, ?)",
+        params![tanggal, referensi, catatan_header, ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    let jurnal_id = tx.last_insert_rowid();
+
+    for (akun_kode, jumlah, line_catatan) in lines {
+        validate_akun_biaya_pengeluaran(tx, akun_kode)?;
+        tx.execute(
+            "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+             VALUES (?, ?, ?, 0, ?)",
+            params![jurnal_id, akun_kode, jumlah, line_catatan],
+        )
+        .map_err(|e| e.to_string())?;
+        akun_jurnal_apply_saldo_delta(tx, akun_kode, *jumlah, 0, ts)?;
+    }
+
+    tx.execute(
+        "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+         VALUES (?, ?, 0, ?, '')",
+        params![jurnal_id, kas_kode, total],
+    )
+    .map_err(|e| e.to_string())?;
+    akun_jurnal_apply_saldo_delta(tx, kas_kode, 0, total, ts)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pengeluaran_insert(state: State<DbState>, payload: PengeluaranInsertPayload) -> Result<String, String> {
+    let tanggal = payload.tanggal.trim();
+    let kas_kode = payload.kas_kode.trim().to_uppercase();
+    let catatan = payload.catatan.trim();
+
+    if tanggal.is_empty() {
+        return Err("Tanggal pengeluaran wajib diisi.".into());
+    }
+    NaiveDate::parse_from_str(tanggal, "%Y-%m-%d")
+        .map_err(|_| "Tanggal tidak valid (gunakan YYYY-MM-DD).".to_string())?;
+    if kas_kode.is_empty() {
+        return Err("Pilih akun kas pembayaran.".into());
+    }
+    if payload.lines.is_empty() {
+        return Err("Minimal satu baris biaya.".into());
+    }
+
+    let mut normalized: Vec<(String, i64, String)> = Vec::new();
+    for line in &payload.lines {
+        let akun = line.akun_kode.trim().to_uppercase();
+        if akun.is_empty() {
+            return Err("Setiap baris harus memilih akun biaya.".into());
+        }
+        let jumlah = line.jumlah;
+        if jumlah <= 0 {
+            return Err("Jumlah setiap baris harus lebih dari 0.".into());
+        }
+        normalized.push((akun, jumlah, line.catatan.trim().to_string()));
+    }
+
+    let total: i64 = normalized.iter().map(|(_, j, _)| *j).sum();
+    let nomor = format!("PG-{}", Utc::now().timestamp_millis());
+    let ts = now_ts();
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    validate_akun_kas(&tx, &kas_kode)?;
+
+    tx.execute(
+        "INSERT INTO pengeluaran (nomor, tanggal, akun_kas_kode, total, catatan, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
+        params![&nomor, tanggal, &kas_kode, total, catatan, ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+
+    for (akun_kode, jumlah, line_catatan) in &normalized {
+        validate_akun_biaya_pengeluaran(&tx, akun_kode)?;
+        tx.execute(
+            "INSERT INTO pengeluaran_line (nomor, akun_kode, jumlah, catatan) VALUES (?, ?, ?, ?)",
+            params![&nomor, akun_kode, jumlah, line_catatan],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    let mut catatan_jurnal = format!("Pengeluaran {nomor}");
+    if !catatan.is_empty() {
+        catatan_jurnal.push_str(" — ");
+        catatan_jurnal.push_str(catatan);
+    }
+
+    pengeluaran_tx_post_jurnal(
+        &tx,
+        tanggal,
+        &nomor,
+        &catatan_jurnal,
+        &kas_kode,
+        &normalized,
+        ts,
+    )?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(nomor)
+}
+
 /// Bangun ulang mutasi pembelian dari seluruh faktur di basis data dan set ulang kolom `stok`
 /// untuk master bertipe Barang sesuai total pembelian (dalam urutan tanggal faktur).
 ///

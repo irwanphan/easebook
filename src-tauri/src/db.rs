@@ -233,6 +233,36 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     migrate_pembelian_columns(conn)?;
     migrate_penjualan_line_columns(conn)?;
     migrate_penjualan_columns(conn)?;
+    migrate_pengeluaran_tables(conn)?;
+    Ok(())
+}
+
+fn migrate_pengeluaran_tables(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS pengeluaran (
+            nomor TEXT PRIMARY KEY NOT NULL,
+            tanggal TEXT NOT NULL,
+            akun_kas_kode TEXT NOT NULL REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            total INTEGER NOT NULL,
+            catatan TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pengeluaran_tanggal ON pengeluaran(tanggal);
+
+        CREATE TABLE IF NOT EXISTS pengeluaran_line (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nomor TEXT NOT NULL REFERENCES pengeluaran(nomor) ON DELETE CASCADE ON UPDATE CASCADE,
+            akun_kode TEXT NOT NULL REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            jumlah INTEGER NOT NULL,
+            catatan TEXT NOT NULL DEFAULT ''
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pengeluaran_line_nomor ON pengeluaran_line(nomor);
+        ",
+    )?;
     Ok(())
 }
 

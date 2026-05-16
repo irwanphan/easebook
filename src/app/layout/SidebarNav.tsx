@@ -41,7 +41,7 @@ export function SidebarNav({ items }: SidebarNavProps) {
 
   return (
     <aside
-      className={`relative flex shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 py-5 transition-[width] duration-200 ease-out ${
+      className={`relative flex h-full min-h-0 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 py-5 transition-[width] duration-200 ease-out ${
         expanded ? "w-56 px-3" : "w-[72px] items-center px-0"
       }`}
       aria-label="Navigasi aplikasi"
@@ -93,39 +93,41 @@ export function SidebarNav({ items }: SidebarNavProps) {
         ) : null}
       </div>
 
-      <nav
-        id="sidebar-main-nav"
-        className={`flex flex-1 flex-col gap-2 ${expanded ? "w-full" : "items-center"}`}
-        aria-label="Menu utama"
-      >
-        {items.map((entry) => {
-          if (entry.kind === "group") {
+      <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]">
+        <nav
+          id="sidebar-main-nav"
+          className={`flex flex-col gap-2 pb-1 ${expanded ? "w-full" : "items-center"}`}
+          aria-label="Menu utama"
+        >
+          {items.map((entry) => {
+            if (entry.kind === "group") {
+              return (
+                <SidebarNavGroup
+                  key={entry.id}
+                  group={entry}
+                  sidebarExpanded={expanded}
+                  rowClass={navLinkClass}
+                />
+              );
+            }
+            const Icon = entry.icon;
             return (
-              <SidebarNavGroup
+              <NavLink
                 key={entry.id}
-                group={entry}
-                sidebarExpanded={expanded}
-                rowClass={navLinkClass}
-              />
+                to={entry.path}
+                end={entry.path === "/"}
+                title={expanded ? undefined : entry.label}
+                className={({ isActive }) => navLinkClass(isActive, expanded)}
+              >
+                <Icon className="h-5 w-5 shrink-0" strokeWidth={1.75} aria-hidden />
+                {expanded ? (
+                  <span className="min-w-0 truncate text-sm font-medium">{entry.label}</span>
+                ) : null}
+              </NavLink>
             );
-          }
-          const Icon = entry.icon;
-          return (
-            <NavLink
-              key={entry.id}
-              to={entry.path}
-              end={entry.path === "/"}
-              title={expanded ? undefined : entry.label}
-              className={({ isActive }) => navLinkClass(isActive, expanded)}
-            >
-              <Icon className="h-5 w-5 shrink-0" strokeWidth={1.75} aria-hidden />
-              {expanded ? (
-                <span className="min-w-0 truncate text-sm font-medium">{entry.label}</span>
-              ) : null}
-            </NavLink>
-          );
-        })}
-      </nav>
+          })}
+        </nav>
+      </div>
 
       <button
         type="button"

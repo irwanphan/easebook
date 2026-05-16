@@ -41,7 +41,8 @@ function formatRupiah(n: number) {
 const JENIS_LABELS: Record<string, string> = {
   PEMBELIAN: "Pembelian (hutang / inventori)",
   PEMBELIAN_TUNAI: "Pembelian tunai (kas keluar)",
-  PENJUALAN: "Penjualan (naik piutang)",
+  PENJUALAN: "Penjualan (piutang)",
+  PENJUALAN_TUNAI: "Penjualan tunai (kas masuk)",
   PELUNASAN_PIUTANG: "Pelunasan piutang (kas masuk)",
   PELUNASAN_HUTANG: "Pelunasan hutang (kas keluar)",
   PENERIMAAN_LAINNYA: "Penerimaan lain (kas masuk)",
@@ -53,7 +54,7 @@ const JENIS_LABELS: Record<string, string> = {
 function jenisBadgeVariant(jenis: string) {
   if (jenis === "MANUAL") return "neutral" as const;
   if (jenis === "PEMBELIAN" || jenis === "PEMBELIAN_TUNAI") return "neutral" as const;
-  if (jenis === "PENJUALAN") return "success" as const;
+  if (jenis === "PENJUALAN" || jenis === "PENJUALAN_TUNAI") return "success" as const;
   if (jenis === "PELUNASAN_PIUTANG" || jenis === "PENERIMAAN_LAINNYA") return "processing" as const;
   if (jenis === "PELUNASAN_HUTANG" || jenis === "PENGELUARAN_LAINNYA") return "delayed" as const;
   if (jenis === "TRANSFER") return "warning" as const;

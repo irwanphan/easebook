@@ -1,10 +1,17 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import {
+  penjualanFakturTotal,
+  penjualanHitungPajakPpn,
+  penjualanLineSubtotal,
+} from "@/data/penjualan";
+import { loadPengaturanTransaksi } from "@/features/pengaturan/pengaturanTransaksiStorage";
+import type { AkunKeuanganRow } from "@/data/keuangan";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { useGudang } from "@/features/gudang/GudangContext";
 import { usePelanggan } from "@/features/pelanggan/PelangganContext";
@@ -34,11 +41,12 @@ type LineDraft = {
   barangKode: string;
   qty: number;
   hargaSatuan: number;
+  diskon: number;
   catatan: string;
 };
 
 function newLine(): LineDraft {
-  return { id: crypto.randomUUID(), barangKode: "", qty: 1, hargaSatuan: 0, catatan: "" };
+  return { id: crypto.randomUUID(), barangKode: "", qty: 1, hargaSatuan: 0, diskon: 0, catatan: "" };
 }
 
 export type PenjualanFakturFormProps = {
@@ -59,10 +67,33 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
   const [jatuhTempo, setJatuhTempo] = useState(todayLocalISODate);
   const [catatanFaktur, setCatatanFaktur] = useState("");
   const [lines, setLines] = useState<LineDraft[]>(() => [newLine()]);
+  const [diskonFaktur, setDiskonFaktur] = useState(0);
+  const [akunKasKode, setAkunKasKode] = useState("");
+  const [akunKasList, setAkunKasList] = useState<AkunKeuanganRow[]>([]);
+  const [akunKasLoading, setAkunKasLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const ppnPersen = loadPengaturanTransaksi().ppnPersen;
 
   const masterLoading = loadPelanggan || loadGudang || loadBarang;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setAkunKasLoading(true);
+      try {
+        const list = await invoke<AkunKeuanganRow[]>("akun_keuangan_list");
+        if (!cancelled) setAkunKasList(list.filter((a) => a.isAkunKas));
+      } catch {
+        if (!cancelled) setAkunKasList([]);
+      } finally {
+        if (!cancelled) setAkunKasLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const barangByKode = useMemo(() => {
     const m = new Map<string, (typeof barangItems)[number]>();
@@ -104,10 +135,28 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
     setLines((prev) => (prev.length <= 1 ? prev : prev.filter((r) => r.id !== id)));
   }
 
-  const grandTotal = useMemo(
-    () => lines.reduce((sum, r) => sum + Math.max(0, r.qty) * Math.max(0, r.hargaSatuan), 0),
+  const subtotalBarang = useMemo(
+    () =>
+      lines.reduce(
+        (sum, r) => sum + penjualanLineSubtotal(r.qty, r.hargaSatuan, r.diskon),
+        0,
+      ),
     [lines],
   );
+
+  const pajak = useMemo(
+    () => penjualanHitungPajakPpn(subtotalBarang, diskonFaktur, ppnPersen),
+    [subtotalBarang, diskonFaktur, ppnPersen],
+  );
+
+  const grandTotal = useMemo(
+    () => penjualanFakturTotal(subtotalBarang, diskonFaktur, pajak),
+    [subtotalBarang, diskonFaktur, pajak],
+  );
+
+  useEffect(() => {
+    setDiskonFaktur((d) => Math.min(d, subtotalBarang));
+  }, [subtotalBarang]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -136,6 +185,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
         barangKode: r.barangKode.trim(),
         qty: Math.floor(r.qty),
         hargaSatuan: Math.round(r.hargaSatuan),
+        diskon: Math.round(r.diskon),
         catatan: r.catatan.trim(),
       }));
 
@@ -153,11 +203,30 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
         setError("Harga satuan tidak valid.");
         return;
       }
+      if (ln.diskon < 0) {
+        setError("Diskon tidak valid.");
+        return;
+      }
+      if (ln.diskon > ln.hargaSatuan) {
+        setError("Diskon per satuan tidak boleh melebihi harga satuan.");
+        return;
+      }
       const b = barangByKode.get(ln.barangKode.toLowerCase());
       if (b?.tipe === "Barang" && (b.stok ?? 0) < ln.qty) {
         setError(`Stok ${b.kode} tidak cukup (tersedia ${b.stok ?? 0}, diminta ${ln.qty}).`);
         return;
       }
+    }
+
+    const diskonFakturVal = Math.round(diskonFaktur);
+    const pajakVal = penjualanHitungPajakPpn(subtotalBarang, diskonFakturVal, ppnPersen);
+    if (diskonFakturVal < 0) {
+      setError("Diskon faktur tidak valid.");
+      return;
+    }
+    if (diskonFakturVal > subtotalBarang) {
+      setError("Diskon faktur tidak boleh melebihi subtotal barang.");
+      return;
     }
 
     const payload = {
@@ -167,6 +236,9 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
       tanggalFaktur: tanggalFaktur.trim(),
       jatuhTempo: jatuhTempo.trim(),
       catatanFaktur: catatanFaktur.trim(),
+      diskonFaktur: diskonFakturVal,
+      pajak: pajakVal,
+      akunKasKode: akunKasKode.trim() || null,
       lines: payloadLines,
     };
 
@@ -332,20 +404,22 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
           </div>
 
           <div className="mt-6 overflow-x-auto rounded-xl border border-zinc-100">
-            <table className="w-full min-w-[880px] text-left text-sm">
+            <table className="w-full min-w-[980px] text-left text-sm">
               <thead>
                 <tr className="border-b border-zinc-100 bg-zinc-50/90 text-xs font-semibold uppercase tracking-wide text-zinc-500">
                   <th className="px-3 py-2.5">Barang / jasa</th>
                   <th className="w-24 px-3 py-2.5">Qty</th>
                   <th className="w-32 px-3 py-2.5">Harga satuan</th>
-                  <th className="min-w-[180px] px-3 py-2.5">Catatan baris</th>
+                  <th className="w-28 px-3 py-2.5">Diskon/sat</th>
+                  <th className="min-w-[160px] px-3 py-2.5">Catatan baris</th>
                   <th className="w-36 px-3 py-2.5 text-right">Subtotal</th>
                   <th className="w-14 px-2 py-2.5" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {lines.map((row) => {
-                  const sub = Math.max(0, row.qty) * Math.max(0, row.hargaSatuan);
+                  const sub = penjualanLineSubtotal(row.qty, row.hargaSatuan, row.diskon);
+                  const maxDiskon = Math.max(0, row.hargaSatuan);
                   const b = row.barangKode ? barangByKode.get(row.barangKode.toLowerCase()) : undefined;
                   return (
                     <tr key={row.id} className="bg-white">
@@ -398,6 +472,22 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                       </td>
                       <td className="px-3 py-2 align-top">
                         <input
+                          type="number"
+                          min={0}
+                          max={maxDiskon}
+                          step={1}
+                          value={row.diskon}
+                          onChange={(e) => {
+                            const raw = Math.max(0, Math.round(Number(e.target.value) || 0));
+                            setLine(row.id, { diskon: Math.min(raw, maxDiskon) });
+                          }}
+                          className={`${inputClass} mt-0`}
+                          disabled={submitting}
+                          title="Diskon nominal per satuan (Rp)"
+                        />
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <input
                           type="text"
                           value={row.catatan}
                           onChange={(e) => setLine(row.id, { catatan: e.target.value })}
@@ -427,9 +517,72 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
             </table>
           </div>
 
-          <div className="mt-6 flex flex-col items-end gap-1 border-t border-zinc-100 pt-4">
-            <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">Total faktur</span>
-            <span className="text-lg font-bold text-zinc-900">{formatRupiah(grandTotal)}</span>
+          <div className="mt-6 ml-auto w-full max-w-sm space-y-3 border-t border-zinc-100 pt-4">
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <span className="text-zinc-500">Subtotal barang</span>
+              <span className="font-medium text-zinc-900">{formatRupiah(subtotalBarang)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <label htmlFor="fj-diskon-faktur" className="shrink-0 text-zinc-500">
+                Diskon faktur
+              </label>
+              <input
+                id="fj-diskon-faktur"
+                type="number"
+                min={0}
+                max={subtotalBarang}
+                step={1}
+                value={diskonFaktur}
+                onChange={(e) => {
+                  const raw = Math.max(0, Math.round(Number(e.target.value) || 0));
+                  setDiskonFaktur(Math.min(raw, subtotalBarang));
+                }}
+                className={`${inputClass} mt-0 w-36 text-right`}
+                disabled={submitting}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <span className="shrink-0 text-zinc-500">Pajak (PPN {ppnPersen}%)</span>
+              <span className="font-medium text-zinc-900">{formatRupiah(pajak)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4 border-t border-zinc-100 pt-3">
+              <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">Total faktur</span>
+              <span className="text-lg font-bold text-zinc-900">{formatRupiah(grandTotal)}</span>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-5 sm:p-6">
+          <h2 className="text-sm font-semibold text-zinc-900">Penerimaan pembayaran</h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            Kosongkan untuk mencatat piutang (jurnal: piutang debet, pendapatan kredit). Pilih akun kas jika
+            diterima tunai (kas debet, pendapatan kredit).
+          </p>
+          <div className="mt-4 max-w-md">
+            <label htmlFor="fj-akun-kas" className="block text-sm font-medium text-zinc-700">
+              Diterima melalui
+            </label>
+            <select
+              id="fj-akun-kas"
+              value={akunKasKode}
+              onChange={(e) => setAkunKasKode(e.target.value)}
+              className={`${inputClass} mt-1`}
+              disabled={submitting || akunKasLoading}
+            >
+              <option value="">— Piutang (belum diterima) —</option>
+              {akunKasList.map((a) => (
+                <option key={a.kode} value={a.kode}>
+                  {a.kode} — {a.nama}
+                </option>
+              ))}
+            </select>
+            {akunKasLoading ? (
+              <p className="mt-1.5 text-xs text-zinc-400">Memuat daftar akun kas…</p>
+            ) : akunKasList.length === 0 ? (
+              <p className="mt-1.5 text-xs text-amber-700">
+                Belum ada akun kas. Tandai akun sebagai kas di Daftar akun keuangan.
+              </p>
+            ) : null}
           </div>
         </Card>
 

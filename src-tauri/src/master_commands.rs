@@ -1363,6 +1363,8 @@ pub struct PenjualanLineInput {
     pub barang_kode: String,
     pub qty: i64,
     pub harga_satuan: i64,
+    #[serde(default)]
+    pub diskon: i64,
     pub catatan: String,
 }
 
@@ -1375,10 +1377,80 @@ pub struct PenjualanInsertPayload {
     pub tanggal_faktur: String,
     pub jatuh_tempo: String,
     pub catatan_faktur: String,
+    #[serde(default)]
+    pub diskon_faktur: i64,
+    #[serde(default)]
+    pub pajak: i64,
+    #[serde(default)]
+    pub akun_kas_kode: Option<String>,
     pub lines: Vec<PenjualanLineInput>,
 }
 
-fn penjualan_validate_and_total(payload: &PenjualanInsertPayload) -> Result<(NaiveDate, NaiveDate, i64), String> {
+fn penjualan_line_subtotal(qty: i64, harga_satuan: i64, diskon: i64) -> Result<i64, String> {
+    pembelian_line_subtotal(qty, harga_satuan, diskon)
+}
+
+fn penjualan_faktur_total(sub_barang: i64, diskon_faktur: i64, pajak: i64) -> Result<i64, String> {
+    pembelian_faktur_total(sub_barang, diskon_faktur, pajak)
+}
+
+/// Posting jurnal penjualan: D piutang/kas, K pendapatan.
+fn penjualan_tx_post_jurnal(
+    tx: &Transaction<'_>,
+    tanggal: &str,
+    referensi: &str,
+    pelanggan_kode: &str,
+    total: i64,
+    akun_kas_kode: Option<&str>,
+    ts: i64,
+) -> Result<(), String> {
+    if total <= 0 {
+        return Ok(());
+    }
+    konfigurasi_ensure_row(tx, ts)?;
+    let cfg = konfigurasi_get_row(tx)?;
+    let akun_pendapatan = cfg
+        .akun_pendapatan
+        .ok_or_else(|| "Konfigurasi akun pendapatan belum diatur (Konfigurasi akun jurnal).".to_string())?;
+
+    let (jenis, debit_akun) = if let Some(kas) = akun_kas_kode {
+        validate_akun_kas(tx, kas)?;
+        (String::from("PENJUALAN_TUNAI"), kas.to_string())
+    } else {
+        let akun_piutang = cfg
+            .akun_piutang
+            .ok_or_else(|| "Konfigurasi akun piutang belum diatur (Konfigurasi akun jurnal).".to_string())?;
+        (String::from("PENJUALAN"), akun_piutang)
+    };
+
+    let catatan = format!("Faktur penjualan {referensi} — pelanggan {pelanggan_kode}");
+    tx.execute(
+        "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)",
+        params![tanggal, jenis, referensi, catatan, ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    let jurnal_id = tx.last_insert_rowid();
+
+    let lines = [
+        (debit_akun.as_str(), total, 0_i64),
+        (akun_pendapatan.as_str(), 0_i64, total),
+    ];
+    for (akun_kode, debit, kredit) in lines {
+        tx.execute(
+            "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+             VALUES (?, ?, ?, ?, '')",
+            params![jurnal_id, akun_kode, debit, kredit],
+        )
+        .map_err(|e| e.to_string())?;
+        akun_kas_apply_saldo_delta(tx, akun_kode, debit, kredit, ts)?;
+    }
+    Ok(())
+}
+
+fn penjualan_validate_and_total(
+    payload: &PenjualanInsertPayload,
+) -> Result<(NaiveDate, NaiveDate, i64, i64, i64, i64), String> {
     let pelanggan_kode = payload.pelanggan_kode.trim();
     let gudang_kode = payload.gudang_kode.trim();
     if pelanggan_kode.is_empty() {
@@ -1398,7 +1470,7 @@ fn penjualan_validate_and_total(payload: &PenjualanInsertPayload) -> Result<(Nai
         return Err("Tambahkan minimal satu baris item.".into());
     }
 
-    let mut total: i64 = 0;
+    let mut subtotal_barang: i64 = 0;
     for line in &payload.lines {
         let kode_b = line.barang_kode.trim();
         if kode_b.is_empty() {
@@ -1410,16 +1482,32 @@ fn penjualan_validate_and_total(payload: &PenjualanInsertPayload) -> Result<(Nai
         if line.harga_satuan < 0 {
             return Err("Harga satuan tidak valid.".into());
         }
-        let sub = line
-            .qty
-            .checked_mul(line.harga_satuan)
-            .ok_or_else(|| "Total baris melimpahi batas.".to_string())?;
-        total = total
+        if line.diskon < 0 {
+            return Err("Diskon tidak valid.".into());
+        }
+        if line.diskon > line.harga_satuan {
+            return Err("Diskon per satuan tidak boleh melebihi harga satuan.".into());
+        }
+        let sub = penjualan_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
+        subtotal_barang = subtotal_barang
             .checked_add(sub)
-            .ok_or_else(|| "Total faktur melimpahi batas.".to_string())?;
+            .ok_or_else(|| "Subtotal barang melimpahi batas.".to_string())?;
     }
 
-    Ok((tgl, jt, total))
+    let diskon_faktur = payload.diskon_faktur;
+    let pajak = payload.pajak;
+    if diskon_faktur < 0 {
+        return Err("Diskon faktur tidak valid.".into());
+    }
+    if diskon_faktur > subtotal_barang {
+        return Err("Diskon faktur tidak boleh melebihi subtotal barang.".into());
+    }
+    if pajak < 0 {
+        return Err("Pajak tidak valid.".into());
+    }
+    let total = penjualan_faktur_total(subtotal_barang, diskon_faktur, pajak)?;
+
+    Ok((tgl, jt, subtotal_barang, diskon_faktur, pajak, total))
 }
 
 /// Kurangi stok + baris mutasi keluar untuk satu baris penjualan bertipe Barang.
@@ -1510,11 +1598,12 @@ pub fn penjualan_list(state: State<DbState>) -> Result<Vec<PenjualanListRow>, St
 
 #[tauri::command]
 pub fn penjualan_insert(state: State<DbState>, payload: PenjualanInsertPayload) -> Result<String, String> {
-    let (tgl, jt, total) = penjualan_validate_and_total(&payload)?;
+    let (tgl, jt, _sub, diskon_faktur, pajak, total) = penjualan_validate_and_total(&payload)?;
     let pelanggan_kode = payload.pelanggan_kode.trim();
     let gudang_kode = payload.gudang_kode.trim();
     let salesman = payload.salesman.trim();
     let catatan_faktur = payload.catatan_faktur.trim();
+    let akun_kas_kode = pembelian_normalize_akun_kas(&payload.akun_kas_kode);
     let nomor = format!("FJ-{}", Utc::now().timestamp_millis());
     let ts = now_ts();
     let tanggal_str = tgl.format("%Y-%m-%d").to_string();
@@ -1524,8 +1613,8 @@ pub fn penjualan_insert(state: State<DbState>, payload: PenjualanInsertPayload) 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     tx.execute(
-        "INSERT INTO penjualan (nomor, pelanggan_kode, gudang_kode, salesman, tanggal_faktur, jatuh_tempo, catatan_faktur, total, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Dipesan', ?, ?)",
+        "INSERT INTO penjualan (nomor, pelanggan_kode, gudang_kode, salesman, tanggal_faktur, jatuh_tempo, catatan_faktur, diskon_faktur, pajak, akun_kas_kode, total, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Dipesan', ?, ?)",
         params![
             &nomor,
             pelanggan_kode,
@@ -1534,6 +1623,9 @@ pub fn penjualan_insert(state: State<DbState>, payload: PenjualanInsertPayload) 
             tanggal_str,
             jatuh_str,
             catatan_faktur,
+            diskon_faktur,
+            pajak,
+            akun_kas_kode.as_deref(),
             total,
             ts,
             ts
@@ -1551,11 +1643,19 @@ pub fn penjualan_insert(state: State<DbState>, payload: PenjualanInsertPayload) 
 
     for line in &payload.lines {
         let kode_b = line.barang_kode.trim();
-        let sub = line.qty * line.harga_satuan;
+        let sub = penjualan_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
         let line_catatan = line.catatan.trim();
         tx.execute(
-            "INSERT INTO penjualan_line (nomor, barang_kode, qty, harga_satuan, subtotal, catatan) VALUES (?, ?, ?, ?, ?, ?)",
-            params![&nomor, kode_b, line.qty, line.harga_satuan, sub, line_catatan],
+            "INSERT INTO penjualan_line (nomor, barang_kode, qty, harga_satuan, diskon, subtotal, catatan) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &nomor,
+                kode_b,
+                line.qty,
+                line.harga_satuan,
+                line.diskon,
+                sub,
+                line_catatan
+            ],
         )
         .map_err(|e| {
             if e.to_string().contains("FOREIGN KEY") {
@@ -1576,6 +1676,16 @@ pub fn penjualan_insert(state: State<DbState>, payload: PenjualanInsertPayload) 
             ts,
         )?;
     }
+
+    penjualan_tx_post_jurnal(
+        &tx,
+        &tanggal_str,
+        &nomor,
+        pelanggan_kode,
+        total,
+        akun_kas_kode.as_deref(),
+        ts,
+    )?;
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(nomor)

@@ -113,6 +113,7 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             barang_kode TEXT NOT NULL REFERENCES barang_jasa(kode) ON UPDATE CASCADE,
             qty INTEGER NOT NULL,
             harga_satuan INTEGER NOT NULL,
+            diskon INTEGER NOT NULL DEFAULT 0,
             subtotal INTEGER NOT NULL
         );
 
@@ -221,6 +222,33 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         ",
     )?;
     migrate_akun_keuangan_columns(conn)?;
+    migrate_pembelian_line_columns(conn)?;
+    Ok(())
+}
+
+/// Kolom diskon per baris faktur pembelian.
+fn migrate_pembelian_line_columns(conn: &Connection) -> rusqlite::Result<()> {
+    let exists: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'pembelian_line'",
+        [],
+        |r| r.get(0),
+    )?;
+    if exists == 0 {
+        return Ok(());
+    }
+
+    let mut stmt = conn.prepare("PRAGMA table_info(pembelian_line)")?;
+    let cols: Vec<String> = stmt
+        .query_map([], |r| r.get::<_, String>(1))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    if !cols.iter().any(|c| c.eq_ignore_ascii_case("diskon")) {
+        conn.execute(
+            "ALTER TABLE pembelian_line ADD COLUMN diskon INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
     Ok(())
 }
 

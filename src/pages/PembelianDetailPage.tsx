@@ -154,13 +154,14 @@ export function PembelianDetailPage() {
               <h2 className="text-sm font-semibold text-zinc-900">Baris item</h2>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-left text-sm">
+              <table className="w-full min-w-[720px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-zinc-100 bg-zinc-50/90 text-xs font-semibold uppercase tracking-wide text-zinc-500">
                     <th className="px-5 py-3">Kode</th>
                     <th className="px-5 py-3">Nama</th>
                     <th className="px-5 py-3 text-right">Qty</th>
                     <th className="px-5 py-3 text-right">Harga satuan</th>
+                    <th className="px-5 py-3 text-right">Diskon/satuan</th>
                     <th className="px-5 py-3 text-right">Subtotal</th>
                   </tr>
                 </thead>
@@ -171,6 +172,9 @@ export function PembelianDetailPage() {
                       <td className="px-5 py-3 font-medium text-zinc-900">{row.barangNama}</td>
                       <td className="px-5 py-3 text-right text-zinc-700">{row.qty}</td>
                       <td className="px-5 py-3 text-right text-zinc-700">{formatRupiah(row.hargaSatuan)}</td>
+                      <td className="px-5 py-3 text-right text-zinc-700">
+                        {row.diskon > 0 ? formatRupiah(row.diskon) : "—"}
+                      </td>
                       <td className="px-5 py-3 text-right font-medium text-zinc-900">{formatRupiah(row.subtotal)}</td>
                     </tr>
                   ))}

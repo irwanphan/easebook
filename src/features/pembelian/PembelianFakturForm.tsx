@@ -5,7 +5,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { METODE_PEMBAYARAN_PEMBELIAN, type PembelianDetail } from "@/data/pembelian";
+import {
+  METODE_PEMBAYARAN_PEMBELIAN,
+  pembelianLineSubtotal,
+  type PembelianDetail,
+} from "@/data/pembelian";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { useGudang } from "@/features/gudang/GudangContext";
 import { usePemasok } from "@/features/pemasok/PemasokContext";
@@ -35,10 +39,11 @@ type LineDraft = {
   barangKode: string;
   qty: number;
   hargaSatuan: number;
+  diskon: number;
 };
 
 function newLine(): LineDraft {
-  return { id: crypto.randomUUID(), barangKode: "", qty: 1, hargaSatuan: 0 };
+  return { id: crypto.randomUUID(), barangKode: "", qty: 1, hargaSatuan: 0, diskon: 0 };
 }
 
 export type PembelianFakturFormProps = {
@@ -100,6 +105,7 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
                 barangKode: l.barangKode,
                 qty: l.qty,
                 hargaSatuan: l.hargaSatuan,
+                diskon: l.diskon ?? 0,
               }))
             : [newLine()],
         );
@@ -125,6 +131,7 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
           if (!raw) {
             next.barangKode = "";
             next.hargaSatuan = 0;
+            next.diskon = 0;
           } else {
             const b = barangByKode.get(raw.toLowerCase());
             if (b) {
@@ -134,6 +141,8 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
             }
           }
         }
+        const harga = Math.max(0, next.hargaSatuan);
+        next.diskon = Math.min(Math.max(0, Math.round(next.diskon)), harga);
         return next;
       }),
     );
@@ -148,7 +157,11 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
   }
 
   const grandTotal = useMemo(
-    () => lines.reduce((sum, r) => sum + Math.max(0, r.qty) * Math.max(0, r.hargaSatuan), 0),
+    () =>
+      lines.reduce(
+        (sum, r) => sum + pembelianLineSubtotal(r.qty, r.hargaSatuan, r.diskon),
+        0,
+      ),
     [lines],
   );
 
@@ -179,6 +192,7 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
         barangKode: r.barangKode.trim(),
         qty: Math.floor(r.qty),
         hargaSatuan: Math.round(r.hargaSatuan),
+        diskon: Math.round(r.diskon),
       }));
 
     if (payloadLines.length === 0) {
@@ -192,6 +206,14 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
       }
       if (ln.hargaSatuan < 0) {
         setError("Harga satuan tidak valid.");
+        return;
+      }
+      if (ln.diskon < 0) {
+        setError("Diskon tidak valid.");
+        return;
+      }
+      if (ln.diskon > ln.hargaSatuan) {
+        setError("Diskon per satuan tidak boleh melebihi harga satuan.");
         return;
       }
     }
@@ -375,19 +397,21 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
           </div>
 
           <div className="mt-6 overflow-x-auto rounded-xl border border-zinc-100">
-            <table className="w-full min-w-[640px] text-left text-sm">
+            <table className="w-full min-w-[760px] text-left text-sm">
               <thead>
                 <tr className="border-b border-zinc-100 bg-zinc-50/90 text-xs font-semibold uppercase tracking-wide text-zinc-500">
                   <th className="px-3 py-2.5">Barang</th>
                   <th className="w-24 px-3 py-2.5">Qty</th>
                   <th className="w-36 px-3 py-2.5">Harga satuan</th>
+                  <th className="w-32 px-3 py-2.5">Diskon/satuan</th>
                   <th className="w-36 px-3 py-2.5 text-right">Subtotal</th>
                   <th className="w-14 px-2 py-2.5" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {lines.map((row) => {
-                  const sub = Math.max(0, row.qty) * Math.max(0, row.hargaSatuan);
+                  const sub = pembelianLineSubtotal(row.qty, row.hargaSatuan, row.diskon);
+                  const maxDiskon = Math.max(0, row.hargaSatuan);
                   return (
                     <tr key={row.id} className="bg-white">
                       <td className="px-3 py-2 align-top">
@@ -431,6 +455,22 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
                           }
                           className={`${inputClass} mt-0`}
                           disabled={hydrating}
+                        />
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <input
+                          type="number"
+                          min={0}
+                          max={maxDiskon}
+                          step={1}
+                          value={row.diskon}
+                          onChange={(e) => {
+                            const raw = Math.max(0, Math.round(Number(e.target.value) || 0));
+                            setLine(row.id, { diskon: Math.min(raw, maxDiskon) });
+                          }}
+                          className={`${inputClass} mt-0`}
+                          disabled={hydrating}
+                          title="Diskon nominal per satuan (Rp)"
                         />
                       </td>
                       <td className="px-3 py-2 align-top text-right font-medium text-zinc-900">

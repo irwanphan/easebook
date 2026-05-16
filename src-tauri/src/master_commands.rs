@@ -733,6 +733,20 @@ pub struct PembelianLineInput {
     pub barang_kode: String,
     pub qty: i64,
     pub harga_satuan: i64,
+    #[serde(default)]
+    pub diskon: i64,
+}
+
+fn pembelian_line_subtotal(qty: i64, harga_satuan: i64, diskon: i64) -> Result<i64, String> {
+    if diskon < 0 {
+        return Err("Diskon tidak valid.".into());
+    }
+    if diskon > harga_satuan {
+        return Err("Diskon per satuan tidak boleh melebihi harga satuan.".into());
+    }
+    let net_unit = harga_satuan - diskon;
+    qty.checked_mul(net_unit)
+        .ok_or_else(|| "Total baris melimpahi batas.".to_string())
 }
 
 #[derive(Debug, Deserialize)]
@@ -782,10 +796,7 @@ fn pembelian_validate_and_total(payload: &PembelianInsertPayload) -> Result<(Nai
         if line.harga_satuan < 0 {
             return Err("Harga satuan tidak valid.".into());
         }
-        let sub = line
-            .qty
-            .checked_mul(line.harga_satuan)
-            .ok_or_else(|| "Total baris melimpahi batas.".to_string())?;
+        let sub = pembelian_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
         total = total
             .checked_add(sub)
             .ok_or_else(|| "Total faktur melimpahi batas.".to_string())?;
@@ -928,10 +939,10 @@ pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) 
 
     for line in &payload.lines {
         let kode_b = line.barang_kode.trim();
-        let sub = line.qty * line.harga_satuan;
+        let sub = pembelian_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
         tx.execute(
-            "INSERT INTO pembelian_line (nomor, barang_kode, qty, harga_satuan, subtotal) VALUES (?, ?, ?, ?, ?)",
-            params![&nomor, kode_b, line.qty, line.harga_satuan, sub],
+            "INSERT INTO pembelian_line (nomor, barang_kode, qty, harga_satuan, diskon, subtotal) VALUES (?, ?, ?, ?, ?, ?)",
+            params![&nomor, kode_b, line.qty, line.harga_satuan, line.diskon, sub],
         )
         .map_err(|e| {
             if e.to_string().contains("FOREIGN KEY") {
@@ -954,6 +965,7 @@ pub struct PembelianDetailLine {
     pub barang_nama: String,
     pub qty: i64,
     pub harga_satuan: i64,
+    pub diskon: i64,
     pub subtotal: i64,
 }
 
@@ -1012,7 +1024,7 @@ pub fn pembelian_detail(state: State<DbState>, nomor: String) -> Result<Pembelia
 
     let mut stmt = conn
         .prepare(
-            "SELECT l.barang_kode, b.nama, l.qty, l.harga_satuan, l.subtotal
+            "SELECT l.barang_kode, b.nama, l.qty, l.harga_satuan, COALESCE(l.diskon, 0), l.subtotal
              FROM pembelian_line l
              JOIN barang_jasa b ON lower(b.kode) = lower(l.barang_kode)
              WHERE l.nomor = ?
@@ -1026,7 +1038,8 @@ pub fn pembelian_detail(state: State<DbState>, nomor: String) -> Result<Pembelia
                 barang_nama: r.get(1)?,
                 qty: r.get(2)?,
                 harga_satuan: r.get(3)?,
-                subtotal: r.get(4)?,
+                diskon: r.get(4)?,
+                subtotal: r.get(5)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -1122,10 +1135,10 @@ pub fn pembelian_update(
 
     for line in &payload.lines {
         let kode_b = line.barang_kode.trim();
-        let sub = line.qty * line.harga_satuan;
+        let sub = pembelian_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
         tx.execute(
-            "INSERT INTO pembelian_line (nomor, barang_kode, qty, harga_satuan, subtotal) VALUES (?, ?, ?, ?, ?)",
-            params![nomor_trim, kode_b, line.qty, line.harga_satuan, sub],
+            "INSERT INTO pembelian_line (nomor, barang_kode, qty, harga_satuan, diskon, subtotal) VALUES (?, ?, ?, ?, ?, ?)",
+            params![nomor_trim, kode_b, line.qty, line.harga_satuan, line.diskon, sub],
         )
         .map_err(|e| {
             if e.to_string().contains("FOREIGN KEY") {

@@ -27,8 +27,18 @@ export type PembelianDetailLine = {
   barangNama: string;
   qty: number;
   hargaSatuan: number;
+  /** Diskon nominal per satuan (Rp). */
+  diskon: number;
   subtotal: number;
 };
+
+/** Subtotal baris: qty × (harga satuan − diskon per satuan). */
+export function pembelianLineSubtotal(qty: number, hargaSatuan: number, diskon: number): number {
+  const q = Math.max(0, Math.floor(qty));
+  const h = Math.max(0, hargaSatuan);
+  const d = Math.max(0, Math.min(Math.round(diskon), h));
+  return q * Math.max(0, h - d);
+}
 
 export type PembelianDetail = {
   nomor: string;

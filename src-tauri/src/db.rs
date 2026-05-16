@@ -224,6 +224,39 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+fn ensure_app_meta(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS app_meta (
+            key TEXT PRIMARY KEY NOT NULL,
+            value TEXT NOT NULL
+        )",
+    )?;
+    Ok(())
+}
+
+fn meta_get(conn: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
+    ensure_app_meta(conn)?;
+    match conn.query_row(
+        "SELECT value FROM app_meta WHERE key = ?",
+        params![key],
+        |r| r.get(0),
+    ) {
+        Ok(v) => Ok(Some(v)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+fn meta_set(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<()> {
+    ensure_app_meta(conn)?;
+    conn.execute(
+        "INSERT INTO app_meta (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![key, value],
+    )?;
+    Ok(())
+}
+
 /// Kolom tambahan untuk instalasi lama (tipe / peran_jurnal → skema daftar akun baru).
 fn migrate_akun_keuangan_columns(conn: &Connection) -> rusqlite::Result<()> {
     let exists: i64 = conn.query_row(
@@ -240,6 +273,8 @@ fn migrate_akun_keuangan_columns(conn: &Connection) -> rusqlite::Result<()> {
         .query_map([], |r| r.get::<_, String>(1))?
         .filter_map(|r| r.ok())
         .collect();
+
+    let had_is_akun_kas = cols.iter().any(|c| c.eq_ignore_ascii_case("is_akun_kas"));
 
     if !cols.iter().any(|c| c.eq_ignore_ascii_case("saldo")) {
         conn.execute(
@@ -281,27 +316,35 @@ fn migrate_akun_keuangan_columns(conn: &Connection) -> rusqlite::Result<()> {
         )?;
     }
 
-    // Migrasi dari peran_jurnal / tipe lama
-    if cols.iter().any(|c| c.eq_ignore_ascii_case("peran_jurnal")) {
-        conn.execute_batch(
-            "
-            UPDATE akun_keuangan SET is_akun_kas = 1
-            WHERE upper(trim(peran_jurnal)) IN ('KAS', 'BANK', 'KAS_BANK');
-            UPDATE akun_keuangan SET kelompok_lr = 'PENDAPATAN'
-            WHERE trim(kelompok_lr) = '' AND upper(trim(peran_jurnal)) = 'PENDAPATAN';
-            UPDATE akun_keuangan SET kelompok_lr = 'BEBAN'
-            WHERE trim(kelompok_lr) = '' AND upper(trim(peran_jurnal)) IN ('PEMBELIAN', 'PENGELUARAN_LAINNYA');
-            UPDATE akun_keuangan SET kelompok_lr = 'PENDAPATAN'
-            WHERE trim(kelompok_lr) = '' AND upper(trim(peran_jurnal)) = 'PENERIMAAN_LAINNYA';
-            ",
-        )?;
-    } else if cols.iter().any(|c| c.eq_ignore_ascii_case("tipe")) {
-        conn.execute_batch(
-            "
-            UPDATE akun_keuangan SET is_akun_kas = 1
-            WHERE upper(trim(tipe)) IN ('KAS_BANK', 'KAS', 'BANK');
-            ",
-        )?;
+    // Migrasi satu kali dari skema lama (jangan dijalankan tiap startup — peran_jurnal default 'KAS' akan menandai semua akun).
+    if !had_is_akun_kas {
+        if cols.iter().any(|c| c.eq_ignore_ascii_case("peran_jurnal")) {
+            conn.execute_batch(
+                "
+                UPDATE akun_keuangan SET is_akun_kas = 1
+                WHERE upper(trim(peran_jurnal)) IN ('KAS', 'BANK', 'KAS_BANK');
+                UPDATE akun_keuangan SET kelompok_lr = 'PENDAPATAN'
+                WHERE trim(kelompok_lr) = '' AND upper(trim(peran_jurnal)) = 'PENDAPATAN';
+                UPDATE akun_keuangan SET kelompok_lr = 'BEBAN'
+                WHERE trim(kelompok_lr) = '' AND upper(trim(peran_jurnal)) IN ('PEMBELIAN', 'PENGELUARAN_LAINNYA');
+                UPDATE akun_keuangan SET kelompok_lr = 'PENDAPATAN'
+                WHERE trim(kelompok_lr) = '' AND upper(trim(peran_jurnal)) = 'PENERIMAAN_LAINNYA';
+                ",
+            )?;
+        } else if cols.iter().any(|c| c.eq_ignore_ascii_case("tipe")) {
+            conn.execute_batch(
+                "
+                UPDATE akun_keuangan SET is_akun_kas = 1
+                WHERE upper(trim(tipe)) IN ('KAS_BANK', 'KAS', 'BANK');
+                ",
+            )?;
+        }
+    }
+
+    // Perbaiki DB yang sudah terlanjur salah (semua akun tertandai kas).
+    if meta_get(conn, "akun_kas_flags_v2")?.is_none() {
+        crate::seed_akun_keuangan::sync_standard_is_akun_kas(conn)?;
+        meta_set(conn, "akun_kas_flags_v2", "1")?;
     }
 
     conn.execute(

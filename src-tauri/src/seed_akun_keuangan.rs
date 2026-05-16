@@ -119,6 +119,18 @@ const AKUN_STANDAR: &[SeedAkun] = &[
     SeedAkun { kode: "6045", nama: "Biaya Pemeliharaan Peralatan", kelompok: "BIAYA", kolom_norm: "D", kelompok_lr: "BEBAN", sub_kelompok: "Biaya Non Operasional", is_kas: false },
 ];
 
+/// Selaraskan `is_akun_kas` untuk kode yang ada di daftar standar (perbaikan DB lama).
+pub fn sync_standard_is_akun_kas(conn: &Connection) -> rusqlite::Result<()> {
+    for a in AKUN_STANDAR {
+        let is_kas = if a.is_kas { 1 } else { 0 };
+        conn.execute(
+            "UPDATE akun_keuangan SET is_akun_kas = ? WHERE lower(kode) = lower(?)",
+            params![is_kas, a.kode],
+        )?;
+    }
+    Ok(())
+}
+
 fn infer_induk_kode(kode: &str) -> Option<String> {
     let pos = kode.rfind('.')?;
     let parent = kode[..pos].trim();

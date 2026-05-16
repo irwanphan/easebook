@@ -104,6 +104,10 @@ export function PembelianDetailPage() {
 
       {loading ? <p className="text-sm text-zinc-500">Memuat…</p> : null}
 
+      {!loading && !detail && !error ? (
+        <p className="text-sm text-zinc-500">Data faktur tidak tersedia.</p>
+      ) : null}
+
       {detail && !loading ? (
         <>
           <Card>
@@ -139,25 +143,39 @@ export function PembelianDetailPage() {
                 <p className="mt-1 text-sm text-zinc-800">{formatTanggal(detail.jatuhTempo)}</p>
               </div>
               <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Pembayaran</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Metode pembayaran</p>
                 <p className="mt-1 text-sm text-zinc-800">{labelMetodePembayaran(detail.metodePembayaran)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Dibayarkan menggunakan</p>
+                <p className="mt-1 text-sm text-zinc-800">
+                  {detail.akunKasKode
+                    ? `${detail.akunKasKode}${detail.akunKasNama ? ` — ${detail.akunKasNama}` : ""} (tunai)`
+                    : "Hutang dagang"}
+                </p>
               </div>
               <div className="sm:col-span-2 lg:col-span-3">
                 <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Ringkasan nilai</p>
                 <dl className="mt-2 space-y-1 text-sm">
                   <div className="flex justify-between gap-4">
                     <dt className="text-zinc-600">Subtotal barang</dt>
-                    <dd className="font-medium text-zinc-900">{formatRupiah(detail.subtotalBarang)}</dd>
+                    <dd className="font-medium text-zinc-900">
+                      {formatRupiah(detail.subtotalBarang ?? 0)}
+                    </dd>
                   </div>
                   <div className="flex justify-between gap-4">
                     <dt className="text-zinc-600">Diskon faktur</dt>
                     <dd className="text-zinc-800">
-                      {detail.diskonFaktur > 0 ? `−${formatRupiah(detail.diskonFaktur)}` : "—"}
+                      {(detail.diskonFaktur ?? 0) > 0
+                        ? `−${formatRupiah(detail.diskonFaktur ?? 0)}`
+                        : "—"}
                     </dd>
                   </div>
                   <div className="flex justify-between gap-4">
                     <dt className="text-zinc-600">Pajak</dt>
-                    <dd className="text-zinc-800">{detail.pajak > 0 ? formatRupiah(detail.pajak) : "—"}</dd>
+                    <dd className="text-zinc-800">
+                      {(detail.pajak ?? 0) > 0 ? formatRupiah(detail.pajak ?? 0) : "—"}
+                    </dd>
                   </div>
                   <div className="flex justify-between gap-4 border-t border-zinc-100 pt-2">
                     <dt className="font-medium text-zinc-900">Total faktur</dt>
@@ -185,14 +203,14 @@ export function PembelianDetailPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
-                  {detail.lines.map((row, idx) => (
+                  {(detail.lines ?? []).map((row, idx) => (
                     <tr key={idx} className="bg-white">
                       <td className="px-5 py-3 font-mono text-xs text-zinc-800">{row.barangKode}</td>
                       <td className="px-5 py-3 font-medium text-zinc-900">{row.barangNama}</td>
                       <td className="px-5 py-3 text-right text-zinc-700">{row.qty}</td>
                       <td className="px-5 py-3 text-right text-zinc-700">{formatRupiah(row.hargaSatuan)}</td>
                       <td className="px-5 py-3 text-right text-zinc-700">
-                        {row.diskon > 0 ? formatRupiah(row.diskon) : "—"}
+                        {(row.diskon ?? 0) > 0 ? formatRupiah(row.diskon ?? 0) : "—"}
                       </td>
                       <td className="px-5 py-3 text-right font-medium text-zinc-900">{formatRupiah(row.subtotal)}</td>
                     </tr>

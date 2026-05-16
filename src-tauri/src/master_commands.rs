@@ -761,7 +761,124 @@ pub struct PembelianInsertPayload {
     pub diskon_faktur: i64,
     #[serde(default)]
     pub pajak: i64,
+    #[serde(default)]
+    pub akun_kas_kode: Option<String>,
     pub lines: Vec<PembelianLineInput>,
+}
+
+fn pembelian_normalize_akun_kas(raw: &Option<String>) -> Option<String> {
+    raw.as_ref()
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty())
+}
+
+fn validate_akun_kas(tx: &Transaction<'_>, kode: &str) -> Result<(), String> {
+    let is_kas: i64 = tx
+        .query_row(
+            "SELECT COALESCE(is_akun_kas, 0) FROM akun_keuangan WHERE lower(kode) = lower(?)",
+            params![kode],
+            |r| r.get(0),
+        )
+        .map_err(|_| format!("Akun kas '{kode}' tidak ditemukan."))?;
+    if is_kas == 0 {
+        return Err(format!("Akun '{kode}' bukan akun kas."));
+    }
+    Ok(())
+}
+
+/// Balikkan dampak saldo kas dari baris jurnal sebelum hapus jurnal.
+fn jurnal_tx_reverse_kas_lines(tx: &Transaction<'_>, jurnal_id: i64, ts: i64) -> Result<(), String> {
+    let mut stmt = tx
+        .prepare("SELECT akun_kode, debit, kredit FROM jurnal_umum_line WHERE jurnal_id = ?")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![jurnal_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
+        })
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        let (akun, debit, kredit) = row.map_err(|e| e.to_string())?;
+        akun_kas_apply_saldo_delta(&tx, &akun, kredit, debit, ts)?;
+    }
+    Ok(())
+}
+
+fn jurnal_tx_delete_pembelian_by_referensi(tx: &Transaction<'_>, referensi: &str, ts: i64) -> Result<(), String> {
+    let mut ids: Vec<i64> = Vec::new();
+    {
+        let mut stmt = tx
+            .prepare(
+                "SELECT id FROM jurnal_umum
+                 WHERE referensi = ? AND jenis IN ('PEMBELIAN', 'PEMBELIAN_TUNAI')",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![referensi], |r| r.get(0))
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            ids.push(row.map_err(|e| e.to_string())?);
+        }
+    }
+    for id in ids {
+        jurnal_tx_reverse_kas_lines(tx, id, ts)?;
+        tx.execute("DELETE FROM jurnal_umum WHERE id = ?", params![id])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Posting jurnal pembelian: D inventori (akun pembelian), K hutang atau K kas.
+fn pembelian_tx_post_jurnal(
+    tx: &Transaction<'_>,
+    tanggal: &str,
+    referensi: &str,
+    pemasok_kode: &str,
+    total: i64,
+    akun_kas_kode: Option<&str>,
+    ts: i64,
+) -> Result<(), String> {
+    if total <= 0 {
+        return Ok(());
+    }
+    konfigurasi_ensure_row(tx, ts)?;
+    let cfg = konfigurasi_get_row(tx)?;
+    let akun_pembelian = cfg
+        .akun_pembelian
+        .ok_or_else(|| "Konfigurasi akun pembelian/inventori belum diatur (Jurnal umum).".to_string())?;
+
+    let (jenis, kredit_akun) = if let Some(kas) = akun_kas_kode {
+        validate_akun_kas(tx, kas)?;
+        (String::from("PEMBELIAN_TUNAI"), kas.to_string())
+    } else {
+        let akun_hutang = cfg
+            .akun_hutang
+            .ok_or_else(|| "Konfigurasi akun hutang belum diatur (Jurnal umum).".to_string())?;
+        (String::from("PEMBELIAN"), akun_hutang)
+    };
+
+    let catatan = format!("Faktur pembelian {referensi} — pemasok {pemasok_kode}");
+    tx.execute(
+        "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)",
+        params![tanggal, jenis, referensi, catatan, ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    let jurnal_id = tx.last_insert_rowid();
+
+    let lines = [
+        (akun_pembelian.as_str(), total, 0_i64),
+        (kredit_akun.as_str(), 0_i64, total),
+    ];
+    for (akun_kode, debit, kredit) in lines {
+        tx.execute(
+            "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+             VALUES (?, ?, ?, ?, '')",
+            params![jurnal_id, akun_kode, debit, kredit],
+        )
+        .map_err(|e| e.to_string())?;
+        akun_kas_apply_saldo_delta(tx, akun_kode, debit, kredit, ts)?;
+    }
+    Ok(())
 }
 
 fn pembelian_faktur_total(sub_barang: i64, diskon_faktur: i64, pajak: i64) -> Result<i64, String> {
@@ -934,6 +1051,7 @@ pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) 
     let (tgl, jt, metode, diskon_faktur, pajak, total) = pembelian_validate_and_total(&payload)?;
     let pemasok_kode = payload.pemasok_kode.trim();
     let gudang_kode = payload.gudang_kode.trim();
+    let akun_kas_kode = pembelian_normalize_akun_kas(&payload.akun_kas_kode);
     let nomor = format!("FB-{}", Utc::now().timestamp_millis());
     let ts = now_ts();
     let tanggal_str = tgl.format("%Y-%m-%d").to_string();
@@ -943,8 +1061,8 @@ pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     tx.execute(
-        "INSERT INTO pembelian (nomor, pemasok_kode, gudang_kode, tanggal_faktur, jatuh_tempo, metode_pembayaran, diskon_faktur, pajak, total, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Dipesan', ?, ?)",
+        "INSERT INTO pembelian (nomor, pemasok_kode, gudang_kode, tanggal_faktur, jatuh_tempo, metode_pembayaran, diskon_faktur, pajak, akun_kas_kode, total, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Dipesan', ?, ?)",
         params![
             &nomor,
             pemasok_kode,
@@ -954,6 +1072,7 @@ pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) 
             metode,
             diskon_faktur,
             pajak,
+            akun_kas_kode.as_deref(),
             total,
             ts,
             ts
@@ -986,6 +1105,16 @@ pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) 
         pembelian_tx_apply_barang_stok(&tx, &nomor, kode_b, line.qty, gudang_kode, &tanggal_str, ts, ts)?;
     }
 
+    pembelian_tx_post_jurnal(
+        &tx,
+        &tanggal_str,
+        &nomor,
+        pemasok_kode,
+        total,
+        akun_kas_kode.as_deref(),
+        ts,
+    )?;
+
     tx.commit().map_err(|e| e.to_string())?;
     Ok(nomor)
 }
@@ -1015,6 +1144,8 @@ pub struct PembelianDetail {
     pub subtotal_barang: i64,
     pub diskon_faktur: i64,
     pub pajak: i64,
+    pub akun_kas_kode: Option<String>,
+    pub akun_kas_nama: Option<String>,
     pub total: i64,
     pub status: String,
     pub lines: Vec<PembelianDetailLine>,
@@ -1031,10 +1162,11 @@ pub fn pembelian_detail(state: State<DbState>, nomor: String) -> Result<Pembelia
     let mut detail: PembelianDetail = conn
         .query_row(
             "SELECT p.nomor, p.pemasok_kode, s.nama, p.gudang_kode, g.nama, p.tanggal_faktur, p.jatuh_tempo, p.metode_pembayaran,
-                    COALESCE(p.diskon_faktur, 0), COALESCE(p.pajak, 0), p.total, p.status
+                    COALESCE(p.diskon_faktur, 0), COALESCE(p.pajak, 0), p.akun_kas_kode, k.nama, p.total, p.status
              FROM pembelian p
              JOIN pemasok s ON lower(s.kode) = lower(p.pemasok_kode)
              JOIN gudang g ON lower(g.kode) = lower(p.gudang_kode)
+             LEFT JOIN akun_keuangan k ON lower(k.kode) = lower(p.akun_kas_kode)
              WHERE p.nomor = ?",
             params![n],
             |r| {
@@ -1050,8 +1182,10 @@ pub fn pembelian_detail(state: State<DbState>, nomor: String) -> Result<Pembelia
                     subtotal_barang: 0,
                     diskon_faktur: r.get(8)?,
                     pajak: r.get(9)?,
-                    total: r.get(10)?,
-                    status: r.get(11)?,
+                    akun_kas_kode: r.get(10)?,
+                    akun_kas_nama: r.get(11)?,
+                    total: r.get(12)?,
+                    status: r.get(13)?,
                     lines: Vec::new(),
                 })
             },
@@ -1105,12 +1239,15 @@ pub fn pembelian_update(
     let (tgl, jt, metode, diskon_faktur, pajak, total) = pembelian_validate_and_total(&payload)?;
     let pemasok_kode = payload.pemasok_kode.trim();
     let gudang_kode = payload.gudang_kode.trim();
+    let akun_kas_kode = pembelian_normalize_akun_kas(&payload.akun_kas_kode);
     let tanggal_str = tgl.format("%Y-%m-%d").to_string();
     let jatuh_str = jt.format("%Y-%m-%d").to_string();
     let ts = now_ts();
 
     let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    jurnal_tx_delete_pembelian_by_referensi(&tx, nomor_trim, ts)?;
 
     let exists: i64 = tx
         .query_row(
@@ -1153,7 +1290,7 @@ pub fn pembelian_update(
     .map_err(|e| e.to_string())?;
 
     tx.execute(
-        "UPDATE pembelian SET pemasok_kode = ?, gudang_kode = ?, tanggal_faktur = ?, jatuh_tempo = ?, metode_pembayaran = ?, diskon_faktur = ?, pajak = ?, total = ?, updated_at = ? WHERE nomor = ?",
+        "UPDATE pembelian SET pemasok_kode = ?, gudang_kode = ?, tanggal_faktur = ?, jatuh_tempo = ?, metode_pembayaran = ?, diskon_faktur = ?, pajak = ?, akun_kas_kode = ?, total = ?, updated_at = ? WHERE nomor = ?",
         params![
             pemasok_kode,
             gudang_kode,
@@ -1162,6 +1299,7 @@ pub fn pembelian_update(
             metode,
             diskon_faktur,
             pajak,
+            akun_kas_kode.as_deref(),
             total,
             ts,
             nomor_trim
@@ -1191,6 +1329,16 @@ pub fn pembelian_update(
         })?;
         pembelian_tx_apply_barang_stok(&tx, nomor_trim, kode_b, line.qty, gudang_kode, &tanggal_str, ts, ts)?;
     }
+
+    pembelian_tx_post_jurnal(
+        &tx,
+        &tanggal_str,
+        nomor_trim,
+        pemasok_kode,
+        total,
+        akun_kas_kode.as_deref(),
+        ts,
+    )?;
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
@@ -2287,15 +2435,22 @@ pub fn jurnal_umum_insert_transaksi(
     mutasi_ok(jumlah)?;
 
     match jenis {
-        "PEMBELIAN" => {
+        "PEMBELIAN" | "PEMBELIAN_TUNAI" => {
             let akun_pembelian = cfg
                 .akun_pembelian
                 .ok_or_else(|| "Konfigurasi akun pembelian belum diatur.".to_string())?;
-            let akun_hutang = cfg
-                .akun_hutang
-                .ok_or_else(|| "Konfigurasi akun hutang belum diatur.".to_string())?;
             lines.push((akun_pembelian, jumlah, 0));
-            lines.push((akun_hutang, 0, jumlah));
+            if let Some(kas) = kas_kode {
+                validate_akun_kas(&tx, &kas)?;
+                lines.push((kas, 0, jumlah));
+            } else if jenis == "PEMBELIAN_TUNAI" {
+                return Err("Pilih akun kas untuk pembelian tunai.".into());
+            } else {
+                let akun_hutang = cfg
+                    .akun_hutang
+                    .ok_or_else(|| "Konfigurasi akun hutang belum diatur.".to_string())?;
+                lines.push((akun_hutang, 0, jumlah));
+            }
         }
         "PENJUALAN" => {
             let akun_piutang = cfg

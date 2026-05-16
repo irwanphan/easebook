@@ -26,7 +26,7 @@ export function UbahPembelianPage() {
       mode="edit"
       nomor={nomor}
       cancelHref={detailHref}
-      onSuccess={() => navigate(detailHref)}
+      onSuccess={() => navigate(detailHref, { replace: true })}
     />
   );
 }

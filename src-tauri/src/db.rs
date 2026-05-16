@@ -103,6 +103,7 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             metode_pembayaran TEXT NOT NULL,
             diskon_faktur INTEGER NOT NULL DEFAULT 0,
             pajak INTEGER NOT NULL DEFAULT 0,
+            akun_kas_kode TEXT,
             total INTEGER NOT NULL,
             status TEXT NOT NULL DEFAULT 'Dipesan',
             created_at INTEGER NOT NULL,
@@ -257,6 +258,9 @@ fn migrate_pembelian_columns(conn: &Connection) -> rusqlite::Result<()> {
             "ALTER TABLE pembelian ADD COLUMN pajak INTEGER NOT NULL DEFAULT 0",
             [],
         )?;
+    }
+    if !cols.iter().any(|c| c.eq_ignore_ascii_case("akun_kas_kode")) {
+        conn.execute("ALTER TABLE pembelian ADD COLUMN akun_kas_kode TEXT", [])?;
     }
     Ok(())
 }

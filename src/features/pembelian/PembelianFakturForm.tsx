@@ -13,6 +13,7 @@ import {
   type PembelianDetail,
 } from "@/data/pembelian";
 import { loadPengaturanTransaksi } from "@/features/pengaturan/pengaturanTransaksiStorage";
+import type { AkunKeuanganRow } from "@/data/keuangan";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { useGudang } from "@/features/gudang/GudangContext";
 import { usePemasok } from "@/features/pemasok/PemasokContext";
@@ -54,7 +55,8 @@ export type PembelianFakturFormProps = {
   /** Wajib jika `mode === 'edit'` */
   nomor?: string;
   cancelHref: string;
-  onSuccess: () => void;
+  /** Dipanggil setelah simpan berhasil; `nomor` = nomor faktur tersimpan. */
+  onSuccess: (nomor: string) => void;
 };
 
 export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: PembelianFakturFormProps) {
@@ -70,12 +72,36 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
   const [metodePembayaran, setMetodePembayaran] = useState<string>("TUNAI");
   const [lines, setLines] = useState<LineDraft[]>(() => [newLine()]);
   const [diskonFaktur, setDiskonFaktur] = useState(0);
+  const [akunKasKode, setAkunKasKode] = useState("");
+  const [akunKasList, setAkunKasList] = useState<AkunKeuanganRow[]>([]);
+  const [akunKasLoading, setAkunKasLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const ppnPersen = loadPengaturanTransaksi().ppnPersen;
   const [hydrating, setHydrating] = useState(mode === "edit");
+  const [saving, setSaving] = useState(false);
 
   const pf = mode === "edit" ? "fbe" : "fb";
   const masterLoading = loadPemasok || loadGudang || loadBarang;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setAkunKasLoading(true);
+      try {
+        const list = await invoke<AkunKeuanganRow[]>("akun_keuangan_list");
+        if (!cancelled) {
+          setAkunKasList(list.filter((a) => a.isAkunKas));
+        }
+      } catch {
+        if (!cancelled) setAkunKasList([]);
+      } finally {
+        if (!cancelled) setAkunKasLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const barangByKode = useMemo(() => {
     const m = new Map<string, (typeof barangItems)[number]>();
@@ -104,6 +130,7 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
         setJatuhTempo(d.jatuhTempo);
         setMetodePembayaran(d.metodePembayaran || "LAINNYA");
         setDiskonFaktur(d.diskonFaktur ?? 0);
+        setAkunKasKode(d.akunKasKode ?? "");
         setLines(
           d.lines.length > 0
             ? d.lines.map((l) => ({
@@ -257,23 +284,29 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
       metodePembayaran: metodePembayaran.trim() || "LAINNYA",
       diskonFaktur: diskonFakturVal,
       pajak: pajakVal,
+      akunKasKode: akunKasKode.trim() || null,
       lines: payloadLines,
     };
 
+    setSaving(true);
     try {
+      let savedNomor: string;
       if (mode === "edit") {
         if (!nomor?.trim()) {
           setError("Nomor faktur tidak valid.");
           return;
         }
-        await invoke("pembelian_update", { nomor: nomor.trim(), payload });
+        savedNomor = nomor.trim();
+        await invoke("pembelian_update", { nomor: savedNomor, payload });
       } else {
-        await invoke("pembelian_insert", { payload });
+        savedNomor = await invoke<string>("pembelian_insert", { payload });
       }
-      await refreshBarang();
-      onSuccess();
+      void refreshBarang();
+      onSuccess(savedNomor);
     } catch (err) {
       setError(tauriErrorMessage(err));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -560,14 +593,49 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
               <span className="text-lg font-bold text-zinc-900">{formatRupiah(grandTotal)}</span>
             </div>
           </div>
+
+        </Card>
+
+        <Card className="p-5 sm:p-6">
+          <h2 className="text-sm font-semibold text-zinc-900">Pembayaran</h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            Kosongkan untuk mencatat hutang dagang (jurnal: inventori debet, hutang kredit). Pilih akun kas jika
+            dibayar tunai (inventori debet, kas kredit).
+          </p>
+          <div className="mt-4 max-w-md">
+            <label htmlFor={`${pf}-akun-kas`} className="block text-sm font-medium text-zinc-700">
+              Dibayarkan menggunakan
+            </label>
+            <select
+              id={`${pf}-akun-kas`}
+              value={akunKasKode}
+              onChange={(e) => setAkunKasKode(e.target.value)}
+              className={`${inputClass} mt-1`}
+              disabled={hydrating || akunKasLoading}
+            >
+              <option value="">— Hutang dagang (belum dibayar) —</option>
+              {akunKasList.map((a) => (
+                <option key={a.kode} value={a.kode}>
+                  {a.kode} — {a.nama}
+                </option>
+              ))}
+            </select>
+            {akunKasLoading ? (
+              <p className="mt-1.5 text-xs text-zinc-400">Memuat daftar akun kas…</p>
+            ) : akunKasList.length === 0 ? (
+              <p className="mt-1.5 text-xs text-amber-700">
+                Belum ada akun kas. Tandai akun sebagai kas di Daftar akun keuangan.
+              </p>
+            ) : null}
+          </div>
         </Card>
 
         <div className="flex flex-wrap justify-end gap-3">
           <Button type="button" variant="ghost" onClick={() => navigate(cancelHref)}>
             Batal
           </Button>
-          <Button type="submit" disabled={masterLoading || hydrating}>
-            {mode === "edit" ? "Simpan perubahan" : "Simpan faktur"}
+          <Button type="submit" disabled={masterLoading || hydrating || saving}>
+            {saving ? "Menyimpan…" : mode === "edit" ? "Simpan perubahan" : "Simpan faktur"}
           </Button>
         </div>
       </form>

@@ -34,7 +34,8 @@ function formatRupiah(n: number) {
 }
 
 const JENIS_OPTIONS: { value: JurnalJenisTransaksi; label: string }[] = [
-  { value: "PEMBELIAN", label: "Pembelian (naik hutang)" },
+  { value: "PEMBELIAN", label: "Pembelian (hutang / inventori)" },
+  { value: "PEMBELIAN_TUNAI", label: "Pembelian tunai (kas keluar)" },
   { value: "PENJUALAN", label: "Penjualan (naik piutang)" },
   { value: "PELUNASAN_PIUTANG", label: "Pelunasan piutang (kas masuk)" },
   { value: "PELUNASAN_HUTANG", label: "Pelunasan hutang (kas keluar)" },
@@ -44,7 +45,7 @@ const JENIS_OPTIONS: { value: JurnalJenisTransaksi; label: string }[] = [
 ];
 
 function jenisBadgeVariant(jenis: string) {
-  if (jenis === "PEMBELIAN") return "neutral" as const;
+  if (jenis === "PEMBELIAN" || jenis === "PEMBELIAN_TUNAI") return "neutral" as const;
   if (jenis === "PENJUALAN") return "success" as const;
   if (jenis === "PELUNASAN_PIUTANG" || jenis === "PENERIMAAN_LAINNYA") return "processing" as const;
   if (jenis === "PELUNASAN_HUTANG" || jenis === "PENGELUARAN_LAINNYA") return "delayed" as const;
@@ -196,7 +197,13 @@ export function JurnalUmumPage() {
       }
 
       // Validasi kebutuhan kas untuk jenis tertentu
-      if (jenis === "PELUNASAN_PIUTANG" || jenis === "PENERIMAAN_LAINNYA" || jenis === "PELUNASAN_HUTANG" || jenis === "PENGELUARAN_LAINNYA") {
+      if (
+        jenis === "PEMBELIAN_TUNAI" ||
+        jenis === "PELUNASAN_PIUTANG" ||
+        jenis === "PENERIMAAN_LAINNYA" ||
+        jenis === "PELUNASAN_HUTANG" ||
+        jenis === "PENGELUARAN_LAINNYA"
+      ) {
         if (!kasKode.trim()) {
           setError("Pilih akun kas/bank.");
           return;
@@ -449,7 +456,11 @@ export function JurnalUmumPage() {
               <input value={catatan} onChange={(e) => setCatatan(e.target.value)} className={inputClass} disabled={loading} placeholder="opsional" />
             </div>
 
-            {(jenis === "PELUNASAN_PIUTANG" || jenis === "PENERIMAAN_LAINNYA" || jenis === "PELUNASAN_HUTANG" || jenis === "PENGELUARAN_LAINNYA") && (
+            {(jenis === "PEMBELIAN_TUNAI" ||
+              jenis === "PELUNASAN_PIUTANG" ||
+              jenis === "PENERIMAAN_LAINNYA" ||
+              jenis === "PELUNASAN_HUTANG" ||
+              jenis === "PENGELUARAN_LAINNYA") && (
               <div>
                 <label className="block text-sm font-medium text-zinc-700">Akun kas / bank</label>
                 <select value={kasKode} onChange={(e) => setKasKode(e.target.value)} className={inputClass} disabled={loading}>

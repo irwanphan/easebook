@@ -93,6 +93,7 @@ export type JurnalKonfigurasiSetPayload = {
 
 export type JurnalJenisTransaksi =
   | "PEMBELIAN"
+  | "PEMBELIAN_TUNAI"
   | "PENJUALAN"
   | "PELUNASAN_PIUTANG"
   | "PELUNASAN_HUTANG"

@@ -77,6 +77,9 @@ export type PembelianDetail = {
   subtotalBarang: number;
   diskonFaktur: number;
   pajak: number;
+  /** Kosong = dicatat sebagai hutang dagang. */
+  akunKasKode: string | null;
+  akunKasNama: string | null;
   total: number;
   status: string;
   lines: PembelianDetailLine[];

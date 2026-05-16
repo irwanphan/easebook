@@ -29,6 +29,7 @@ import { KeuanganPenerimaanPage } from "@/pages/keuangan/KeuanganPenerimaanPage"
 import { KeuanganPelunasanPiutangPage } from "@/pages/keuangan/KeuanganPelunasanPiutangPage";
 import { BuatPelunasanPiutangPage } from "@/pages/keuangan/BuatPelunasanPiutangPage";
 import { KeuanganPelunasanHutangPage } from "@/pages/keuangan/KeuanganPelunasanHutangPage";
+import { BuatPelunasanHutangPage } from "@/pages/keuangan/BuatPelunasanHutangPage";
 import { KeuanganTransferPage } from "@/pages/keuangan/KeuanganTransferPage";
 import { DaftarAkunPage } from "@/pages/keuangan/DaftarAkunPage";
 import { JurnalUmumPage } from "@/pages/keuangan/JurnalUmumPage";
@@ -69,6 +70,7 @@ export const router = createHashRouter([
       { path: "keuangan/pelunasan-piutang", element: <KeuanganPelunasanPiutangPage /> },
       { path: "keuangan/pelunasan-piutang/buat", element: <BuatPelunasanPiutangPage /> },
       { path: "keuangan/pelunasan-hutang", element: <KeuanganPelunasanHutangPage /> },
+      { path: "keuangan/pelunasan-hutang/buat", element: <BuatPelunasanHutangPage /> },
       { path: "keuangan/transfer", element: <KeuanganTransferPage /> },
       { path: "keuangan/daftar-akun", element: <DaftarAkunPage /> },
       { path: "keuangan/akun-kas", element: <DaftarAkunPage /> },

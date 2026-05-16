@@ -876,7 +876,7 @@ fn pembelian_tx_post_jurnal(
             params![jurnal_id, akun_kode, debit, kredit],
         )
         .map_err(|e| e.to_string())?;
-        akun_kas_apply_saldo_delta(tx, akun_kode, debit, kredit, ts)?;
+        akun_jurnal_apply_saldo_delta(tx, akun_kode, debit, kredit, ts)?;
     }
     Ok(())
 }
@@ -1987,6 +1987,215 @@ pub fn pelunasan_piutang_apply_batch(
 
     for nomor in &nomor_list {
         pelunasan_piutang_tx_mark_lunas(&tx, nomor, &kas_kode, ts)?;
+    }
+
+    let settled = nomor_list.len() as i64;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(format!("{settled} faktur berhasil dilunasi."))
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct HutangBelumLunasRow {
+    pub nomor: String,
+    pub tanggal_faktur: String,
+    pub jatuh_tempo: String,
+    pub pemasok_kode: String,
+    pub pemasok_nama: String,
+    pub total: i64,
+    pub metode_pembayaran: String,
+}
+
+#[tauri::command]
+pub fn hutang_belum_lunas_list(state: State<DbState>) -> Result<Vec<HutangBelumLunasRow>, String> {
+    with_conn(&state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT p.nomor, p.tanggal_faktur, p.jatuh_tempo, p.pemasok_kode, s.nama, p.total, p.metode_pembayaran
+             FROM pembelian p
+             INNER JOIN pemasok s ON lower(s.kode) = lower(p.pemasok_kode)
+             WHERE (p.akun_kas_kode IS NULL OR trim(p.akun_kas_kode) = '')
+               AND upper(trim(p.status)) != 'LUNAS'
+             ORDER BY p.jatuh_tempo ASC, p.tanggal_faktur ASC, p.nomor ASC",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(HutangBelumLunasRow {
+                nomor: r.get(0)?,
+                tanggal_faktur: r.get(1)?,
+                jatuh_tempo: r.get(2)?,
+                pemasok_kode: r.get(3)?,
+                pemasok_nama: r.get(4)?,
+                total: r.get(5)?,
+                metode_pembayaran: r.get(6)?,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+/// Jurnal pelunasan hutang: D hutang, K kas.
+fn pelunasan_hutang_tx_post_jurnal(
+    tx: &Transaction<'_>,
+    tanggal: &str,
+    referensi: &str,
+    pemasok_kode: &str,
+    jumlah: i64,
+    kas_kode: &str,
+    catatan_extra: &str,
+    ts: i64,
+) -> Result<(), String> {
+    if jumlah <= 0 {
+        return Err("Jumlah pelunasan harus lebih dari 0.".into());
+    }
+    konfigurasi_ensure_row(tx, ts)?;
+    let cfg = konfigurasi_get_row(tx)?;
+    let akun_hutang = cfg
+        .akun_hutang
+        .ok_or_else(|| "Konfigurasi akun hutang belum diatur (Konfigurasi akun jurnal).".to_string())?;
+    validate_akun_kas(tx, kas_kode)?;
+
+    let mut catatan = format!("Pelunasan hutang faktur {referensi} — pemasok {pemasok_kode}");
+    if !catatan_extra.is_empty() {
+        catatan.push_str(" — ");
+        catatan.push_str(catatan_extra);
+    }
+
+    tx.execute(
+        "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
+         VALUES (?, 'PELUNASAN_HUTANG', ?, ?, ?, ?)",
+        params![tanggal, referensi, catatan, ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    let jurnal_id = tx.last_insert_rowid();
+
+    let lines = [(akun_hutang.as_str(), jumlah, 0_i64), (kas_kode, 0_i64, jumlah)];
+    for (akun_kode, debit, kredit) in lines {
+        tx.execute(
+            "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+             VALUES (?, ?, ?, ?, '')",
+            params![jurnal_id, akun_kode, debit, kredit],
+        )
+        .map_err(|e| e.to_string())?;
+        akun_jurnal_apply_saldo_delta(tx, akun_kode, debit, kredit, ts)?;
+    }
+    Ok(())
+}
+
+fn pelunasan_hutang_tx_read_faktur(
+    tx: &Transaction<'_>,
+    nomor: &str,
+) -> Result<(String, i64), String> {
+    let (pemasok_kode, total, sudah_lunas): (String, i64, bool) = tx
+        .query_row(
+            "SELECT pemasok_kode, total,
+                    CASE WHEN akun_kas_kode IS NOT NULL AND trim(akun_kas_kode) != '' THEN 1
+                         WHEN upper(trim(status)) = 'LUNAS' THEN 1 ELSE 0 END
+             FROM pembelian WHERE nomor = ?",
+            params![nomor],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0)),
+        )
+        .map_err(|_| format!("Faktur pembelian '{nomor}' tidak ditemukan."))?;
+    if sudah_lunas {
+        return Err(format!("Faktur '{nomor}' sudah lunas atau bukan hutang."));
+    }
+    Ok((pemasok_kode.trim().to_string(), total))
+}
+
+fn pelunasan_hutang_tx_mark_lunas(
+    tx: &Transaction<'_>,
+    nomor: &str,
+    kas_kode: &str,
+    ts: i64,
+) -> Result<(), String> {
+    tx.execute(
+        "UPDATE pembelian SET akun_kas_kode = ?, status = 'Lunas', updated_at = ? WHERE nomor = ?",
+        params![kas_kode, ts, nomor],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PelunasanHutangBatchPayload {
+    pub pemasok_kode: String,
+    pub tanggal: String,
+    pub kas_kode: String,
+    pub catatan: String,
+    pub nomor_faktur: Vec<String>,
+}
+
+#[tauri::command]
+pub fn pelunasan_hutang_apply_batch(
+    state: State<DbState>,
+    payload: PelunasanHutangBatchPayload,
+) -> Result<String, String> {
+    let pemasok_kode = payload.pemasok_kode.trim();
+    let tanggal = payload.tanggal.trim();
+    let kas_kode = payload.kas_kode.trim().to_uppercase();
+    let catatan = payload.catatan.trim();
+    let mut nomor_list: Vec<String> = payload
+        .nomor_faktur
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    nomor_list.sort();
+    nomor_list.dedup();
+
+    if pemasok_kode.is_empty() {
+        return Err("Pilih pemasok.".into());
+    }
+    if tanggal.is_empty() {
+        return Err("Tanggal pelunasan wajib diisi.".into());
+    }
+    NaiveDate::parse_from_str(tanggal, "%Y-%m-%d")
+        .map_err(|_| "Tanggal tidak valid (gunakan YYYY-MM-DD).".to_string())?;
+    if kas_kode.is_empty() {
+        return Err("Pilih akun kas pembayaran.".into());
+    }
+    if nomor_list.is_empty() {
+        return Err("Pilih minimal satu faktur hutang.".into());
+    }
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let ts = now_ts();
+
+    validate_akun_kas(&tx, &kas_kode)?;
+
+    let mut total_jumlah: i64 = 0;
+    for nomor in &nomor_list {
+        let (pk, total) = pelunasan_hutang_tx_read_faktur(&tx, nomor)?;
+        if pk.to_uppercase() != pemasok_kode.to_uppercase() {
+            return Err(format!(
+                "Faktur '{nomor}' bukan milik pemasok {pemasok_kode}."
+            ));
+        }
+        total_jumlah = total_jumlah
+            .checked_add(total)
+            .ok_or_else(|| "Total pelunasan melebihi batas.".to_string())?;
+    }
+
+    let referensi = pelunasan_batch_referensi(&nomor_list);
+    let mut catatan_extra = format!("faktur: {}", nomor_list.join(", "));
+    if !catatan.is_empty() {
+        catatan_extra.push_str(" — ");
+        catatan_extra.push_str(catatan);
+    }
+
+    pelunasan_hutang_tx_post_jurnal(
+        &tx,
+        tanggal,
+        &referensi,
+        pemasok_kode,
+        total_jumlah,
+        &kas_kode,
+        &catatan_extra,
+        ts,
+    )?;
+
+    for nomor in &nomor_list {
+        pelunasan_hutang_tx_mark_lunas(&tx, nomor, &kas_kode, ts)?;
     }
 
     let settled = nomor_list.len() as i64;

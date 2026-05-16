@@ -446,7 +446,8 @@ export function PelunasanPiutangBatchForm({
           </div>
 
           <p className="mt-4 text-xs text-zinc-500">
-            Setiap faktur dilunasi penuh. Jurnal: debet kas, kredit piutang per faktur.
+            Setiap faktur dilunasi penuh. Saat disimpan, dicatat satu jurnal: debet akun kas yang dipilih, kredit akun
+            piutang (dari konfigurasi akun jurnal).
           </p>
         </Card>
 

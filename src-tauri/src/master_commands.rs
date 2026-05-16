@@ -1443,7 +1443,7 @@ fn penjualan_tx_post_jurnal(
             params![jurnal_id, akun_kode, debit, kredit],
         )
         .map_err(|e| e.to_string())?;
-        akun_kas_apply_saldo_delta(tx, akun_kode, debit, kredit, ts)?;
+        akun_jurnal_apply_saldo_delta(tx, akun_kode, debit, kredit, ts)?;
     }
     Ok(())
 }
@@ -1782,19 +1782,16 @@ fn pelunasan_piutang_tx_post_jurnal(
             params![jurnal_id, akun_kode, debit, kredit],
         )
         .map_err(|e| e.to_string())?;
-        akun_kas_apply_saldo_delta(tx, akun_kode, debit, kredit, ts)?;
+        akun_jurnal_apply_saldo_delta(tx, akun_kode, debit, kredit, ts)?;
     }
     Ok(())
 }
 
-fn pelunasan_piutang_tx_settle_one(
+/// Validasi faktur piutang; kembalikan (pelanggan_kode, total).
+fn pelunasan_piutang_tx_read_faktur(
     tx: &Transaction<'_>,
     nomor: &str,
-    tanggal: &str,
-    kas_kode: &str,
-    catatan: &str,
-    ts: i64,
-) -> Result<(), String> {
+) -> Result<(String, i64), String> {
     let (pelanggan_kode, total, sudah_lunas): (String, i64, bool) = tx
         .query_row(
             "SELECT pelanggan_kode, total,
@@ -1805,28 +1802,58 @@ fn pelunasan_piutang_tx_settle_one(
             |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0)),
         )
         .map_err(|_| format!("Faktur penjualan '{nomor}' tidak ditemukan."))?;
-
     if sudah_lunas {
         return Err(format!("Faktur '{nomor}' sudah lunas atau bukan piutang."));
     }
+    Ok((pelanggan_kode.trim().to_string(), total))
+}
 
-    pelunasan_piutang_tx_post_jurnal(
-        tx,
-        tanggal,
-        nomor,
-        pelanggan_kode.trim(),
-        total,
-        kas_kode,
-        catatan,
-        ts,
-    )?;
-
+fn pelunasan_piutang_tx_mark_lunas(
+    tx: &Transaction<'_>,
+    nomor: &str,
+    kas_kode: &str,
+    ts: i64,
+) -> Result<(), String> {
     tx.execute(
         "UPDATE penjualan SET akun_kas_kode = ?, status = 'Lunas', updated_at = ? WHERE nomor = ?",
         params![kas_kode, ts, nomor],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+fn pelunasan_batch_referensi(nomor_list: &[String]) -> String {
+    if nomor_list.is_empty() {
+        return String::new();
+    }
+    if nomor_list.len() == 1 {
+        return nomor_list[0].clone();
+    }
+    format!("{} (+{} faktur)", nomor_list[0], nomor_list.len() - 1)
+}
+
+fn pelunasan_piutang_tx_settle_one(
+    tx: &Transaction<'_>,
+    nomor: &str,
+    tanggal: &str,
+    kas_kode: &str,
+    catatan: &str,
+    ts: i64,
+) -> Result<(), String> {
+    let (pelanggan_kode, total) = pelunasan_piutang_tx_read_faktur(tx, nomor)?;
+
+    pelunasan_piutang_tx_post_jurnal(
+        tx,
+        tanggal,
+        nomor,
+        &pelanggan_kode,
+        total,
+        kas_kode,
+        catatan,
+        ts,
+    )?;
+
+    pelunasan_piutang_tx_mark_lunas(tx, nomor, kas_kode, ts)
 }
 
 #[tauri::command]
@@ -1927,24 +1954,42 @@ pub fn pelunasan_piutang_apply_batch(
 
     validate_akun_kas(&tx, &kas_kode)?;
 
-    let mut settled = 0_i64;
+    let mut total_jumlah: i64 = 0;
     for nomor in &nomor_list {
-        let pk: String = tx
-            .query_row(
-                "SELECT pelanggan_kode FROM penjualan WHERE nomor = ?",
-                params![nomor],
-                |r| r.get(0),
-            )
-            .map_err(|_| format!("Faktur '{nomor}' tidak ditemukan."))?;
-        if pk.trim().to_uppercase() != pelanggan_kode.to_uppercase() {
+        let (pk, total) = pelunasan_piutang_tx_read_faktur(&tx, nomor)?;
+        if pk.to_uppercase() != pelanggan_kode.to_uppercase() {
             return Err(format!(
                 "Faktur '{nomor}' bukan milik pelanggan {pelanggan_kode}."
             ));
         }
-        pelunasan_piutang_tx_settle_one(&tx, nomor, tanggal, &kas_kode, catatan, ts)?;
-        settled += 1;
+        total_jumlah = total_jumlah
+            .checked_add(total)
+            .ok_or_else(|| "Total pelunasan melebihi batas.".to_string())?;
     }
 
+    let referensi = pelunasan_batch_referensi(&nomor_list);
+    let mut catatan_extra = format!("faktur: {}", nomor_list.join(", "));
+    if !catatan.is_empty() {
+        catatan_extra.push_str(" — ");
+        catatan_extra.push_str(catatan);
+    }
+
+    pelunasan_piutang_tx_post_jurnal(
+        &tx,
+        tanggal,
+        &referensi,
+        pelanggan_kode,
+        total_jumlah,
+        &kas_kode,
+        &catatan_extra,
+        ts,
+    )?;
+
+    for nomor in &nomor_list {
+        pelunasan_piutang_tx_mark_lunas(&tx, nomor, &kas_kode, ts)?;
+    }
+
+    let settled = nomor_list.len() as i64;
     tx.commit().map_err(|e| e.to_string())?;
     Ok(format!("{settled} faktur berhasil dilunasi."))
 }
@@ -2327,6 +2372,49 @@ fn akun_kas_apply_saldo_delta(
         return Ok(());
     }
     let delta = debit - kredit;
+    if delta == 0 {
+        return Ok(());
+    }
+    let cur: i64 = tx
+        .query_row(
+            "SELECT COALESCE(saldo, 0) FROM akun_keuangan WHERE lower(kode) = lower(?)",
+            params![akun_kode],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let next = cur
+        .checked_add(delta)
+        .ok_or_else(|| format!("Saldo akun {akun_kode} melimpahi batas."))?;
+    tx.execute(
+        "UPDATE akun_keuangan SET saldo = ?, updated_at = ? WHERE lower(kode) = lower(?)",
+        params![next, ts, akun_kode],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Perbarui saldo akun dari baris jurnal (kas & non-kas) sesuai kolom normal D/K.
+fn akun_jurnal_apply_saldo_delta(
+    tx: &Transaction<'_>,
+    akun_kode: &str,
+    debit: i64,
+    kredit: i64,
+    ts: i64,
+) -> Result<(), String> {
+    let kolom_norm: String = match tx.query_row(
+        "SELECT COALESCE(NULLIF(trim(kolom_norm), ''), 'D') FROM akun_keuangan WHERE lower(kode) = lower(?)",
+        params![akun_kode],
+        |r| r.get(0),
+    ) {
+        Ok(v) => v,
+        Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(()),
+        Err(e) => return Err(e.to_string()),
+    };
+    let delta = if kolom_norm.eq_ignore_ascii_case("K") {
+        kredit - debit
+    } else {
+        debit - kredit
+    };
     if delta == 0 {
         return Ok(());
     }

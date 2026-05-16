@@ -142,9 +142,28 @@ export function PembelianDetailPage() {
                 <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Pembayaran</p>
                 <p className="mt-1 text-sm text-zinc-800">{labelMetodePembayaran(detail.metodePembayaran)}</p>
               </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Total</p>
-                <p className="mt-1 text-lg font-bold text-zinc-900">{formatRupiah(detail.total)}</p>
+              <div className="sm:col-span-2 lg:col-span-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Ringkasan nilai</p>
+                <dl className="mt-2 space-y-1 text-sm">
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-zinc-600">Subtotal barang</dt>
+                    <dd className="font-medium text-zinc-900">{formatRupiah(detail.subtotalBarang)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-zinc-600">Diskon faktur</dt>
+                    <dd className="text-zinc-800">
+                      {detail.diskonFaktur > 0 ? `−${formatRupiah(detail.diskonFaktur)}` : "—"}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-zinc-600">Pajak</dt>
+                    <dd className="text-zinc-800">{detail.pajak > 0 ? formatRupiah(detail.pajak) : "—"}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-t border-zinc-100 pt-2">
+                    <dt className="font-medium text-zinc-900">Total faktur</dt>
+                    <dd className="text-lg font-bold text-zinc-900">{formatRupiah(detail.total)}</dd>
+                  </div>
+                </dl>
               </div>
             </div>
           </Card>

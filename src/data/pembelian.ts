@@ -40,6 +40,18 @@ export function pembelianLineSubtotal(qty: number, hargaSatuan: number, diskon: 
   return q * Math.max(0, h - d);
 }
 
+/** Total faktur: subtotal barang − diskon faktur + pajak. */
+export function pembelianFakturTotal(
+  subtotalBarang: number,
+  diskonFaktur: number,
+  pajak: number,
+): number {
+  const sub = Math.max(0, Math.round(subtotalBarang));
+  const diskon = Math.min(Math.max(0, Math.round(diskonFaktur)), sub);
+  const tax = Math.max(0, Math.round(pajak));
+  return Math.max(0, sub - diskon + tax);
+}
+
 export type PembelianDetail = {
   nomor: string;
   pemasokKode: string;
@@ -49,6 +61,9 @@ export type PembelianDetail = {
   tanggalFaktur: string;
   jatuhTempo: string;
   metodePembayaran: string;
+  subtotalBarang: number;
+  diskonFaktur: number;
+  pajak: number;
   total: number;
   status: string;
   lines: PembelianDetailLine[];

@@ -757,10 +757,32 @@ pub struct PembelianInsertPayload {
     pub tanggal_faktur: String,
     pub jatuh_tempo: String,
     pub metode_pembayaran: String,
+    #[serde(default)]
+    pub diskon_faktur: i64,
+    #[serde(default)]
+    pub pajak: i64,
     pub lines: Vec<PembelianLineInput>,
 }
 
-fn pembelian_validate_and_total(payload: &PembelianInsertPayload) -> Result<(NaiveDate, NaiveDate, String, i64), String> {
+fn pembelian_faktur_total(sub_barang: i64, diskon_faktur: i64, pajak: i64) -> Result<i64, String> {
+    if diskon_faktur < 0 {
+        return Err("Diskon faktur tidak valid.".into());
+    }
+    if pajak < 0 {
+        return Err("Pajak tidak valid.".into());
+    }
+    if diskon_faktur > sub_barang {
+        return Err("Diskon faktur tidak boleh melebihi subtotal barang.".into());
+    }
+    let after_diskon = sub_barang - diskon_faktur;
+    after_diskon
+        .checked_add(pajak)
+        .ok_or_else(|| "Total faktur melimpahi batas.".to_string())
+}
+
+fn pembelian_validate_and_total(
+    payload: &PembelianInsertPayload,
+) -> Result<(NaiveDate, NaiveDate, String, i64, i64, i64), String> {
     let pemasok_kode = payload.pemasok_kode.trim();
     let gudang_kode = payload.gudang_kode.trim();
     if pemasok_kode.is_empty() {
@@ -784,7 +806,7 @@ fn pembelian_validate_and_total(payload: &PembelianInsertPayload) -> Result<(Nai
         return Err("Tambahkan minimal satu baris item.".into());
     }
 
-    let mut total: i64 = 0;
+    let mut sub_barang: i64 = 0;
     for line in &payload.lines {
         let kode_b = line.barang_kode.trim();
         if kode_b.is_empty() {
@@ -797,12 +819,20 @@ fn pembelian_validate_and_total(payload: &PembelianInsertPayload) -> Result<(Nai
             return Err("Harga satuan tidak valid.".into());
         }
         let sub = pembelian_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
-        total = total
+        sub_barang = sub_barang
             .checked_add(sub)
-            .ok_or_else(|| "Total faktur melimpahi batas.".to_string())?;
+            .ok_or_else(|| "Subtotal barang melimpahi batas.".to_string())?;
     }
 
-    Ok((tgl, jt, metode.to_string(), total))
+    let total = pembelian_faktur_total(sub_barang, payload.diskon_faktur, payload.pajak)?;
+    Ok((
+        tgl,
+        jt,
+        metode.to_string(),
+        payload.diskon_faktur,
+        payload.pajak,
+        total,
+    ))
 }
 
 /// Tambah stok + baris mutasi untuk satu baris pembelian bertipe Barang.
@@ -901,7 +931,7 @@ fn pembelian_tx_revert_barang_stok(tx: &Transaction<'_>, kode_b: &str, qty: i64,
 
 #[tauri::command]
 pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) -> Result<String, String> {
-    let (tgl, jt, metode, total) = pembelian_validate_and_total(&payload)?;
+    let (tgl, jt, metode, diskon_faktur, pajak, total) = pembelian_validate_and_total(&payload)?;
     let pemasok_kode = payload.pemasok_kode.trim();
     let gudang_kode = payload.gudang_kode.trim();
     let nomor = format!("FB-{}", Utc::now().timestamp_millis());
@@ -913,8 +943,8 @@ pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     tx.execute(
-        "INSERT INTO pembelian (nomor, pemasok_kode, gudang_kode, tanggal_faktur, jatuh_tempo, metode_pembayaran, total, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'Dipesan', ?, ?)",
+        "INSERT INTO pembelian (nomor, pemasok_kode, gudang_kode, tanggal_faktur, jatuh_tempo, metode_pembayaran, diskon_faktur, pajak, total, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Dipesan', ?, ?)",
         params![
             &nomor,
             pemasok_kode,
@@ -922,6 +952,8 @@ pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) 
             tanggal_str,
             jatuh_str,
             metode,
+            diskon_faktur,
+            pajak,
             total,
             ts,
             ts
@@ -980,6 +1012,9 @@ pub struct PembelianDetail {
     pub tanggal_faktur: String,
     pub jatuh_tempo: String,
     pub metode_pembayaran: String,
+    pub subtotal_barang: i64,
+    pub diskon_faktur: i64,
+    pub pajak: i64,
     pub total: i64,
     pub status: String,
     pub lines: Vec<PembelianDetailLine>,
@@ -995,7 +1030,8 @@ pub fn pembelian_detail(state: State<DbState>, nomor: String) -> Result<Pembelia
 
     let mut detail: PembelianDetail = conn
         .query_row(
-            "SELECT p.nomor, p.pemasok_kode, s.nama, p.gudang_kode, g.nama, p.tanggal_faktur, p.jatuh_tempo, p.metode_pembayaran, p.total, p.status
+            "SELECT p.nomor, p.pemasok_kode, s.nama, p.gudang_kode, g.nama, p.tanggal_faktur, p.jatuh_tempo, p.metode_pembayaran,
+                    COALESCE(p.diskon_faktur, 0), COALESCE(p.pajak, 0), p.total, p.status
              FROM pembelian p
              JOIN pemasok s ON lower(s.kode) = lower(p.pemasok_kode)
              JOIN gudang g ON lower(g.kode) = lower(p.gudang_kode)
@@ -1011,8 +1047,11 @@ pub fn pembelian_detail(state: State<DbState>, nomor: String) -> Result<Pembelia
                     tanggal_faktur: r.get(5)?,
                     jatuh_tempo: r.get(6)?,
                     metode_pembayaran: r.get(7)?,
-                    total: r.get(8)?,
-                    status: r.get(9)?,
+                    subtotal_barang: 0,
+                    diskon_faktur: r.get(8)?,
+                    pajak: r.get(9)?,
+                    total: r.get(10)?,
+                    status: r.get(11)?,
                     lines: Vec::new(),
                 })
             },
@@ -1047,6 +1086,7 @@ pub fn pembelian_detail(state: State<DbState>, nomor: String) -> Result<Pembelia
     for lr in line_rows {
         lines.push(lr.map_err(|e| e.to_string())?);
     }
+    detail.subtotal_barang = lines.iter().map(|l| l.subtotal).sum();
     detail.lines = lines;
 
     Ok(detail)
@@ -1062,7 +1102,7 @@ pub fn pembelian_update(
     if nomor_trim.is_empty() {
         return Err("Nomor faktur tidak valid.".into());
     }
-    let (tgl, jt, metode, total) = pembelian_validate_and_total(&payload)?;
+    let (tgl, jt, metode, diskon_faktur, pajak, total) = pembelian_validate_and_total(&payload)?;
     let pemasok_kode = payload.pemasok_kode.trim();
     let gudang_kode = payload.gudang_kode.trim();
     let tanggal_str = tgl.format("%Y-%m-%d").to_string();
@@ -1113,13 +1153,15 @@ pub fn pembelian_update(
     .map_err(|e| e.to_string())?;
 
     tx.execute(
-        "UPDATE pembelian SET pemasok_kode = ?, gudang_kode = ?, tanggal_faktur = ?, jatuh_tempo = ?, metode_pembayaran = ?, total = ?, updated_at = ? WHERE nomor = ?",
+        "UPDATE pembelian SET pemasok_kode = ?, gudang_kode = ?, tanggal_faktur = ?, jatuh_tempo = ?, metode_pembayaran = ?, diskon_faktur = ?, pajak = ?, total = ?, updated_at = ? WHERE nomor = ?",
         params![
             pemasok_kode,
             gudang_kode,
             tanggal_str,
             jatuh_str,
             metode,
+            diskon_faktur,
+            pajak,
             total,
             ts,
             nomor_trim

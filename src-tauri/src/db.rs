@@ -101,6 +101,8 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             tanggal_faktur TEXT NOT NULL,
             jatuh_tempo TEXT NOT NULL,
             metode_pembayaran TEXT NOT NULL,
+            diskon_faktur INTEGER NOT NULL DEFAULT 0,
+            pajak INTEGER NOT NULL DEFAULT 0,
             total INTEGER NOT NULL,
             status TEXT NOT NULL DEFAULT 'Dipesan',
             created_at INTEGER NOT NULL,
@@ -223,6 +225,39 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     )?;
     migrate_akun_keuangan_columns(conn)?;
     migrate_pembelian_line_columns(conn)?;
+    migrate_pembelian_columns(conn)?;
+    Ok(())
+}
+
+/// Kolom diskon faktur & pajak pada header pembelian.
+fn migrate_pembelian_columns(conn: &Connection) -> rusqlite::Result<()> {
+    let exists: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'pembelian'",
+        [],
+        |r| r.get(0),
+    )?;
+    if exists == 0 {
+        return Ok(());
+    }
+
+    let mut stmt = conn.prepare("PRAGMA table_info(pembelian)")?;
+    let cols: Vec<String> = stmt
+        .query_map([], |r| r.get::<_, String>(1))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    if !cols.iter().any(|c| c.eq_ignore_ascii_case("diskon_faktur")) {
+        conn.execute(
+            "ALTER TABLE pembelian ADD COLUMN diskon_faktur INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    if !cols.iter().any(|c| c.eq_ignore_ascii_case("pajak")) {
+        conn.execute(
+            "ALTER TABLE pembelian ADD COLUMN pajak INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
     Ok(())
 }
 

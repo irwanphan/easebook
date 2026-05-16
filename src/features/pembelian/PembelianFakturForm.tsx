@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import {
   METODE_PEMBAYARAN_PEMBELIAN,
+  pembelianFakturTotal,
   pembelianLineSubtotal,
   type PembelianDetail,
 } from "@/data/pembelian";
@@ -66,6 +67,8 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
   const [jatuhTempo, setJatuhTempo] = useState(todayLocalISODate);
   const [metodePembayaran, setMetodePembayaran] = useState<string>("TUNAI");
   const [lines, setLines] = useState<LineDraft[]>(() => [newLine()]);
+  const [diskonFaktur, setDiskonFaktur] = useState(0);
+  const [pajak, setPajak] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [hydrating, setHydrating] = useState(mode === "edit");
 
@@ -98,6 +101,8 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
         setTanggalFaktur(d.tanggalFaktur);
         setJatuhTempo(d.jatuhTempo);
         setMetodePembayaran(d.metodePembayaran || "LAINNYA");
+        setDiskonFaktur(d.diskonFaktur ?? 0);
+        setPajak(d.pajak ?? 0);
         setLines(
           d.lines.length > 0
             ? d.lines.map((l) => ({
@@ -156,7 +161,7 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
     setLines((prev) => (prev.length <= 1 ? prev : prev.filter((r) => r.id !== id)));
   }
 
-  const grandTotal = useMemo(
+  const subtotalBarang = useMemo(
     () =>
       lines.reduce(
         (sum, r) => sum + pembelianLineSubtotal(r.qty, r.hargaSatuan, r.diskon),
@@ -164,6 +169,15 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
       ),
     [lines],
   );
+
+  const grandTotal = useMemo(
+    () => pembelianFakturTotal(subtotalBarang, diskonFaktur, pajak),
+    [subtotalBarang, diskonFaktur, pajak],
+  );
+
+  useEffect(() => {
+    setDiskonFaktur((d) => Math.min(d, subtotalBarang));
+  }, [subtotalBarang]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -218,12 +232,29 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
       }
     }
 
+    const diskonFakturVal = Math.round(diskonFaktur);
+    const pajakVal = Math.round(pajak);
+    if (diskonFakturVal < 0) {
+      setError("Diskon faktur tidak valid.");
+      return;
+    }
+    if (pajakVal < 0) {
+      setError("Pajak tidak valid.");
+      return;
+    }
+    if (diskonFakturVal > subtotalBarang) {
+      setError("Diskon faktur tidak boleh melebihi subtotal barang.");
+      return;
+    }
+
     const payload = {
       pemasokKode: pemasokKode.trim(),
       gudangKode: gudangKode.trim(),
       tanggalFaktur: tanggalFaktur.trim(),
       jatuhTempo: jatuhTempo.trim(),
       metodePembayaran: metodePembayaran.trim() || "LAINNYA",
+      diskonFaktur: diskonFakturVal,
+      pajak: pajakVal,
       lines: payloadLines,
     };
 
@@ -494,9 +525,49 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
             </table>
           </div>
 
-          <div className="mt-6 flex flex-col items-end gap-1 border-t border-zinc-100 pt-4">
-            <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">Total faktur</span>
-            <span className="text-lg font-bold text-zinc-900">{formatRupiah(grandTotal)}</span>
+          <div className="mt-6 ml-auto w-full max-w-sm space-y-3 border-t border-zinc-100 pt-4">
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <span className="text-zinc-500">Subtotal barang</span>
+              <span className="font-medium text-zinc-900">{formatRupiah(subtotalBarang)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <label htmlFor={`${pf}-diskon-faktur`} className="shrink-0 text-zinc-500">
+                Diskon faktur
+              </label>
+              <input
+                id={`${pf}-diskon-faktur`}
+                type="number"
+                min={0}
+                max={subtotalBarang}
+                step={1}
+                value={diskonFaktur}
+                onChange={(e) => {
+                  const raw = Math.max(0, Math.round(Number(e.target.value) || 0));
+                  setDiskonFaktur(Math.min(raw, subtotalBarang));
+                }}
+                className={`${inputClass} mt-0 w-36 text-right`}
+                disabled={hydrating}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <label htmlFor={`${pf}-pajak`} className="shrink-0 text-zinc-500">
+                Pajak
+              </label>
+              <input
+                id={`${pf}-pajak`}
+                type="number"
+                min={0}
+                step={1}
+                value={pajak}
+                onChange={(e) => setPajak(Math.max(0, Math.round(Number(e.target.value) || 0)))}
+                className={`${inputClass} mt-0 w-36 text-right`}
+                disabled={hydrating}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-4 border-t border-zinc-100 pt-3">
+              <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">Total faktur</span>
+              <span className="text-lg font-bold text-zinc-900">{formatRupiah(grandTotal)}</span>
+            </div>
           </div>
         </Card>
 

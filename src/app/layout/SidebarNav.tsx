@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { NavLink } from "react-router-dom";
-import { Box, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import easebookIcon from "@/assets/icons/easebook-icon.svg";
 import type { PrimaryNavEntry } from "@/config/navigation";
 import { logoutNavItem } from "@/config/navigation";
 import { SidebarNavGroup } from "@/app/layout/SidebarNavGroup";
@@ -50,9 +51,13 @@ export function SidebarNav({ items }: SidebarNavProps) {
         className={`mb-4 flex w-full items-center ${expanded ? "justify-between gap-2 px-0.5" : "flex-col gap-2"}`}
       >
         <div className="flex min-w-0 items-center gap-2">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-violet-700 text-white shadow-lg shadow-brand-600/30">
-            <Box className="h-5 w-5" strokeWidth={2} />
-          </div>
+          <img
+            src={easebookIcon}
+            alt="EasyBook"
+            width={40}
+            height={40}
+            className="h-10 w-10 shrink-0 rounded-xl object-cover shadow-lg shadow-brand-600/20"
+          />
           {expanded ? (
             <span className="truncate text-sm font-semibold tracking-tight text-white">
               EasyBook

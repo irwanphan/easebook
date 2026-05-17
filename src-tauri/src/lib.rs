@@ -66,6 +66,8 @@ pub fn run() {
             master_commands::pelunasan_piutang_riwayat_detail,
             master_commands::hutang_belum_lunas_list,
             master_commands::pelunasan_hutang_apply_batch,
+            master_commands::pelunasan_hutang_riwayat_list,
+            master_commands::pelunasan_hutang_riwayat_detail,
             master_commands::pengeluaran_list,
             master_commands::pengeluaran_insert,
             master_commands::penerimaan_list,

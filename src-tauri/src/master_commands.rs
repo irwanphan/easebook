@@ -2263,7 +2263,7 @@ pub fn hutang_belum_lunas_list(state: State<DbState>) -> Result<Vec<HutangBelumL
     })
 }
 
-/// Jurnal pelunasan hutang: D hutang, K kas.
+/// Jurnal pelunasan hutang: D hutang, K kas. Mengembalikan id jurnal.
 fn pelunasan_hutang_tx_post_jurnal(
     tx: &Transaction<'_>,
     tanggal: &str,
@@ -2273,7 +2273,7 @@ fn pelunasan_hutang_tx_post_jurnal(
     kas_kode: &str,
     catatan_extra: &str,
     ts: i64,
-) -> Result<(), String> {
+) -> Result<i64, String> {
     if jumlah <= 0 {
         return Err("Jumlah pelunasan harus lebih dari 0.".into());
     }
@@ -2307,6 +2307,45 @@ fn pelunasan_hutang_tx_post_jurnal(
         )
         .map_err(|e| e.to_string())?;
         akun_jurnal_apply_saldo_delta(tx, akun_kode, debit, kredit, ts)?;
+    }
+    Ok(jurnal_id)
+}
+
+fn pelunasan_hutang_tx_save_riwayat(
+    tx: &Transaction<'_>,
+    pelunasan_nomor: &str,
+    tanggal: &str,
+    pemasok_kode: &str,
+    kas_kode: &str,
+    total: i64,
+    catatan: &str,
+    jurnal_id: i64,
+    faktur_list: &[(String, i64)],
+    ts: i64,
+) -> Result<(), String> {
+    tx.execute(
+        "INSERT INTO pelunasan_hutang (nomor, tanggal, pemasok_kode, akun_kas_kode, total, catatan, jurnal_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
+            pelunasan_nomor,
+            tanggal,
+            pemasok_kode,
+            kas_kode,
+            total,
+            catatan,
+            jurnal_id,
+            ts,
+            ts
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    for (faktur_nomor, jumlah) in faktur_list {
+        tx.execute(
+            "INSERT INTO pelunasan_hutang_faktur (pelunasan_nomor, faktur_nomor, jumlah) VALUES (?, ?, ?)",
+            params![pelunasan_nomor, faktur_nomor, jumlah],
+        )
+        .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -2414,7 +2453,7 @@ pub fn pelunasan_hutang_apply_batch(
         catatan_extra.push_str(catatan);
     }
 
-    pelunasan_hutang_tx_post_jurnal(
+    let jurnal_id = pelunasan_hutang_tx_post_jurnal(
         &tx,
         tanggal,
         &referensi,
@@ -2425,13 +2464,188 @@ pub fn pelunasan_hutang_apply_batch(
         ts,
     )?;
 
+    let mut faktur_jumlah: Vec<(String, i64)> = Vec::new();
     for nomor in &nomor_list {
+        let total: i64 = tx
+            .query_row(
+                "SELECT total FROM pembelian WHERE nomor = ?",
+                params![nomor],
+                |r| r.get(0),
+            )
+            .map_err(|_| format!("Faktur '{nomor}' tidak ditemukan."))?;
         pelunasan_hutang_tx_mark_lunas(&tx, nomor, &kas_kode, ts)?;
+        faktur_jumlah.push((nomor.clone(), total));
     }
 
-    let settled = nomor_list.len() as i64;
+    let pelunasan_nomor = format!("PLH-{}", ts);
+    pelunasan_hutang_tx_save_riwayat(
+        &tx,
+        &pelunasan_nomor,
+        tanggal,
+        pemasok_kode,
+        &kas_kode,
+        total_jumlah,
+        catatan,
+        jurnal_id,
+        &faktur_jumlah,
+        ts,
+    )?;
+
     tx.commit().map_err(|e| e.to_string())?;
-    Ok(format!("{settled} faktur berhasil dilunasi."))
+    Ok(pelunasan_nomor)
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PelunasanHutangRiwayatRow {
+    pub nomor: String,
+    pub tanggal: String,
+    pub pemasok_kode: String,
+    pub pemasok_nama: String,
+    pub akun_kas_kode: String,
+    pub akun_kas_nama: String,
+    pub total: i64,
+    pub jumlah_faktur: i64,
+    pub catatan: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PelunasanHutangFakturRow {
+    pub faktur_nomor: String,
+    pub tanggal_faktur: String,
+    pub jatuh_tempo: String,
+    pub jumlah: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PelunasanHutangDetail {
+    pub nomor: String,
+    pub tanggal: String,
+    pub pemasok_kode: String,
+    pub pemasok_nama: String,
+    pub akun_kas_kode: String,
+    pub akun_kas_nama: String,
+    pub total: i64,
+    pub catatan: String,
+    pub created_at: i64,
+    pub jurnal_id: Option<i64>,
+    pub faktur: Vec<PelunasanHutangFakturRow>,
+}
+
+#[tauri::command]
+pub fn pelunasan_hutang_riwayat_list(
+    state: State<DbState>,
+    tanggal_dari: String,
+    tanggal_sampai: String,
+) -> Result<Vec<PelunasanHutangRiwayatRow>, String> {
+    let dari = tanggal_dari.trim();
+    let sampai = tanggal_sampai.trim();
+    let d1 = NaiveDate::parse_from_str(dari, "%Y-%m-%d")
+        .map_err(|_| "Tanggal mulai tidak valid (YYYY-MM-DD).".to_string())?;
+    let d2 = NaiveDate::parse_from_str(sampai, "%Y-%m-%d")
+        .map_err(|_| "Tanggal akhir tidak valid (YYYY-MM-DD).".to_string())?;
+    if d2 < d1 {
+        return Err("Tanggal akhir tidak boleh sebelum tanggal mulai.".into());
+    }
+
+    with_conn(&state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT ph.nomor, ph.tanggal, ph.pemasok_kode, COALESCE(s.nama, ''), ph.akun_kas_kode,
+                    COALESCE(k.nama, ''), ph.total,
+                    (SELECT COUNT(*) FROM pelunasan_hutang_faktur pf WHERE pf.pelunasan_nomor = ph.nomor),
+                    ph.catatan, ph.created_at
+             FROM pelunasan_hutang ph
+             LEFT JOIN pemasok s ON lower(s.kode) = lower(ph.pemasok_kode)
+             LEFT JOIN akun_keuangan k ON lower(k.kode) = lower(ph.akun_kas_kode)
+             WHERE ph.tanggal >= ? AND ph.tanggal <= ?
+             ORDER BY ph.tanggal DESC, ph.created_at DESC, ph.nomor DESC",
+        )?;
+        let rows = stmt.query_map(params![dari, sampai], |r| {
+            Ok(PelunasanHutangRiwayatRow {
+                nomor: r.get(0)?,
+                tanggal: r.get(1)?,
+                pemasok_kode: r.get(2)?,
+                pemasok_nama: r.get(3)?,
+                akun_kas_kode: r.get(4)?,
+                akun_kas_nama: r.get(5)?,
+                total: r.get(6)?,
+                jumlah_faktur: r.get(7)?,
+                catatan: r.get(8)?,
+                created_at: r.get(9)?,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+#[tauri::command]
+pub fn pelunasan_hutang_riwayat_detail(
+    state: State<DbState>,
+    nomor: String,
+) -> Result<PelunasanHutangDetail, String> {
+    let key = nomor.trim();
+    if key.is_empty() {
+        return Err("Nomor pelunasan wajib diisi.".into());
+    }
+
+    let conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+
+    let header: PelunasanHutangDetail = conn
+        .query_row(
+            "SELECT ph.nomor, ph.tanggal, ph.pemasok_kode, COALESCE(s.nama, ''), ph.akun_kas_kode,
+                    COALESCE(k.nama, ''), ph.total, ph.catatan, ph.created_at, ph.jurnal_id
+             FROM pelunasan_hutang ph
+             LEFT JOIN pemasok s ON lower(s.kode) = lower(ph.pemasok_kode)
+             LEFT JOIN akun_keuangan k ON lower(k.kode) = lower(ph.akun_kas_kode)
+             WHERE ph.nomor = ?",
+            params![key],
+            |r| {
+                Ok(PelunasanHutangDetail {
+                    nomor: r.get(0)?,
+                    tanggal: r.get(1)?,
+                    pemasok_kode: r.get(2)?,
+                    pemasok_nama: r.get(3)?,
+                    akun_kas_kode: r.get(4)?,
+                    akun_kas_nama: r.get(5)?,
+                    total: r.get(6)?,
+                    catatan: r.get(7)?,
+                    created_at: r.get(8)?,
+                    jurnal_id: r.get(9)?,
+                    faktur: Vec::new(),
+                })
+            },
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => format!("Pelunasan '{key}' tidak ditemukan."),
+            _ => e.to_string(),
+        })?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT pf.faktur_nomor, p.tanggal_faktur, p.jatuh_tempo, pf.jumlah
+             FROM pelunasan_hutang_faktur pf
+             INNER JOIN pembelian p ON p.nomor = pf.faktur_nomor
+             WHERE pf.pelunasan_nomor = ?
+             ORDER BY p.tanggal_faktur ASC, pf.faktur_nomor ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let faktur = stmt
+        .query_map(params![key], |r| {
+            Ok(PelunasanHutangFakturRow {
+                faktur_nomor: r.get(0)?,
+                tanggal_faktur: r.get(1)?,
+                jatuh_tempo: r.get(2)?,
+                jumlah: r.get(3)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(PelunasanHutangDetail { faktur, ..header })
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

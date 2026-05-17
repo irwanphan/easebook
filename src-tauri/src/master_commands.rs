@@ -771,6 +771,53 @@ pub fn pengguna_list(state: State<DbState>) -> Result<Vec<PenggunaRow>, String> 
     })
 }
 
+fn pengguna_save_halaman_akses(
+    conn: &Connection,
+    username: &str,
+    keys: &[String],
+    is_admin: bool,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "DELETE FROM pengguna_halaman_akses WHERE lower(username) = lower(?)",
+        params![username],
+    )?;
+    if is_admin {
+        return Ok(());
+    }
+    for key in keys {
+        let k = key.trim();
+        if k.is_empty() {
+            continue;
+        }
+        conn.execute(
+            "INSERT OR IGNORE INTO pengguna_halaman_akses (username, halaman_key) VALUES (?, ?)",
+            params![username, k],
+        )?;
+    }
+    Ok(())
+}
+
+fn pengguna_load_halaman_akses(conn: &Connection, username: &str) -> rusqlite::Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT halaman_key FROM pengguna_halaman_akses
+         WHERE lower(username) = lower(?)
+         ORDER BY halaman_key COLLATE NOCASE",
+    )?;
+    let rows = stmt.query_map(params![username], |r| r.get(0))?;
+    rows.collect()
+}
+
+fn validate_halaman_akses_for_user(is_admin: bool, keys: &[String]) -> Result<(), String> {
+    if is_admin {
+        return Ok(());
+    }
+    let has_any = keys.iter().any(|k| !k.trim().is_empty());
+    if !has_any {
+        return Err("Pilih minimal satu halaman yang boleh diakses.".into());
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PenggunaInsert {
@@ -783,6 +830,7 @@ pub struct PenggunaInsert {
     pub aktif: bool,
     pub is_admin: bool,
     pub catatan: String,
+    pub halaman_akses: Vec<String>,
 }
 
 #[tauri::command]
@@ -792,10 +840,12 @@ pub fn pengguna_insert(state: State<DbState>, row: PenggunaInsert) -> Result<(),
         return Err("Nama lengkap wajib diisi.".into());
     }
     validate_password(&row.password, true)?;
+    validate_halaman_akses_for_user(row.is_admin, &row.halaman_akses)?;
     let password_hash = hash_password(&row.password)?;
     let ts = now_ts();
     with_conn(&state, |conn| {
-        conn.execute(
+        let tx = conn.unchecked_transaction()?;
+        tx.execute(
             "INSERT INTO pengguna (username, nama_lengkap, email, password_hash, departemen, nomor_hp, aktif, is_admin, catatan, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
@@ -812,6 +862,8 @@ pub fn pengguna_insert(state: State<DbState>, row: PenggunaInsert) -> Result<(),
                 ts
             ],
         )?;
+        pengguna_save_halaman_akses(&tx, &username, &row.halaman_akses, row.is_admin)?;
+        tx.commit()?;
         Ok(())
     })
     .map_err(|e| {
@@ -835,6 +887,76 @@ pub struct PenggunaUpdate {
     pub aktif: bool,
     pub is_admin: bool,
     pub catatan: String,
+    pub halaman_akses: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PenggunaSession {
+    pub username: String,
+    pub nama_lengkap: String,
+    pub is_admin: bool,
+    pub halaman_akses: Vec<String>,
+}
+
+#[tauri::command]
+pub fn pengguna_halaman_akses_get(state: State<DbState>, username: String) -> Result<Vec<String>, String> {
+    let key = username.trim();
+    if key.is_empty() {
+        return Err("Username wajib diisi.".into());
+    }
+    with_conn(&state, |conn| {
+        let exists: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pengguna WHERE lower(username) = lower(?)",
+            params![key],
+            |r| r.get(0),
+        )?;
+        if exists == 0 {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+        pengguna_load_halaman_akses(conn, key)
+    })
+    .map_err(|e| {
+        if e.contains("QueryReturnedNoRows") {
+            "Pengguna tidak ditemukan.".into()
+        } else {
+            e
+        }
+    })
+}
+
+#[tauri::command]
+pub fn pengguna_session_get(state: State<DbState>, username: String) -> Result<PenggunaSession, String> {
+    let key = username.trim();
+    if key.is_empty() {
+        return Err("Username wajib diisi.".into());
+    }
+    with_conn(&state, |conn| {
+        let row: (String, String, i64) = conn.query_row(
+            "SELECT username, nama_lengkap, is_admin FROM pengguna WHERE lower(username) = lower(?)",
+            params![key],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?;
+        let is_admin = row.2 != 0;
+        let halaman_akses = if is_admin {
+            Vec::new()
+        } else {
+            pengguna_load_halaman_akses(conn, &row.0)?
+        };
+        Ok(PenggunaSession {
+            username: row.0,
+            nama_lengkap: row.1,
+            is_admin,
+            halaman_akses,
+        })
+    })
+    .map_err(|e| {
+        if e.contains("QueryReturnedNoRows") {
+            "Pengguna tidak ditemukan.".into()
+        } else {
+            e
+        }
+    })
 }
 
 #[tauri::command]
@@ -848,6 +970,7 @@ pub fn pengguna_update(
         return Err("Nama lengkap wajib diisi.".into());
     }
     validate_password(&row.password, false)?;
+    validate_halaman_akses_for_user(row.is_admin, &row.halaman_akses)?;
     let ts = now_ts();
 
     with_conn_app(&state, |conn| {
@@ -925,6 +1048,9 @@ pub fn pengguna_update(
                 return Err("Pengguna tidak ditemukan.".into());
             }
         }
+
+        pengguna_save_halaman_akses(conn, &key, &row.halaman_akses, row.is_admin)
+            .map_err(|e| e.to_string())?;
         Ok(())
     })
 }

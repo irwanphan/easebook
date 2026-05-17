@@ -5,6 +5,7 @@ import easebookIcon from "@/assets/icons/easebook-icon.svg";
 import type { PrimaryNavEntry } from "@/config/navigation";
 import { logoutNavItem } from "@/config/navigation";
 import { SidebarNavGroup } from "@/app/layout/SidebarNavGroup";
+import { useAuth } from "@/features/auth/AuthContext";
 
 const SIDEBAR_EXPANDED_KEY = "easybook-sidebar-expanded";
 
@@ -29,6 +30,7 @@ function navLinkClass(isActive: boolean, expanded: boolean) {
 }
 
 export function SidebarNav({ items }: SidebarNavProps) {
+  const { session } = useAuth();
   const LogoutIcon = logoutNavItem.icon;
   const [expanded, setExpanded] = useState(readStoredExpanded);
 
@@ -92,8 +94,12 @@ export function SidebarNav({ items }: SidebarNavProps) {
         </div>
         {expanded ? (
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-white">Starc</p>
-            <p className="truncate text-xs text-zinc-500">Admin</p>
+            <p className="truncate text-sm font-medium text-white">
+              {session?.namaLengkap || session?.username || "—"}
+            </p>
+            <p className="truncate text-xs text-zinc-500">
+              {session?.isAdmin ? "Administrator" : session?.username || "Pengguna"}
+            </p>
           </div>
         ) : null}
       </div>

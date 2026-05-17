@@ -10,9 +10,11 @@ import {
   PenggunaFields,
   type PenggunaFormValues,
 } from "@/features/pengguna/PenggunaFields";
+import { allHalamanAksesKeys } from "@/config/halamanAkses";
+import { useAuth } from "@/features/auth/AuthContext";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
-function rowToForm(row: PenggunaRow): PenggunaFormValues {
+function rowToForm(row: PenggunaRow, halamanAkses: string[]): PenggunaFormValues {
   return {
     username: row.username,
     namaLengkap: row.namaLengkap,
@@ -24,6 +26,7 @@ function rowToForm(row: PenggunaRow): PenggunaFormValues {
     aktif: row.aktif,
     isAdmin: row.isAdmin,
     catatan: row.catatan,
+    halamanAkses: row.isAdmin ? [...allHalamanAksesKeys] : halamanAkses,
   };
 }
 
@@ -31,6 +34,7 @@ export function UbahPenggunaPage() {
   const { username: usernameParam } = useParams();
   const username = usernameParam ? decodeURIComponent(usernameParam) : "";
   const navigate = useNavigate();
+  const { session, setSessionUser } = useAuth();
 
   const [values, setValues] = useState<PenggunaFormValues | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,7 +51,10 @@ export function UbahPenggunaPage() {
         if (cancelled) return;
         const row = list.find((r) => r.username.toLowerCase() === username.toLowerCase());
         if (row) {
-          setValues(rowToForm(row));
+          const halamanAkses = row.isAdmin
+            ? []
+            : await invoke<string[]>("pengguna_halaman_akses_get", { username: row.username });
+          setValues(rowToForm(row, halamanAkses.length > 0 ? halamanAkses : ["dashboard"]));
         } else {
           setValues(null);
         }
@@ -86,6 +93,10 @@ export function UbahPenggunaPage() {
         return;
       }
     }
+    if (!values.isAdmin && values.halamanAkses.length === 0) {
+      setError("Pilih minimal satu halaman yang boleh diakses.");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -98,8 +109,12 @@ export function UbahPenggunaPage() {
         aktif: values.aktif,
         isAdmin: values.isAdmin,
         catatan: values.catatan.trim(),
+        halamanAkses: values.isAdmin ? [] : values.halamanAkses,
       };
       await invoke("pengguna_update", { username: values.username, row: payload });
+      if (session?.username.toLowerCase() === values.username.toLowerCase()) {
+        await setSessionUser(values.username);
+      }
       navigate("/manajemen/pengguna");
     } catch (err) {
       setError(tauriErrorMessage(err));
@@ -124,7 +139,7 @@ export function UbahPenggunaPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6">
+    <div className="mx-auto flex max-w-4xl flex-col gap-6">
       <div>
         <Link
           to="/manajemen/pengguna"

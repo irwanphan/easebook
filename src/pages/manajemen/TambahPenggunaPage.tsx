@@ -10,6 +10,7 @@ import {
   PenggunaFields,
   type PenggunaFormValues,
 } from "@/features/pengguna/PenggunaFields";
+import { defaultHalamanAksesForUser } from "@/lib/halamanAkses";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
 const emptyForm = (): PenggunaFormValues => ({
@@ -23,6 +24,7 @@ const emptyForm = (): PenggunaFormValues => ({
   aktif: true,
   isAdmin: false,
   catatan: "",
+  halamanAkses: defaultHalamanAksesForUser(false),
 });
 
 export function TambahPenggunaPage() {
@@ -60,6 +62,10 @@ export function TambahPenggunaPage() {
       setError("Konfirmasi password tidak cocok.");
       return;
     }
+    if (!values.isAdmin && values.halamanAkses.length === 0) {
+      setError("Pilih minimal satu halaman yang boleh diakses.");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -79,6 +85,7 @@ export function TambahPenggunaPage() {
         aktif: values.aktif,
         isAdmin: values.isAdmin,
         catatan: values.catatan.trim(),
+        halamanAkses: values.isAdmin ? [] : values.halamanAkses,
       };
       await invoke("pengguna_insert", { row: payload });
       navigate("/manajemen/pengguna");
@@ -90,7 +97,7 @@ export function TambahPenggunaPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6">
+    <div className="mx-auto flex max-w-4xl flex-col gap-6">
       <div>
         <Link
           to="/manajemen/pengguna"

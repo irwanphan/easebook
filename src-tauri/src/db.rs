@@ -259,6 +259,14 @@ fn migrate_pengguna_tables(conn: &Connection) -> rusqlite::Result<()> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_pengguna_aktif ON pengguna(aktif);
+
+        CREATE TABLE IF NOT EXISTS pengguna_halaman_akses (
+            username TEXT NOT NULL REFERENCES pengguna(username) ON DELETE CASCADE ON UPDATE CASCADE,
+            halaman_key TEXT NOT NULL,
+            PRIMARY KEY (username, halaman_key)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pengguna_halaman_akses_user ON pengguna_halaman_akses(username);
         ",
     )?;
 

@@ -63,6 +63,8 @@ pub fn run() {
             master_commands::pengguna_update,
             master_commands::pengguna_delete,
             master_commands::pengguna_username_exists,
+            master_commands::pengguna_halaman_akses_get,
+            master_commands::pengguna_session_get,
             master_commands::pembelian_list,
             master_commands::pembelian_insert,
             master_commands::pembelian_detail,

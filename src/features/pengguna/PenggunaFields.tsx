@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { allHalamanAksesKeys } from "@/config/halamanAkses";
+import { PenggunaHalamanAksesSection } from "@/features/pengguna/PenggunaHalamanAksesSection";
 
 function FieldLabel({ htmlFor, children }: { htmlFor: string; children: ReactNode }) {
   return (
@@ -25,6 +27,7 @@ export type PenggunaFormValues = {
   aktif: boolean;
   isAdmin: boolean;
   catatan: string;
+  halamanAkses: string[];
 };
 
 type PenggunaFieldsProps = {
@@ -35,6 +38,18 @@ type PenggunaFieldsProps = {
 };
 
 export function PenggunaFields({ values, onChange, isEdit = false }: PenggunaFieldsProps) {
+  function patch(patchValues: Partial<PenggunaFormValues>) {
+    if (patchValues.isAdmin === true) {
+      onChange({ ...patchValues, halamanAkses: [...allHalamanAksesKeys] });
+      return;
+    }
+    if (patchValues.isAdmin === false && values.isAdmin) {
+      onChange({ ...patchValues, halamanAkses: ["dashboard"] });
+      return;
+    }
+    onChange(patchValues);
+  }
+
   return (
     <div className="flex flex-col gap-5">
       <div>
@@ -43,7 +58,7 @@ export function PenggunaFields({ values, onChange, isEdit = false }: PenggunaFie
           id="pengguna-username"
           className={inputClass}
           value={values.username}
-          onChange={(e) => onChange({ username: e.target.value })}
+          onChange={(e) => patch({ username: e.target.value })}
           disabled={isEdit}
           autoComplete="username"
           placeholder="contoh: budi.santoso"
@@ -59,7 +74,7 @@ export function PenggunaFields({ values, onChange, isEdit = false }: PenggunaFie
           id="pengguna-nama"
           className={inputClass}
           value={values.namaLengkap}
-          onChange={(e) => onChange({ namaLengkap: e.target.value })}
+          onChange={(e) => patch({ namaLengkap: e.target.value })}
           autoComplete="name"
           placeholder="Nama tampilan di aplikasi"
         />
@@ -73,7 +88,7 @@ export function PenggunaFields({ values, onChange, isEdit = false }: PenggunaFie
             type="email"
             className={inputClass}
             value={values.email}
-            onChange={(e) => onChange({ email: e.target.value })}
+            onChange={(e) => patch({ email: e.target.value })}
             autoComplete="email"
             placeholder="opsional"
           />
@@ -85,7 +100,7 @@ export function PenggunaFields({ values, onChange, isEdit = false }: PenggunaFie
             type="tel"
             className={inputClass}
             value={values.nomorHp}
-            onChange={(e) => onChange({ nomorHp: e.target.value })}
+            onChange={(e) => patch({ nomorHp: e.target.value })}
             autoComplete="tel"
             placeholder="+62 …"
           />
@@ -98,7 +113,7 @@ export function PenggunaFields({ values, onChange, isEdit = false }: PenggunaFie
           id="pengguna-departemen"
           className={inputClass}
           value={values.departemen}
-          onChange={(e) => onChange({ departemen: e.target.value })}
+          onChange={(e) => patch({ departemen: e.target.value })}
           placeholder="contoh: Gudang, Keuangan, Penjualan"
         />
       </div>
@@ -113,7 +128,7 @@ export function PenggunaFields({ values, onChange, isEdit = false }: PenggunaFie
             type="password"
             className={inputClass}
             value={values.password}
-            onChange={(e) => onChange({ password: e.target.value })}
+            onChange={(e) => patch({ password: e.target.value })}
             autoComplete={isEdit ? "new-password" : "new-password"}
             placeholder={isEdit ? "Kosongkan jika tidak diubah" : "Minimal 6 karakter"}
           />
@@ -125,7 +140,7 @@ export function PenggunaFields({ values, onChange, isEdit = false }: PenggunaFie
             type="password"
             className={inputClass}
             value={values.passwordConfirm}
-            onChange={(e) => onChange({ passwordConfirm: e.target.value })}
+            onChange={(e) => patch({ passwordConfirm: e.target.value })}
             autoComplete="new-password"
             placeholder={isEdit ? "Kosongkan jika tidak diubah" : ""}
           />
@@ -138,7 +153,7 @@ export function PenggunaFields({ values, onChange, isEdit = false }: PenggunaFie
             type="checkbox"
             className="h-4 w-4 rounded border-zinc-300 text-brand-600 focus:ring-brand-500"
             checked={values.aktif}
-            onChange={(e) => onChange({ aktif: e.target.checked })}
+            onChange={(e) => patch({ aktif: e.target.checked })}
           />
           Akun aktif
         </label>
@@ -147,11 +162,17 @@ export function PenggunaFields({ values, onChange, isEdit = false }: PenggunaFie
             type="checkbox"
             className="h-4 w-4 rounded border-zinc-300 text-brand-600 focus:ring-brand-500"
             checked={values.isAdmin}
-            onChange={(e) => onChange({ isAdmin: e.target.checked })}
+            onChange={(e) => patch({ isAdmin: e.target.checked })}
           />
           Administrator (akses penuh)
         </label>
       </div>
+
+      <PenggunaHalamanAksesSection
+        selectedKeys={values.halamanAkses}
+        isAdmin={values.isAdmin}
+        onChange={(halamanAkses) => patch({ halamanAkses })}
+      />
 
       <div>
         <FieldLabel htmlFor="pengguna-catatan">Catatan</FieldLabel>
@@ -159,7 +180,7 @@ export function PenggunaFields({ values, onChange, isEdit = false }: PenggunaFie
           id="pengguna-catatan"
           className={textareaClass}
           value={values.catatan}
-          onChange={(e) => onChange({ catatan: e.target.value })}
+          onChange={(e) => patch({ catatan: e.target.value })}
           placeholder="Opsional — keterangan internal"
         />
       </div>

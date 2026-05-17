@@ -19,6 +19,7 @@ export type PenggunaInsert = {
   aktif: boolean;
   isAdmin: boolean;
   catatan: string;
+  halamanAkses: string[];
 };
 
 export type PenggunaUpdate = {
@@ -30,4 +31,12 @@ export type PenggunaUpdate = {
   aktif: boolean;
   isAdmin: boolean;
   catatan: string;
+  halamanAkses: string[];
+};
+
+export type PenggunaSession = {
+  username: string;
+  namaLengkap: string;
+  isAdmin: boolean;
+  halamanAkses: string[];
 };

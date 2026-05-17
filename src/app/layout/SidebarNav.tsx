@@ -85,7 +85,7 @@ export function SidebarNav({ items }: SidebarNavProps) {
       </div>
 
       <div
-        className={`mb-4 flex ${expanded ? "w-full items-center gap-3" : "flex-col items-center"}`}
+        className={`mb-4 flex ${expanded ? "w-full items-center gap-3 border border-purple-300 shadow-lg shadow-purple-600/20 p-3 rounded-xl" : "flex-col items-center"}`}
       >
         <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full ring-2 ring-zinc-700">
           <UserAvatar
@@ -100,7 +100,7 @@ export function SidebarNav({ items }: SidebarNavProps) {
             <p className="truncate text-sm font-medium text-white">
               {session?.namaLengkap || session?.username || "—"}
             </p>
-            <p className="truncate text-xs text-zinc-500">
+            <p className="truncate text-xs text-purple-300">
               {session?.isAdmin ? "Administrator" : session?.username || "Pengguna"}
             </p>
           </div>

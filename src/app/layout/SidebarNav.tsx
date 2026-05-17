@@ -84,8 +84,19 @@ export function SidebarNav({ items }: SidebarNavProps) {
         </button>
       </div>
 
-      <div
-        className={`mb-4 flex ${expanded ? "w-full items-center gap-3 border border-purple-300 shadow-lg shadow-purple-600/20 p-3 rounded-xl" : "flex-col items-center"}`}
+      <NavLink
+        to="/profil"
+        title={expanded ? undefined : "Profil saya"}
+        className={({ isActive }) =>
+          [
+            `mb-4 flex transition-colors ${expanded ? "w-full items-center gap-3 border border-purple-300 shadow-lg shadow-purple-600/20 p-3 rounded-xl" : "flex-col items-center"}`,
+            isActive
+              ? expanded
+                ? "border-purple-400 bg-purple-950/40"
+                : "ring-2 ring-purple-400 ring-offset-2 ring-offset-zinc-950 rounded-full"
+              : "hover:border-purple-400/80 hover:bg-zinc-900/60",
+          ].join(" ")
+        }
       >
         <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full ring-2 ring-zinc-700">
           <UserAvatar
@@ -105,7 +116,7 @@ export function SidebarNav({ items }: SidebarNavProps) {
             </p>
           </div>
         ) : null}
-      </div>
+      </NavLink>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]">
         <nav

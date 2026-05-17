@@ -899,6 +899,68 @@ pub struct PenggunaSession {
     pub halaman_akses: Vec<String>,
 }
 
+fn pengguna_build_session(conn: &Connection, username: &str) -> Result<PenggunaSession, String> {
+    let row: (String, String, i64, i64) = conn
+        .query_row(
+            "SELECT username, nama_lengkap, is_admin, aktif FROM pengguna WHERE lower(username) = lower(?)",
+            params![username],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .map_err(|_| "Pengguna tidak ditemukan.".to_string())?;
+    if row.3 == 0 {
+        return Err("Akun pengguna tidak aktif.".into());
+    }
+    let is_admin = row.2 != 0;
+    let halaman_akses = if is_admin {
+        Vec::new()
+    } else {
+        pengguna_load_halaman_akses(conn, &row.0).map_err(|e| e.to_string())?
+    };
+    Ok(PenggunaSession {
+        username: row.0,
+        nama_lengkap: row.1,
+        is_admin,
+        halaman_akses,
+    })
+}
+
+#[tauri::command]
+pub fn pengguna_login(
+    state: State<DbState>,
+    username: String,
+    password: String,
+) -> Result<PenggunaSession, String> {
+    let key = username.trim();
+    if key.is_empty() {
+        return Err("Username wajib diisi.".into());
+    }
+    if password.is_empty() {
+        return Err("Password wajib diisi.".into());
+    }
+
+    with_conn_app(&state, |conn| {
+        let row: (String, String, i64, i64, String) = conn
+            .query_row(
+                "SELECT username, nama_lengkap, is_admin, aktif, password_hash FROM pengguna WHERE lower(username) = lower(?)",
+                params![key],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .map_err(|_| "Username atau password salah.".to_string())?;
+
+        if row.3 == 0 {
+            return Err("Akun pengguna tidak aktif. Hubungi administrator.".into());
+        }
+
+        let ok = bcrypt::verify(password.as_str(), &row.4)
+            .map_err(|e| e.to_string())?;
+        if !ok {
+            return Err("Username atau password salah.".into());
+        }
+
+        pengguna_build_session(conn, &row.0)
+    })
+}
+
 #[tauri::command]
 pub fn pengguna_halaman_akses_get(state: State<DbState>, username: String) -> Result<Vec<String>, String> {
     let key = username.trim();
@@ -931,32 +993,7 @@ pub fn pengguna_session_get(state: State<DbState>, username: String) -> Result<P
     if key.is_empty() {
         return Err("Username wajib diisi.".into());
     }
-    with_conn(&state, |conn| {
-        let row: (String, String, i64) = conn.query_row(
-            "SELECT username, nama_lengkap, is_admin FROM pengguna WHERE lower(username) = lower(?)",
-            params![key],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )?;
-        let is_admin = row.2 != 0;
-        let halaman_akses = if is_admin {
-            Vec::new()
-        } else {
-            pengguna_load_halaman_akses(conn, &row.0)?
-        };
-        Ok(PenggunaSession {
-            username: row.0,
-            nama_lengkap: row.1,
-            is_admin,
-            halaman_akses,
-        })
-    })
-    .map_err(|e| {
-        if e.contains("QueryReturnedNoRows") {
-            "Pengguna tidak ditemukan.".into()
-        } else {
-            e
-        }
-    })
+    with_conn_app(&state, |conn| pengguna_build_session(conn, key))
 }
 
 #[tauri::command]

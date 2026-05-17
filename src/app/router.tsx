@@ -1,5 +1,8 @@
-import { createHashRouter } from "react-router-dom";
+import { createHashRouter, Outlet } from "react-router-dom";
 import { AppShell } from "@/app/layout/AppShell";
+import { AuthProvider } from "@/features/auth/AuthContext";
+import { RequireAuth } from "@/features/auth/RequireAuth";
+import { LoginPage } from "@/pages/LoginPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { BarangJasaPage } from "@/pages/BarangJasaPage";
 import { TambahBarangJasaPage } from "@/pages/TambahBarangJasaPage";
@@ -47,11 +50,26 @@ import { KonfigurasiAkunJurnalPage } from "@/pages/keuangan/KonfigurasiAkunJurna
 import { LaporanPergerakanStokPage } from "@/pages/laporan/LaporanPergerakanStokPage";
 import { LaporanMutasiAntarGudangPage } from "@/pages/laporan/LaporanMutasiAntarGudangPage";
 
+function AuthLayout() {
+  return (
+    <AuthProvider>
+      <Outlet />
+    </AuthProvider>
+  );
+}
+
 export const router = createHashRouter([
   {
-    path: "/",
-    element: <AppShell />,
+    element: <AuthLayout />,
     children: [
+      { path: "login", element: <LoginPage /> },
+      {
+        element: <RequireAuth />,
+        children: [
+          {
+            path: "/",
+            element: <AppShell />,
+            children: [
       { index: true, element: <DashboardPage /> },
       { path: "barang-jasa/tambah", element: <TambahBarangJasaPage /> },
       { path: "barang-jasa/kartu-stok/:kode", element: <KartuStokBarangPage /> },
@@ -99,6 +117,10 @@ export const router = createHashRouter([
       { path: "keuangan/konfigurasi-akun-jurnal", element: <KonfigurasiAkunJurnalPage /> },
       { path: "keuangan/jurnal-umum", element: <JurnalUmumPage /> },
       { path: "pengaturan", element: <PengaturanPage /> },
+            ],
+          },
+        ],
+      },
     ],
   },
 ]);

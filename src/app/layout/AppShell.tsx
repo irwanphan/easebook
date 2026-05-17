@@ -1,7 +1,7 @@
 import { Outlet } from "react-router-dom";
 import { SidebarNav } from "@/app/layout/SidebarNav";
 import { primaryNavEntries } from "@/config/navigation";
-import { AuthProvider, useAuth } from "@/features/auth/AuthContext";
+import { useAuth } from "@/features/auth/AuthContext";
 import { PageAccessGuard } from "@/features/auth/PageAccessGuard";
 import { BarangJasaProvider } from "@/features/barang-jasa/BarangJasaContext";
 import { KategoriGrupProvider } from "@/features/kategori-grup/KategoriGrupContext";
@@ -30,7 +30,6 @@ function AppShellInner() {
 
 export function AppShell() {
   return (
-    <AuthProvider>
     <BarangJasaProvider>
       <KategoriGrupProvider>
         <MerekProvider>
@@ -44,6 +43,5 @@ export function AppShell() {
         </MerekProvider>
       </KategoriGrupProvider>
     </BarangJasaProvider>
-    </AuthProvider>
   );
 }

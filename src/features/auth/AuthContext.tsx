@@ -10,24 +10,23 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { canAccessPath as checkPathAccess, filterPrimaryNavEntries } from "@/lib/halamanAkses";
 import type { PrimaryNavEntry } from "@/config/navigation";
+import type { PenggunaSession } from "@/data/pengguna";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
 const SESSION_STORAGE_KEY = "easybook_session";
 
-export type AuthSession = {
-  username: string;
-  namaLengkap: string;
-  isAdmin: boolean;
-  halamanAkses: string[];
-};
+export type AuthSession = PenggunaSession;
 
 type AuthContextValue = {
   session: AuthSession | null;
   loading: boolean;
+  isAuthenticated: boolean;
   allowedKeys: Set<string>;
   canAccessPath: (pathname: string) => boolean;
   filterNav: (entries: PrimaryNavEntry[]) => PrimaryNavEntry[];
-  setSessionUser: (username: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
+  logout: () => void;
+  refreshSession: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -56,28 +55,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadSession = useCallback(async (username: string) => {
-    const data = await invoke<AuthSession>("pengguna_session_get", { username });
+  const applySession = useCallback((data: AuthSession | null) => {
     setSession(data);
     persistSession(data);
   }, []);
+
+  const refreshSession = useCallback(async () => {
+    const stored = readStoredSession();
+    if (!stored?.username) {
+      applySession(null);
+      return;
+    }
+    const data = await invoke<AuthSession>("pengguna_session_get", {
+      username: stored.username,
+    });
+    applySession(data);
+  }, [applySession]);
 
   useEffect(() => {
     let cancelled = false;
     async function bootstrap() {
       const stored = readStoredSession();
-      const username = stored?.username ?? "admin";
-      try {
-        const data = await invoke<AuthSession>("pengguna_session_get", { username });
+      if (!stored?.username) {
         if (!cancelled) {
-          setSession(data);
-          persistSession(data);
+          applySession(null);
+          setLoading(false);
         }
+        return;
+      }
+      try {
+        const data = await invoke<AuthSession>("pengguna_session_get", {
+          username: stored.username,
+        });
+        if (!cancelled) applySession(data);
       } catch (e) {
         console.warn("Auth bootstrap:", tauriErrorMessage(e));
-        if (!cancelled && stored) {
-          setSession(stored);
-        }
+        if (!cancelled) applySession(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -86,25 +99,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applySession]);
+
+  const login = useCallback(
+    async (username: string, password: string) => {
+      const data = await invoke<AuthSession>("pengguna_login", {
+        username: username.trim(),
+        password,
+      });
+      applySession(data);
+    },
+    [applySession],
+  );
+
+  const logout = useCallback(() => {
+    applySession(null);
+  }, [applySession]);
 
   const allowedKeys = useMemo(
     () => new Set(session?.halamanAkses ?? []),
     [session?.halamanAkses],
   );
 
+  const isAdmin = session?.isAdmin ?? false;
+
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
       loading,
+      isAuthenticated: session != null,
       allowedKeys,
-      canAccessPath: (pathname: string) =>
-        checkPathAccess(pathname, session?.isAdmin ?? true, allowedKeys),
-      filterNav: (entries) =>
-        filterPrimaryNavEntries(entries, session?.isAdmin ?? true, allowedKeys),
-      setSessionUser: loadSession,
+      canAccessPath: (pathname: string) => {
+        if (!session) return false;
+        return checkPathAccess(pathname, isAdmin, allowedKeys);
+      },
+      filterNav: (entries) => {
+        if (!session) return [];
+        return filterPrimaryNavEntries(entries, isAdmin, allowedKeys);
+      },
+      login,
+      logout,
+      refreshSession,
     }),
-    [session, loading, allowedKeys, loadSession],
+    [session, loading, allowedKeys, isAdmin, login, logout, refreshSession],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

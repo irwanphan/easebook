@@ -34,7 +34,7 @@ export function UbahPenggunaPage() {
   const { username: usernameParam } = useParams();
   const username = usernameParam ? decodeURIComponent(usernameParam) : "";
   const navigate = useNavigate();
-  const { session, setSessionUser } = useAuth();
+  const { session, refreshSession } = useAuth();
 
   const [values, setValues] = useState<PenggunaFormValues | null>(null);
   const [loading, setLoading] = useState(true);
@@ -113,7 +113,7 @@ export function UbahPenggunaPage() {
       };
       await invoke("pengguna_update", { username: values.username, row: payload });
       if (session?.username.toLowerCase() === values.username.toLowerCase()) {
-        await setSessionUser(values.username);
+        await refreshSession();
       }
       navigate("/manajemen/pengguna");
     } catch (err) {

@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import easebookIcon from "@/assets/icons/easebook-icon.svg";
 import type { PrimaryNavEntry } from "@/config/navigation";
@@ -30,7 +30,8 @@ function navLinkClass(isActive: boolean, expanded: boolean) {
 }
 
 export function SidebarNav({ items }: SidebarNavProps) {
-  const { session } = useAuth();
+  const { session, logout } = useAuth();
+  const navigate = useNavigate();
   const LogoutIcon = logoutNavItem.icon;
   const [expanded, setExpanded] = useState(readStoredExpanded);
 
@@ -144,7 +145,8 @@ export function SidebarNav({ items }: SidebarNavProps) {
         type="button"
         title={expanded ? undefined : logoutNavItem.label}
         onClick={() => {
-          /* hook ke Tauri exit nanti */
+          logout();
+          navigate("/login", { replace: true });
         }}
         className={`${navLinkClass(false, expanded)} mt-2`}
       >

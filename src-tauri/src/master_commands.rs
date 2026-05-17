@@ -2247,6 +2247,107 @@ pub fn dashboard_penjualan_bulanan(
     })
 }
 
+/// Faktur dianggap terlunasi jika status Lunas atau penjualan tunai (akun kas terisi).
+const SQL_PENJUALAN_TERLUNASI: &str =
+    "(upper(trim(status)) = 'LUNAS' OR (akun_kas_kode IS NOT NULL AND trim(akun_kas_kode) != ''))";
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DashboardPenjualanRingkasanBulan {
+    pub jumlah_faktur: i64,
+    pub nilai_total: i64,
+    pub jumlah_terlunasi: i64,
+    pub nilai_terlunasi: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DashboardPenjualanRingkasan {
+    pub bulan_ini: DashboardPenjualanRingkasanBulan,
+    pub bulan_lalu: DashboardPenjualanRingkasanBulan,
+    pub piutang_jumlah: i64,
+    pub piutang_nilai: i64,
+    pub label_bulan_ini: String,
+}
+
+fn dashboard_penjualan_ringkasan_bulan(
+    conn: &Connection,
+    year_month_prefix: &str,
+) -> rusqlite::Result<DashboardPenjualanRingkasanBulan> {
+    let sql = format!(
+        "SELECT COUNT(*),
+                COALESCE(SUM(total), 0),
+                COALESCE(SUM(CASE WHEN {SQL_PENJUALAN_TERLUNASI} THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN {SQL_PENJUALAN_TERLUNASI} THEN total ELSE 0 END), 0)
+         FROM penjualan
+         WHERE tanggal_faktur LIKE ?1 || '%'"
+    );
+    conn.query_row(&sql, [year_month_prefix], |r| {
+        Ok(DashboardPenjualanRingkasanBulan {
+            jumlah_faktur: r.get(0)?,
+            nilai_total: r.get(1)?,
+            jumlah_terlunasi: r.get(2)?,
+            nilai_terlunasi: r.get(3)?,
+        })
+    })
+}
+
+#[tauri::command]
+pub fn dashboard_penjualan_ringkasan(state: State<DbState>) -> Result<DashboardPenjualanRingkasan, String> {
+    with_conn(&state, |conn| {
+        let now = Local::now();
+        let y = now.year();
+        let m = now.month();
+        let prefix_ini = format!("{y:04}-{m:02}");
+        let (y_lalu, m_lalu) = if m == 1 {
+            (y - 1, 12u32)
+        } else {
+            (y, m - 1)
+        };
+        let prefix_lalu = format!("{y_lalu:04}-{m_lalu:02}");
+
+        let bulan_ini = dashboard_penjualan_ringkasan_bulan(conn, &prefix_ini)?;
+        let bulan_lalu = dashboard_penjualan_ringkasan_bulan(conn, &prefix_lalu)?;
+
+        let (piutang_jumlah, piutang_nilai): (i64, i64) = conn.query_row(
+            "SELECT COUNT(*), COALESCE(SUM(total), 0)
+             FROM penjualan
+             WHERE (akun_kas_kode IS NULL OR trim(akun_kas_kode) = '')
+               AND upper(trim(status)) != 'LUNAS'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+
+        let label_bulan_ini = format!(
+            "{} {}",
+            match m {
+                1 => "Januari",
+                2 => "Februari",
+                3 => "Maret",
+                4 => "April",
+                5 => "Mei",
+                6 => "Juni",
+                7 => "Juli",
+                8 => "Agustus",
+                9 => "September",
+                10 => "Oktober",
+                11 => "November",
+                12 => "Desember",
+                _ => "",
+            },
+            y
+        );
+
+        Ok(DashboardPenjualanRingkasan {
+            bulan_ini,
+            bulan_lalu,
+            piutang_jumlah,
+            piutang_nilai,
+            label_bulan_ini,
+        })
+    })
+}
+
 #[tauri::command]
 pub fn penjualan_insert(state: State<DbState>, payload: PenjualanInsertPayload) -> Result<String, String> {
     let (tgl, jt, _sub, diskon_faktur, pajak, total) = penjualan_validate_and_total(&payload)?;

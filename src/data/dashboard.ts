@@ -12,3 +12,18 @@ export type DashboardPenjualanBulananResult = {
   availableYears: number[];
   highlightMonth: number;
 };
+
+export type DashboardPenjualanRingkasanBulan = {
+  jumlahFaktur: number;
+  nilaiTotal: number;
+  jumlahTerlunasi: number;
+  nilaiTerlunasi: number;
+};
+
+export type DashboardPenjualanRingkasan = {
+  bulanIni: DashboardPenjualanRingkasanBulan;
+  bulanLalu: DashboardPenjualanRingkasanBulan;
+  piutangJumlah: number;
+  piutangNilai: number;
+  labelBulanIni: string;
+};

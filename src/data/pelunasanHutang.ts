@@ -9,6 +9,14 @@ export type HutangBelumLunasRow = {
   metodePembayaran: string;
 };
 
+export type PelunasanHutangPayload = {
+  nomorFaktur: string;
+  tanggal: string;
+  kasKode: string;
+  jumlah: number;
+  catatan: string;
+};
+
 export type PelunasanHutangBatchPayload = {
   pemasokKode: string;
   tanggal: string;

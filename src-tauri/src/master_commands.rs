@@ -2384,6 +2384,106 @@ fn pelunasan_hutang_tx_mark_lunas(
     Ok(())
 }
 
+fn pelunasan_hutang_tx_settle_one(
+    tx: &Transaction<'_>,
+    nomor: &str,
+    tanggal: &str,
+    kas_kode: &str,
+    catatan: &str,
+    ts: i64,
+) -> Result<String, String> {
+    let (pemasok_kode, total) = pelunasan_hutang_tx_read_faktur(tx, nomor)?;
+    let pelunasan_nomor = format!("PLH-{}", ts);
+
+    let jurnal_id = pelunasan_hutang_tx_post_jurnal(
+        tx,
+        tanggal,
+        nomor,
+        &pemasok_kode,
+        total,
+        kas_kode,
+        catatan,
+        ts,
+    )?;
+
+    pelunasan_hutang_tx_mark_lunas(tx, nomor, kas_kode, ts)?;
+
+    pelunasan_hutang_tx_save_riwayat(
+        tx,
+        &pelunasan_nomor,
+        tanggal,
+        &pemasok_kode,
+        kas_kode,
+        total,
+        catatan,
+        jurnal_id,
+        &[(nomor.to_string(), total)],
+        ts,
+    )?;
+
+    Ok(pelunasan_nomor)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PelunasanHutangPayload {
+    pub nomor_faktur: String,
+    pub tanggal: String,
+    pub kas_kode: String,
+    pub jumlah: i64,
+    pub catatan: String,
+}
+
+#[tauri::command]
+pub fn pelunasan_hutang_apply(
+    state: State<DbState>,
+    payload: PelunasanHutangPayload,
+) -> Result<String, String> {
+    let nomor = payload.nomor_faktur.trim();
+    let tanggal = payload.tanggal.trim();
+    let kas_kode = payload.kas_kode.trim().to_uppercase();
+    let jumlah = payload.jumlah;
+    let catatan = payload.catatan.trim();
+
+    if nomor.is_empty() {
+        return Err("Nomor faktur wajib diisi.".into());
+    }
+    if tanggal.is_empty() {
+        return Err("Tanggal pelunasan wajib diisi.".into());
+    }
+    NaiveDate::parse_from_str(tanggal, "%Y-%m-%d")
+        .map_err(|_| "Tanggal tidak valid (gunakan YYYY-MM-DD).".to_string())?;
+    if kas_kode.is_empty() {
+        return Err("Pilih akun kas pembayaran.".into());
+    }
+    if jumlah <= 0 {
+        return Err("Jumlah pelunasan harus lebih dari 0.".into());
+    }
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let ts = now_ts();
+
+    let total: i64 = tx
+        .query_row(
+            "SELECT total FROM pembelian WHERE nomor = ?",
+            params![nomor],
+            |r| r.get(0),
+        )
+        .map_err(|_| format!("Faktur pembelian '{nomor}' tidak ditemukan."))?;
+    if jumlah != total {
+        return Err(format!(
+            "Pelunasan penuh diperlukan: jumlah harus sama dengan total faktur ({total})."
+        ));
+    }
+
+    let pelunasan_nomor =
+        pelunasan_hutang_tx_settle_one(&tx, nomor, tanggal, &kas_kode, catatan, ts)?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(pelunasan_nomor)
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PelunasanHutangBatchPayload {

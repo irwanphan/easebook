@@ -1,6 +1,16 @@
 import type { ReactNode } from "react";
 import { allHalamanAksesKeys } from "@/config/halamanAkses";
 import { PenggunaHalamanAksesSection } from "@/features/pengguna/PenggunaHalamanAksesSection";
+import {
+  PenggunaFotoProfilField,
+  type PenggunaFotoState,
+} from "@/features/pengguna/PenggunaFotoProfilField";
+
+export type { PenggunaFotoState };
+
+export function emptyPenggunaFotoState(): PenggunaFotoState {
+  return { previewUrl: null, webpBytes: null, removed: false };
+}
 
 function FieldLabel({ htmlFor, children }: { htmlFor: string; children: ReactNode }) {
   return (
@@ -28,6 +38,7 @@ export type PenggunaFormValues = {
   isAdmin: boolean;
   catatan: string;
   halamanAkses: string[];
+  foto: PenggunaFotoState;
 };
 
 type PenggunaFieldsProps = {
@@ -117,6 +128,11 @@ export function PenggunaFields({ values, onChange, isEdit = false }: PenggunaFie
           placeholder="contoh: Gudang, Keuangan, Penjualan"
         />
       </div>
+
+      <PenggunaFotoProfilField
+        value={values.foto}
+        onChange={(foto) => patch({ foto })}
+      />
 
       <div className="grid gap-5 sm:grid-cols-2">
         <div>

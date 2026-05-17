@@ -6,7 +6,10 @@ use chrono::{Local, NaiveDate, TimeZone, Utc};
 use rusqlite::{params, Connection, Transaction};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use tauri::State;
+
+const PENGGUNA_FOTO_MAX_BYTES: usize = 512_000;
 
 fn now_ts() -> i64 {
     Utc::now().timestamp()
@@ -897,9 +900,91 @@ pub struct PenggunaSession {
     pub nama_lengkap: String,
     pub is_admin: bool,
     pub halaman_akses: Vec<String>,
+    /// Path absolut file foto (.webp) bila ada.
+    pub foto_profil_path: Option<String>,
 }
 
-fn pengguna_build_session(conn: &Connection, username: &str) -> Result<PenggunaSession, String> {
+fn pengguna_avatars_dir(db_path: &Path) -> PathBuf {
+    db_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("avatars")
+}
+
+fn pengguna_foto_file(db_path: &Path, username: &str) -> PathBuf {
+    pengguna_avatars_dir(db_path).join(format!("{}.webp", username.trim().to_lowercase()))
+}
+
+fn pengguna_foto_path_option(db_path: &Path, username: &str) -> Option<String> {
+    let path = pengguna_foto_file(db_path, username);
+    if path.is_file() {
+        Some(path.to_string_lossy().into_owned())
+    } else {
+        None
+    }
+}
+
+fn pengguna_foto_remove_file(db_path: &Path, username: &str) -> Result<(), String> {
+    let path = pengguna_foto_file(db_path, username);
+    if path.is_file() {
+        std::fs::remove_file(&path).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pengguna_foto_path(state: State<DbState>, username: String) -> Result<Option<String>, String> {
+    let key = username.trim();
+    if key.is_empty() {
+        return Ok(None);
+    }
+    Ok(pengguna_foto_path_option(&state.path, key))
+}
+
+#[tauri::command]
+pub fn pengguna_foto_save(
+    state: State<DbState>,
+    username: String,
+    data: Vec<u8>,
+) -> Result<(), String> {
+    let key = normalize_username(&username)?;
+    if data.is_empty() {
+        return Err("Data foto kosong.".into());
+    }
+    if data.len() > PENGGUNA_FOTO_MAX_BYTES {
+        return Err("Ukuran foto terlalu besar (maks. 512 KB).".into());
+    }
+    with_conn_app(&state, |conn| {
+        let exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pengguna WHERE lower(username) = lower(?)",
+                params![key],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if exists == 0 {
+            return Err("Pengguna tidak ditemukan.".into());
+        }
+        Ok(())
+    })?;
+    let dir = pengguna_avatars_dir(&state.path);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = pengguna_foto_file(&state.path, &key);
+    std::fs::write(&path, &data).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pengguna_foto_remove(state: State<DbState>, username: String) -> Result<(), String> {
+    let key = normalize_username(&username)?;
+    pengguna_foto_remove_file(&state.path, &key)
+}
+
+fn pengguna_build_session(
+    conn: &Connection,
+    db_path: &Path,
+    username: &str,
+) -> Result<PenggunaSession, String> {
     let row: (String, String, i64, i64) = conn
         .query_row(
             "SELECT username, nama_lengkap, is_admin, aktif FROM pengguna WHERE lower(username) = lower(?)",
@@ -917,10 +1002,11 @@ fn pengguna_build_session(conn: &Connection, username: &str) -> Result<PenggunaS
         pengguna_load_halaman_akses(conn, &row.0).map_err(|e| e.to_string())?
     };
     Ok(PenggunaSession {
-        username: row.0,
+        username: row.0.clone(),
         nama_lengkap: row.1,
         is_admin,
         halaman_akses,
+        foto_profil_path: pengguna_foto_path_option(db_path, &row.0),
     })
 }
 
@@ -957,7 +1043,7 @@ pub fn pengguna_login(
             return Err("Username atau password salah.".into());
         }
 
-        pengguna_build_session(conn, &row.0)
+        pengguna_build_session(conn, &state.path, &row.0)
     })
 }
 
@@ -993,7 +1079,7 @@ pub fn pengguna_session_get(state: State<DbState>, username: String) -> Result<P
     if key.is_empty() {
         return Err("Username wajib diisi.".into());
     }
-    with_conn_app(&state, |conn| pengguna_build_session(conn, key))
+    with_conn_app(&state, |conn| pengguna_build_session(conn, &state.path, key))
 }
 
 #[tauri::command]
@@ -1132,6 +1218,7 @@ pub fn pengguna_delete(state: State<DbState>, username: String) -> Result<(), St
         if n == 0 {
             return Err("Pengguna tidak ditemukan.".into());
         }
+        pengguna_foto_remove_file(&state.path, &key)?;
         Ok(())
     })
 }

@@ -39,4 +39,5 @@ export type PenggunaSession = {
   namaLengkap: string;
   isAdmin: boolean;
   halamanAkses: string[];
+  fotoProfilPath: string | null;
 };

@@ -5,6 +5,7 @@ import easebookIcon from "@/assets/icons/easebook-icon.svg";
 import type { PrimaryNavEntry } from "@/config/navigation";
 import { logoutNavItem } from "@/config/navigation";
 import { SidebarNavGroup } from "@/app/layout/SidebarNavGroup";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useAuth } from "@/features/auth/AuthContext";
 
 const SIDEBAR_EXPANDED_KEY = "easybook-sidebar-expanded";
@@ -87,10 +88,11 @@ export function SidebarNav({ items }: SidebarNavProps) {
         className={`mb-4 flex ${expanded ? "w-full items-center gap-3" : "flex-col items-center"}`}
       >
         <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full ring-2 ring-zinc-700">
-          <img
-            src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=80&h=80&fit=crop&crop=face"
-            alt=""
-            className="h-full w-full object-cover"
+          <UserAvatar
+            fotoProfilPath={session?.fotoProfilPath}
+            nama={session?.namaLengkap}
+            size={36}
+            className="h-full w-full"
           />
         </div>
         {expanded ? (

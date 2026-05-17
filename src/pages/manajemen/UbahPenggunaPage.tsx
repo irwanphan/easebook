@@ -12,9 +12,11 @@ import {
 } from "@/features/pengguna/PenggunaFields";
 import { allHalamanAksesKeys } from "@/config/halamanAkses";
 import { useAuth } from "@/features/auth/AuthContext";
+import { applyPenggunaFotoChanges, loadPenggunaFotoPreviewUrl } from "@/lib/penggunaFoto";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
-function rowToForm(row: PenggunaRow, halamanAkses: string[]): PenggunaFormValues {
+async function rowToForm(row: PenggunaRow, halamanAkses: string[]): Promise<PenggunaFormValues> {
+  const previewUrl = await loadPenggunaFotoPreviewUrl(row.username);
   return {
     username: row.username,
     namaLengkap: row.namaLengkap,
@@ -27,6 +29,7 @@ function rowToForm(row: PenggunaRow, halamanAkses: string[]): PenggunaFormValues
     isAdmin: row.isAdmin,
     catatan: row.catatan,
     halamanAkses: row.isAdmin ? [...allHalamanAksesKeys] : halamanAkses,
+    foto: { previewUrl, webpBytes: null, removed: false },
   };
 }
 
@@ -54,7 +57,8 @@ export function UbahPenggunaPage() {
           const halamanAkses = row.isAdmin
             ? []
             : await invoke<string[]>("pengguna_halaman_akses_get", { username: row.username });
-          setValues(rowToForm(row, halamanAkses.length > 0 ? halamanAkses : ["dashboard"]));
+          const form = await rowToForm(row, halamanAkses.length > 0 ? halamanAkses : ["dashboard"]);
+          setValues(form);
         } else {
           setValues(null);
         }
@@ -112,6 +116,7 @@ export function UbahPenggunaPage() {
         halamanAkses: values.isAdmin ? [] : values.halamanAkses,
       };
       await invoke("pengguna_update", { username: values.username, row: payload });
+      await applyPenggunaFotoChanges(values.username, values.foto);
       if (session?.username.toLowerCase() === values.username.toLowerCase()) {
         await refreshSession();
       }

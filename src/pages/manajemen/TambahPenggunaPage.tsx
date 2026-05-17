@@ -14,6 +14,7 @@ import {
   duplicatePenggunaFormFromRow,
   emptyPenggunaForm,
 } from "@/features/pengguna/penggunaFormFromRow";
+import { applyPenggunaFotoChanges } from "@/lib/penggunaFoto";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
 export function TambahPenggunaPage() {
@@ -126,6 +127,7 @@ export function TambahPenggunaPage() {
         halamanAkses: values.isAdmin ? [] : values.halamanAkses,
       };
       await invoke("pengguna_insert", { row: payload });
+      await applyPenggunaFotoChanges(username, values.foto);
       navigate("/manajemen/pengguna");
     } catch (err) {
       setError(tauriErrorMessage(err));

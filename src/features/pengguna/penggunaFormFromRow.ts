@@ -1,7 +1,10 @@
 import { allHalamanAksesKeys } from "@/config/halamanAkses";
 import type { PenggunaRow } from "@/data/pengguna";
 import { defaultHalamanAksesForUser } from "@/lib/halamanAkses";
-import type { PenggunaFormValues } from "@/features/pengguna/PenggunaFields";
+import {
+  emptyPenggunaFotoState,
+  type PenggunaFormValues,
+} from "@/features/pengguna/PenggunaFields";
 
 /** Form kosong untuk tambah pengguna baru. */
 export function emptyPenggunaForm(): PenggunaFormValues {
@@ -17,6 +20,7 @@ export function emptyPenggunaForm(): PenggunaFormValues {
     isAdmin: false,
     catatan: "",
     halamanAkses: defaultHalamanAksesForUser(false),
+    foto: emptyPenggunaFotoState(),
   };
 }
 
@@ -40,5 +44,6 @@ export function duplicatePenggunaFormFromRow(
     isAdmin: row.isAdmin,
     catatan: "",
     halamanAkses: akses,
+    foto: emptyPenggunaFotoState(),
   };
 }

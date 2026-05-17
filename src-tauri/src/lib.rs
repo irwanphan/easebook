@@ -46,6 +46,8 @@ pub fn run() {
             master_commands::barang_stok_per_gudang_matrix,
             master_commands::stok_barang_di_gudang,
             master_commands::mutasi_antar_gudang_apply,
+            master_commands::mutasi_antar_gudang_riwayat_list,
+            master_commands::mutasi_antar_gudang_riwayat_detail,
             master_commands::pelanggan_list,
             master_commands::pelanggan_insert,
             master_commands::pelanggan_update,

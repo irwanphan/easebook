@@ -3617,6 +3617,185 @@ pub fn mutasi_antar_gudang_apply(
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct MutasiAntarGudangRiwayatRow {
+    pub referensi: String,
+    pub tanggal: String,
+    pub gudang_asal_kode: String,
+    pub gudang_asal_nama: String,
+    pub gudang_tujuan_kode: String,
+    pub gudang_tujuan_nama: String,
+    pub catatan: String,
+    pub jumlah_barang: i64,
+    pub total_qty: i64,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MutasiAntarGudangBarisRow {
+    pub barang_kode: String,
+    pub barang_nama: String,
+    pub satuan: String,
+    pub qty: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MutasiAntarGudangDetail {
+    pub referensi: String,
+    pub tanggal: String,
+    pub gudang_asal_kode: String,
+    pub gudang_asal_nama: String,
+    pub gudang_tujuan_kode: String,
+    pub gudang_tujuan_nama: String,
+    pub catatan: String,
+    pub total_qty: i64,
+    pub created_at: i64,
+    pub baris: Vec<MutasiAntarGudangBarisRow>,
+}
+
+#[tauri::command]
+pub fn mutasi_antar_gudang_riwayat_list(
+    state: State<DbState>,
+    tanggal_dari: String,
+    tanggal_sampai: String,
+) -> Result<Vec<MutasiAntarGudangRiwayatRow>, String> {
+    let dari = tanggal_dari.trim();
+    let sampai = tanggal_sampai.trim();
+    let d1 = NaiveDate::parse_from_str(dari, "%Y-%m-%d")
+        .map_err(|_| "Tanggal mulai tidak valid (YYYY-MM-DD).".to_string())?;
+    let d2 = NaiveDate::parse_from_str(sampai, "%Y-%m-%d")
+        .map_err(|_| "Tanggal akhir tidak valid (YYYY-MM-DD).".to_string())?;
+    if d2 < d1 {
+        return Err("Tanggal akhir tidak boleh sebelum tanggal mulai.".into());
+    }
+
+    with_conn(&state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT m.referensi,
+                    MIN(m.tanggal_transaksi),
+                    MIN(m.waktu),
+                    MIN(m.catatan),
+                    COUNT(DISTINCT CASE WHEN m.qty_keluar > 0 THEN m.barang_kode END),
+                    COALESCE(SUM(CASE WHEN m.qty_keluar > 0 THEN m.qty_keluar ELSE 0 END), 0),
+                    (SELECT s.gudang_kode FROM stok_mutasi s
+                     WHERE s.referensi = m.referensi AND s.qty_keluar > 0
+                     ORDER BY s.id ASC LIMIT 1),
+                    (SELECT COALESCE(g.nama, '') FROM stok_mutasi s
+                     LEFT JOIN gudang g ON lower(g.kode) = lower(s.gudang_kode)
+                     WHERE s.referensi = m.referensi AND s.qty_keluar > 0
+                     ORDER BY s.id ASC LIMIT 1),
+                    (SELECT s.gudang_kode FROM stok_mutasi s
+                     WHERE s.referensi = m.referensi AND s.qty_masuk > 0
+                     ORDER BY s.id ASC LIMIT 1),
+                    (SELECT COALESCE(g.nama, '') FROM stok_mutasi s
+                     LEFT JOIN gudang g ON lower(g.kode) = lower(s.gudang_kode)
+                     WHERE s.referensi = m.referensi AND s.qty_masuk > 0
+                     ORDER BY s.id ASC LIMIT 1)
+             FROM stok_mutasi m
+             WHERE upper(trim(m.jenis)) = 'MUTASI_GUDANG'
+               AND m.tanggal_transaksi >= ? AND m.tanggal_transaksi <= ?
+             GROUP BY m.referensi
+             ORDER BY MIN(m.waktu) DESC, m.referensi DESC",
+        )?;
+        let rows = stmt.query_map(params![dari, sampai], |r| {
+            let catatan_penuh: String = r.get(3)?;
+            let catatan = catatan_penuh
+                .split(" — ")
+                .nth(1)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
+            Ok(MutasiAntarGudangRiwayatRow {
+                referensi: r.get(0)?,
+                tanggal: r.get(1)?,
+                created_at: r.get(2)?,
+                catatan,
+                jumlah_barang: r.get(4)?,
+                total_qty: r.get(5)?,
+                gudang_asal_kode: r.get(6)?,
+                gudang_asal_nama: r.get(7)?,
+                gudang_tujuan_kode: r.get(8)?,
+                gudang_tujuan_nama: r.get(9)?,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+#[tauri::command]
+pub fn mutasi_antar_gudang_riwayat_detail(
+    state: State<DbState>,
+    referensi: String,
+) -> Result<MutasiAntarGudangDetail, String> {
+    let key = referensi.trim();
+    if key.is_empty() {
+        return Err("Referensi mutasi wajib diisi.".into());
+    }
+
+    let conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+
+    let header: (String, String, i64, String, String, String, String, String) = conn
+        .query_row(
+            "SELECT m.referensi, m.tanggal_transaksi, m.waktu, m.catatan,
+                    (SELECT s.gudang_kode FROM stok_mutasi s WHERE s.referensi = m.referensi AND s.qty_keluar > 0 ORDER BY s.id LIMIT 1),
+                    (SELECT COALESCE(g.nama,'') FROM stok_mutasi s LEFT JOIN gudang g ON lower(g.kode)=lower(s.gudang_kode) WHERE s.referensi = m.referensi AND s.qty_keluar > 0 ORDER BY s.id LIMIT 1),
+                    (SELECT s.gudang_kode FROM stok_mutasi s WHERE s.referensi = m.referensi AND s.qty_masuk > 0 ORDER BY s.id LIMIT 1),
+                    (SELECT COALESCE(g.nama,'') FROM stok_mutasi s LEFT JOIN gudang g ON lower(g.kode)=lower(s.gudang_kode) WHERE s.referensi = m.referensi AND s.qty_masuk > 0 ORDER BY s.id LIMIT 1)
+             FROM stok_mutasi m
+             WHERE m.referensi = ? AND upper(trim(m.jenis)) = 'MUTASI_GUDANG'
+             LIMIT 1",
+            params![key],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)),
+        )
+        .map_err(|_| format!("Mutasi '{key}' tidak ditemukan."))?;
+
+    let catatan_penuh = header.3.clone();
+    let catatan_user = catatan_penuh
+        .split(" — ")
+        .nth(1)
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT m.barang_kode, b.nama, b.satuan, m.qty_keluar
+             FROM stok_mutasi m
+             INNER JOIN barang_jasa b ON lower(b.kode) = lower(m.barang_kode)
+             WHERE m.referensi = ? AND upper(trim(m.jenis)) = 'MUTASI_GUDANG' AND m.qty_keluar > 0
+             ORDER BY m.barang_kode COLLATE NOCASE",
+        )
+        .map_err(|e| e.to_string())?;
+    let baris = stmt
+        .query_map(params![key], |r| {
+            Ok(MutasiAntarGudangBarisRow {
+                barang_kode: r.get(0)?,
+                barang_nama: r.get(1)?,
+                satuan: r.get(2)?,
+                qty: r.get(3)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    let total_qty = baris.iter().map(|b| b.qty).sum();
+
+    Ok(MutasiAntarGudangDetail {
+        referensi: header.0,
+        tanggal: header.1,
+        created_at: header.2,
+        catatan: catatan_user,
+        gudang_asal_kode: header.4,
+        gudang_asal_nama: header.5,
+        gudang_tujuan_kode: header.6,
+        gudang_tujuan_nama: header.7,
+        total_qty,
+        baris,
+    })
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct StokMutasiRow {
     pub id: i64,
     pub waktu: i64,

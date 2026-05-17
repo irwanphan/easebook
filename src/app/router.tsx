@@ -43,6 +43,7 @@ import { DaftarAkunPage } from "@/pages/keuangan/DaftarAkunPage";
 import { JurnalUmumPage } from "@/pages/keuangan/JurnalUmumPage";
 import { KonfigurasiAkunJurnalPage } from "@/pages/keuangan/KonfigurasiAkunJurnalPage";
 import { LaporanPergerakanStokPage } from "@/pages/laporan/LaporanPergerakanStokPage";
+import { LaporanMutasiAntarGudangPage } from "@/pages/laporan/LaporanMutasiAntarGudangPage";
 
 export const router = createHashRouter([
   {
@@ -56,6 +57,7 @@ export const router = createHashRouter([
       { path: "barang-jasa/mutasi-antar-gudang", element: <MutasiAntarGudangPage /> },
       { path: "barang-jasa", element: <BarangJasaPage /> },
       { path: "laporan/pergerakan-stok", element: <LaporanPergerakanStokPage /> },
+      { path: "laporan/mutasi-antar-gudang", element: <LaporanMutasiAntarGudangPage /> },
       { path: "penjualan/tambah", element: <TambahPenjualanPage /> },
       { path: "penjualan", element: <PenjualanPage /> },
       { path: "pembelian/tambah", element: <TambahPembelianPage /> },

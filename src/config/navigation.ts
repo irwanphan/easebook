@@ -55,6 +55,7 @@ export const primaryNavEntries: PrimaryNavEntry[] = [
     icon: LineChart,
     children: [
       { id: "lap-stok", label: "Pergerakan stok", path: "/laporan/pergerakan-stok" },
+      { id: "lap-mutasi-gudang", label: "Mutasi antar gudang", path: "/laporan/mutasi-antar-gudang" },
     ],
   },
   {

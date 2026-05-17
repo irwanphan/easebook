@@ -87,7 +87,7 @@ export function DaftarAkunPage() {
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Daftar akun"
-        description="Chart of accounts dikelompokkan seperti TokoPro: aktiva, hutang, modal, pendapatan, dan biaya."
+        description="Chart of accounts dikelompokkan: aktiva, hutang, modal, pendapatan, dan biaya."
       />
 
       {error ? (

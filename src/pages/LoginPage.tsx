@@ -130,13 +130,6 @@ export function LoginPage() {
               </Button>
             </form>
           </div>
-
-          <p className="mt-6 text-center text-xs text-zinc-500">
-            Akun default pertama kali: <span className="font-mono text-zinc-400">admin</span> /{" "}
-            <span className="font-mono text-zinc-400">admin123</span>
-            <br />
-            Ubah password setelah login di Manajemen → Pengguna.
-          </p>
         </div>
       </div>
     </div>

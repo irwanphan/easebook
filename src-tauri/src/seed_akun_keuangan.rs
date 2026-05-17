@@ -1,4 +1,4 @@
-//! Seeder daftar akun standar (struktur mirip TokoPro / Elevens).
+//! Seeder daftar akun standar.
 //! Urutan: kelompok besar → kode → hierarki induk (kode bertitik).
 
 use rusqlite::{params, Connection};
@@ -111,7 +111,7 @@ const AKUN_STANDAR: &[SeedAkun] = &[
     SeedAkun { kode: "6037", nama: "BPJS Kesehatan", kelompok: "BIAYA", kolom_norm: "D", kelompok_lr: "BEBAN", sub_kelompok: "Biaya Non Operasional", is_kas: false },
     SeedAkun { kode: "6038", nama: "Biaya Dinas Luar Kota", kelompok: "BIAYA", kolom_norm: "D", kelompok_lr: "BEBAN", sub_kelompok: "Biaya Operasional", is_kas: false },
     SeedAkun { kode: "6039", nama: "Biaya Marketing", kelompok: "BIAYA", kolom_norm: "D", kelompok_lr: "BEBAN", sub_kelompok: "Biaya Operasional", is_kas: false },
-    SeedAkun { kode: "6040", nama: "Biaya Langganan TokoPro SalesPro", kelompok: "BIAYA", kolom_norm: "D", kelompok_lr: "BEBAN", sub_kelompok: "Biaya Operasional", is_kas: false },
+    SeedAkun { kode: "6040", nama: "Biaya Langganan Servis", kelompok: "BIAYA", kolom_norm: "D", kelompok_lr: "BEBAN", sub_kelompok: "Biaya Operasional", is_kas: false },
     SeedAkun { kode: "6041", nama: "ASURANSI", kelompok: "BIAYA", kolom_norm: "D", kelompok_lr: "BEBAN", sub_kelompok: "Biaya Non Operasional", is_kas: false },
     SeedAkun { kode: "6042", nama: "Biaya Keamanan dan Kebersihan", kelompok: "BIAYA", kolom_norm: "D", kelompok_lr: "BEBAN", sub_kelompok: "Biaya Non Operasional", is_kas: false },
     SeedAkun { kode: "6043", nama: "Biaya Pemeliharaan Gedung", kelompok: "BIAYA", kolom_norm: "D", kelompok_lr: "BEBAN", sub_kelompok: "Biaya Non Operasional", is_kas: false },

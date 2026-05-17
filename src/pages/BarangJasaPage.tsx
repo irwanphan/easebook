@@ -45,6 +45,9 @@ export function BarangJasaPage() {
             <Button type="button" variant="secondary" onClick={() => navigate("/barang-jasa/per-gudang")}>
               Lihat per gudang
             </Button>
+            <Button type="button" variant="secondary" onClick={() => navigate("/barang-jasa/mutasi-antar-gudang")}>
+              Mutasi antar gudang
+            </Button>
             <Button type="button" onClick={() => navigate("/barang-jasa/tambah")}>
               Tambah item
             </Button>

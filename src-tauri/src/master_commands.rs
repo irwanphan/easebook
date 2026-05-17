@@ -3366,6 +3366,257 @@ pub fn barang_stok_per_gudang_matrix(state: State<DbState>) -> Result<StokPerGud
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct BarangSaldoGudangRow {
+    pub kode: String,
+    pub nama: String,
+    pub satuan: String,
+    pub saldo: i64,
+}
+
+#[tauri::command]
+pub fn stok_barang_di_gudang(state: State<DbState>, gudang_kode: String) -> Result<Vec<BarangSaldoGudangRow>, String> {
+    let gk = gudang_kode.trim().to_string();
+    if gk.is_empty() {
+        return Err("Pilih gudang.".into());
+    }
+    let conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM gudang WHERE lower(kode) = lower(?)",
+            params![gk],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if exists == 0 {
+        return Err(format!("Gudang '{gk}' tidak ditemukan."));
+    }
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT b.kode, b.nama, b.satuan,
+                    COALESCE(SUM(m.qty_masuk), 0) - COALESCE(SUM(m.qty_keluar), 0) AS saldo
+             FROM barang_jasa b
+             LEFT JOIN stok_mutasi m ON lower(m.barang_kode) = lower(b.kode)
+                 AND lower(m.gudang_kode) = lower(?)
+             WHERE b.tipe = 'Barang'
+             GROUP BY b.kode, b.nama, b.satuan
+             HAVING saldo > 0
+             ORDER BY b.kode COLLATE NOCASE",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![gk], |r| {
+            Ok(BarangSaldoGudangRow {
+                kode: r.get(0)?,
+                nama: r.get(1)?,
+                satuan: r.get(2)?,
+                saldo: r.get(3)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(rows)
+}
+
+fn stok_tx_saldo_di_gudang(
+    tx: &Transaction<'_>,
+    barang_kode: &str,
+    gudang_kode: &str,
+) -> Result<i64, String> {
+    let saldo: i64 = tx
+        .query_row(
+            "SELECT COALESCE(SUM(qty_masuk), 0) - COALESCE(SUM(qty_keluar), 0)
+             FROM stok_mutasi
+             WHERE lower(trim(barang_kode)) = lower(trim(?))
+               AND lower(trim(gudang_kode)) = lower(trim(?))",
+            params![barang_kode, gudang_kode],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(saldo)
+}
+
+fn stok_tx_insert_mutasi_gudang(
+    tx: &Transaction<'_>,
+    waktu: i64,
+    tanggal: &str,
+    barang_kode: &str,
+    gudang_kode: &str,
+    jenis: &str,
+    referensi: &str,
+    qty_masuk: i64,
+    qty_keluar: i64,
+    catatan: &str,
+) -> Result<(), String> {
+    let saldo_sebelum = stok_tx_saldo_di_gudang(tx, barang_kode, gudang_kode)?;
+    let saldo_setelah = saldo_sebelum
+        .checked_add(qty_masuk)
+        .and_then(|s| s.checked_sub(qty_keluar))
+        .ok_or_else(|| "Perhitungan saldo gudang melimpahi batas.".to_string())?;
+    if saldo_setelah < 0 {
+        return Err(format!(
+            "Stok tidak cukup di gudang {gudang_kode} untuk barang {barang_kode} (tersedia {saldo_sebelum}, keluar {qty_keluar})."
+        ));
+    }
+    tx.execute(
+        "INSERT INTO stok_mutasi (waktu, tanggal_transaksi, barang_kode, gudang_kode, jenis, referensi, qty_masuk, qty_keluar, saldo_setelah, catatan)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
+            waktu,
+            tanggal,
+            barang_kode,
+            gudang_kode,
+            jenis,
+            referensi,
+            qty_masuk,
+            qty_keluar,
+            saldo_setelah,
+            catatan
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MutasiAntarGudangLinePayload {
+    pub barang_kode: String,
+    pub qty: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MutasiAntarGudangPayload {
+    pub gudang_asal: String,
+    pub gudang_tujuan: String,
+    pub tanggal: String,
+    pub catatan: String,
+    pub lines: Vec<MutasiAntarGudangLinePayload>,
+}
+
+#[tauri::command]
+pub fn mutasi_antar_gudang_apply(
+    state: State<DbState>,
+    payload: MutasiAntarGudangPayload,
+) -> Result<String, String> {
+    let gudang_asal = payload.gudang_asal.trim();
+    let gudang_tujuan = payload.gudang_tujuan.trim();
+    let tanggal = payload.tanggal.trim();
+    let catatan_header = payload.catatan.trim();
+
+    if gudang_asal.is_empty() || gudang_tujuan.is_empty() {
+        return Err("Gudang asal dan gudang tujuan wajib dipilih.".into());
+    }
+    if gudang_asal.eq_ignore_ascii_case(gudang_tujuan) {
+        return Err("Gudang asal dan tujuan tidak boleh sama.".into());
+    }
+    if tanggal.is_empty() {
+        return Err("Tanggal mutasi wajib diisi.".into());
+    }
+    NaiveDate::parse_from_str(tanggal, "%Y-%m-%d")
+        .map_err(|_| "Tanggal tidak valid (gunakan YYYY-MM-DD).".to_string())?;
+
+    let mut lines: Vec<(String, i64)> = payload
+        .lines
+        .into_iter()
+        .map(|l| (l.barang_kode.trim().to_string(), l.qty))
+        .filter(|(k, q)| !k.is_empty() && *q > 0)
+        .collect();
+    if lines.is_empty() {
+        return Err("Pilih minimal satu barang dengan jumlah dipindahkan.".into());
+    }
+    lines.sort_by(|a, b| a.0.cmp(&b.0));
+    lines.dedup_by(|a, b| {
+        if a.0 == b.0 {
+            a.1 = a.1.saturating_add(b.1);
+            true
+        } else {
+            false
+        }
+    });
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let ts = now_ts();
+    let referensi = format!("MAG-{}", ts);
+
+    for gk in [gudang_asal, gudang_tujuan] {
+        let n: i64 = tx
+            .query_row(
+                "SELECT COUNT(*) FROM gudang WHERE lower(kode) = lower(?)",
+                params![gk],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err(format!("Gudang '{gk}' tidak ditemukan."));
+        }
+    }
+
+    let mut total_qty: i64 = 0;
+    for (barang_kode, qty) in &lines {
+        let tipe: String = tx
+            .query_row(
+                "SELECT tipe FROM barang_jasa WHERE lower(kode) = lower(?)",
+                params![barang_kode],
+                |r| r.get(0),
+            )
+            .map_err(|_| format!("Barang '{barang_kode}' tidak ditemukan."))?;
+        if tipe != "Barang" {
+            return Err(format!("'{barang_kode}' bukan tipe Barang (tidak bisa dipindahkan)."));
+        }
+        let saldo_asal = stok_tx_saldo_di_gudang(&tx, barang_kode, gudang_asal)?;
+        if saldo_asal < *qty {
+            return Err(format!(
+                "Stok '{barang_kode}' di gudang asal tidak cukup (tersedia {saldo_asal}, diminta {qty})."
+            ));
+        }
+        total_qty = total_qty
+            .checked_add(*qty)
+            .ok_or_else(|| "Total qty melebihi batas.".to_string())?;
+    }
+
+    let catatan_mutasi = if catatan_header.is_empty() {
+        format!("Mutasi {gudang_asal} → {gudang_tujuan}")
+    } else {
+        format!("Mutasi {gudang_asal} → {gudang_tujuan} — {catatan_header}")
+    };
+
+    for (barang_kode, qty) in &lines {
+        stok_tx_insert_mutasi_gudang(
+            &tx,
+            ts,
+            tanggal,
+            barang_kode,
+            gudang_asal,
+            "MUTASI_GUDANG",
+            &referensi,
+            0,
+            *qty,
+            &catatan_mutasi,
+        )?;
+        stok_tx_insert_mutasi_gudang(
+            &tx,
+            ts,
+            tanggal,
+            barang_kode,
+            gudang_tujuan,
+            "MUTASI_GUDANG",
+            &referensi,
+            *qty,
+            0,
+            &catatan_mutasi,
+        )?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(referensi)
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct StokMutasiRow {
     pub id: i64,
     pub waktu: i64,

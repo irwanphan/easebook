@@ -2,7 +2,7 @@
 
 use crate::db;
 use crate::DbState;
-use chrono::{Local, NaiveDate, TimeZone, Utc};
+use chrono::{Datelike, Local, NaiveDate, TimeZone, Utc};
 use rusqlite::{params, Connection, Transaction};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -2139,6 +2139,111 @@ pub fn penjualan_list(state: State<DbState>) -> Result<Vec<PenjualanListRow>, St
             })
         })?;
         rows.collect()
+    })
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DashboardPenjualanBulananPoint {
+    pub month: String,
+    pub month_num: u8,
+    pub sales: i64,
+    pub revenue: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DashboardPenjualanBulananResult {
+    pub year: i32,
+    pub points: Vec<DashboardPenjualanBulananPoint>,
+    pub available_years: Vec<i32>,
+    pub highlight_month: u8,
+}
+
+const DASHBOARD_MONTH_LABELS: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des",
+];
+
+fn dashboard_penjualan_available_years(conn: &Connection) -> rusqlite::Result<Vec<i32>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT CAST(substr(tanggal_faktur, 1, 4) AS INTEGER) AS y
+         FROM penjualan
+         WHERE length(tanggal_faktur) >= 4
+         ORDER BY y DESC",
+    )?;
+    let years: Vec<i32> = stmt
+        .query_map([], |r| r.get::<_, i32>(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(years)
+}
+
+/// Agregasi penjualan per bulan: `sales` = total faktur, `revenue` = faktur berstatus Lunas.
+#[tauri::command]
+pub fn dashboard_penjualan_bulanan(
+    state: State<DbState>,
+    year: Option<i32>,
+) -> Result<DashboardPenjualanBulananResult, String> {
+    with_conn(&state, |conn| {
+        let now = Local::now();
+        let current_year = now.year();
+        let current_month = now.month() as u8;
+        let mut available_years = dashboard_penjualan_available_years(conn)?;
+        if available_years.is_empty() {
+            available_years.push(current_year);
+        }
+        let tahun = year.unwrap_or(*available_years.first().unwrap_or(&current_year));
+        let year_prefix = format!("{tahun}-");
+
+        let mut stmt = conn.prepare(
+            "SELECT CAST(strftime('%m', tanggal_faktur) AS INTEGER) AS bulan,
+                    COALESCE(SUM(total), 0),
+                    COALESCE(SUM(CASE WHEN status = 'Lunas' THEN total ELSE 0 END), 0)
+             FROM penjualan
+             WHERE tanggal_faktur LIKE ?1 || '%'
+             GROUP BY bulan
+             ORDER BY bulan",
+        )?;
+        let mut by_month: HashMap<u8, (i64, i64)> = HashMap::new();
+        let rows = stmt.query_map([year_prefix.as_str()], |r| {
+            let bulan: i32 = r.get(0)?;
+            let sales: i64 = r.get(1)?;
+            let revenue: i64 = r.get(2)?;
+            Ok((bulan as u8, sales, revenue))
+        })?;
+        for row in rows {
+            let (bulan, sales, revenue) = row?;
+            by_month.insert(bulan, (sales, revenue));
+        }
+
+        let highlight_month = if tahun == current_year {
+            current_month
+        } else {
+            by_month
+                .iter()
+                .max_by_key(|(_, (s, _))| s)
+                .map(|(m, _)| *m)
+                .unwrap_or(0)
+        };
+
+        let points: Vec<DashboardPenjualanBulananPoint> = (1..=12u8)
+            .map(|m| {
+                let (sales, revenue) = by_month.get(&m).copied().unwrap_or((0, 0));
+                DashboardPenjualanBulananPoint {
+                    month: DASHBOARD_MONTH_LABELS[(m - 1) as usize].to_string(),
+                    month_num: m,
+                    sales,
+                    revenue,
+                }
+            })
+            .collect();
+
+        Ok(DashboardPenjualanBulananResult {
+            year: tahun,
+            points,
+            available_years,
+            highlight_month,
+        })
     })
 }
 

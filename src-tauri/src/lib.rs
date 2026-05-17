@@ -80,6 +80,7 @@ pub fn run() {
             master_commands::pembelian_update,
             master_commands::penjualan_list,
             master_commands::penjualan_insert,
+            master_commands::dashboard_penjualan_bulanan,
             master_commands::piutang_belum_lunas_list,
             master_commands::pelunasan_piutang_apply,
             master_commands::pelunasan_piutang_apply_batch,

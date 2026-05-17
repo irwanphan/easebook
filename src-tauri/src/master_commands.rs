@@ -5,6 +5,7 @@ use crate::DbState;
 use chrono::{Local, NaiveDate, TimeZone, Utc};
 use rusqlite::{params, Connection, Transaction};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tauri::State;
 
 fn now_ts() -> i64 {
@@ -3261,6 +3262,107 @@ pub fn stok_mutasi_sinkron_dari_pembelian(state: State<DbState>) -> Result<Strin
 }
 
 // --- Mutasi stok (kartu stok / laporan) ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct StokPerGudangKolom {
+    pub kode: String,
+    pub nama: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BarangStokPerGudangRow {
+    pub kode: String,
+    pub nama: String,
+    pub satuan: String,
+    pub total_stok: i64,
+    /// Saldo per gudang; urutan sama dengan field `gudang` pada matriks.
+    pub stok_per_gudang: Vec<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct StokPerGudangMatrix {
+    pub gudang: Vec<StokPerGudangKolom>,
+    pub barang: Vec<BarangStokPerGudangRow>,
+}
+
+#[tauri::command]
+pub fn barang_stok_per_gudang_matrix(state: State<DbState>) -> Result<StokPerGudangMatrix, String> {
+    with_conn(&state, |conn| {
+        let gudang: Vec<StokPerGudangKolom> = conn
+            .prepare("SELECT kode, nama FROM gudang ORDER BY kode COLLATE NOCASE")?
+            .query_map([], |r| Ok(StokPerGudangKolom {
+                kode: r.get(0)?,
+                nama: r.get(1)?,
+            }))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut saldo_map: HashMap<(String, String), i64> = HashMap::new();
+        let mut agg_stmt = conn.prepare(
+            "SELECT lower(trim(barang_kode)), lower(trim(gudang_kode)),
+                    COALESCE(SUM(qty_masuk), 0) - COALESCE(SUM(qty_keluar), 0)
+             FROM stok_mutasi
+             GROUP BY lower(trim(barang_kode)), lower(trim(gudang_kode))",
+        )?;
+        let agg_rows = agg_stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
+        })?;
+        for row in agg_rows {
+            let (barang_kode, gudang_kode, saldo) = row?;
+            saldo_map.insert((barang_kode, gudang_kode), saldo);
+        }
+
+        let mut barang_stmt = conn.prepare(
+            "SELECT kode, nama, satuan, COALESCE(stok, 0)
+             FROM barang_jasa
+             WHERE tipe = 'Barang'
+             ORDER BY kode COLLATE NOCASE",
+        )?;
+        let barang = barang_stmt
+            .query_map([], |r| {
+                let kode: String = r.get(0)?;
+                let nama: String = r.get(1)?;
+                let satuan: String = r.get(2)?;
+                let master_stok: i64 = r.get(3)?;
+                let barang_key = kode.trim().to_lowercase();
+
+                let mut stok_per_gudang: Vec<i64> = Vec::with_capacity(gudang.len());
+                let mut sum_mutasi: i64 = 0;
+                for g in &gudang {
+                    let gudang_key = g.kode.trim().to_lowercase();
+                    let qty = saldo_map
+                        .get(&(barang_key.clone(), gudang_key))
+                        .copied()
+                        .unwrap_or(0);
+                    stok_per_gudang.push(qty);
+                    sum_mutasi = sum_mutasi.saturating_add(qty);
+                }
+
+                let total_stok = if sum_mutasi > 0 {
+                    sum_mutasi
+                } else {
+                    master_stok
+                };
+
+                Ok(BarangStokPerGudangRow {
+                    kode,
+                    nama,
+                    satuan,
+                    total_stok,
+                    stok_per_gudang,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(StokPerGudangMatrix { gudang, barang })
+    })
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]

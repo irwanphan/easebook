@@ -43,6 +43,7 @@ pub fn run() {
             master_commands::barang_jasa_list,
             master_commands::barang_jasa_insert,
             master_commands::barang_jasa_kode_exists,
+            master_commands::barang_stok_per_gudang_matrix,
             master_commands::pelanggan_list,
             master_commands::pelanggan_insert,
             master_commands::pelanggan_update,

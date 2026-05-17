@@ -42,6 +42,9 @@ export function BarangJasaPage() {
               <LineChart className="h-4 w-4" aria-hidden />
               Pergerakan stok
             </Button>
+            <Button type="button" variant="secondary" onClick={() => navigate("/barang-jasa/per-gudang")}>
+              Lihat per gudang
+            </Button>
             <Button type="button" onClick={() => navigate("/barang-jasa/tambah")}>
               Tambah item
             </Button>

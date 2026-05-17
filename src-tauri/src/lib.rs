@@ -28,6 +28,11 @@ pub fn run() {
                 .expect("seed akun keuangan");
             drop(conn);
             app.manage(DbState { path: db_path });
+
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.maximize();
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

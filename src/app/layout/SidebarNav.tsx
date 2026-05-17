@@ -19,7 +19,7 @@ function readStoredExpanded(): boolean {
 
 function navLinkClass(isActive: boolean, expanded: boolean) {
   const base = [
-    "flex h-11 shrink-0 items-center rounded-xl transition-colors",
+    "flex h-11 shrink-0 items-center rounded-xl transition-colors cursor-pointer",
     expanded ? "w-full min-w-0 justify-start gap-3 px-3" : "w-11 justify-center",
     isActive
       ? "bg-brand-600 text-white shadow-md shadow-brand-600/25"

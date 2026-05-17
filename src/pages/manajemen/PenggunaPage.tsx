@@ -120,6 +120,16 @@ export function PenggunaPage() {
                         <Button
                           type="button"
                           variant="ghost"
+                          className="px-2 py-1 text-xs"
+                          onClick={() =>
+                            navigate(`/manajemen/pengguna/tambah?duplikat=${encodeURIComponent(row.username)}`)
+                          }
+                        >
+                          Duplikat
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
                           className="px-2 py-1 text-xs text-red-700 hover:bg-red-50"
                           onClick={() => void handleDelete(row)}
                         >

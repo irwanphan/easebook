@@ -1,37 +1,75 @@
-import { useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState, type FormEvent } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import type { PenggunaInsert } from "@/data/pengguna";
+import type { PenggunaInsert, PenggunaRow } from "@/data/pengguna";
 import {
   PenggunaFields,
   type PenggunaFormValues,
 } from "@/features/pengguna/PenggunaFields";
-import { defaultHalamanAksesForUser } from "@/lib/halamanAkses";
+import {
+  duplicatePenggunaFormFromRow,
+  emptyPenggunaForm,
+} from "@/features/pengguna/penggunaFormFromRow";
 import { tauriErrorMessage } from "@/lib/tauriError";
-
-const emptyForm = (): PenggunaFormValues => ({
-  username: "",
-  namaLengkap: "",
-  email: "",
-  password: "",
-  passwordConfirm: "",
-  departemen: "",
-  nomorHp: "",
-  aktif: true,
-  isAdmin: false,
-  catatan: "",
-  halamanAkses: defaultHalamanAksesForUser(false),
-});
 
 export function TambahPenggunaPage() {
   const navigate = useNavigate();
-  const [values, setValues] = useState<PenggunaFormValues>(emptyForm);
+  const [searchParams] = useSearchParams();
+  const duplikatDari = searchParams.get("duplikat")?.trim() ?? "";
+
+  const [values, setValues] = useState<PenggunaFormValues>(emptyPenggunaForm);
+  const [loadingTemplate, setLoadingTemplate] = useState(Boolean(duplikatDari));
+  const [sumberDuplikat, setSumberDuplikat] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!duplikatDari) {
+      setValues(emptyPenggunaForm());
+      setSumberDuplikat(null);
+      setLoadingTemplate(false);
+      return;
+    }
+
+    let cancelled = false;
+    async function loadTemplate() {
+      setLoadingTemplate(true);
+      setError(null);
+      try {
+        const list = await invoke<PenggunaRow[]>("pengguna_list");
+        if (cancelled) return;
+        const row = list.find((r) => r.username.toLowerCase() === duplikatDari.toLowerCase());
+        if (!row) {
+          setError(`Pengguna sumber "${duplikatDari}" tidak ditemukan.`);
+          setValues(emptyPenggunaForm());
+          setSumberDuplikat(null);
+          return;
+        }
+        const halamanAkses = row.isAdmin
+          ? []
+          : await invoke<string[]>("pengguna_halaman_akses_get", { username: row.username });
+        if (cancelled) return;
+        setValues(duplicatePenggunaFormFromRow(row, halamanAkses));
+        setSumberDuplikat(row.username);
+      } catch (e) {
+        if (!cancelled) {
+          setError(tauriErrorMessage(e));
+          setValues(emptyPenggunaForm());
+          setSumberDuplikat(null);
+        }
+      } finally {
+        if (!cancelled) setLoadingTemplate(false);
+      }
+    }
+    void loadTemplate();
+    return () => {
+      cancelled = true;
+    };
+  }, [duplikatDari]);
 
   function patch(p: Partial<PenggunaFormValues>) {
     setValues((prev) => ({ ...prev, ...p }));
@@ -96,6 +134,15 @@ export function TambahPenggunaPage() {
     }
   }
 
+  const judul = sumberDuplikat ? "Duplikat pengguna" : "Tambah pengguna";
+  const deskripsi = sumberDuplikat
+    ? `Pengaturan hak akses disalin dari "${sumberDuplikat}". Isi username, nama, dan password untuk akun baru.`
+    : "Buat akun baru untuk mengakses aplikasi.";
+
+  if (loadingTemplate) {
+    return <p className="text-sm text-zinc-500">Memuat template hak akses…</p>;
+  }
+
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6">
       <div>
@@ -106,8 +153,16 @@ export function TambahPenggunaPage() {
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Kembali ke daftar
         </Link>
-        <PageHeader title="Tambah pengguna" description="Buat akun baru untuk mengakses aplikasi." />
+        <PageHeader title={judul} description={deskripsi} />
       </div>
+
+      {sumberDuplikat ? (
+        <p className="rounded-xl border border-brand-200/80 bg-brand-50 px-4 py-3 text-sm text-brand-900">
+          Hak akses halaman, departemen, status aktif, dan peran admin mengikuti pengguna{" "}
+          <span className="font-mono font-medium">{sumberDuplikat}</span>. Anda masih bisa mengubahnya
+          sebelum menyimpan.
+        </p>
+      ) : null}
 
       <Card>
         <form onSubmit={(e) => void handleSubmit(e)} className="flex flex-col gap-5">

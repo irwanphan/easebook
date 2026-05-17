@@ -155,6 +155,9 @@ export function KeuanganPelunasanPiutangPage() {
             <Button type="button" onClick={() => openPelunasanBaru()} disabled={loading || rows.length === 0}>
               Buat pelunasan
             </Button>
+            <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/pelunasan-piutang/daftar")}>
+              Daftar pelunasan
+            </Button>
             <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
               {loading ? "Memuat…" : "Refresh"}
             </Button>

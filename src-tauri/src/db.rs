@@ -235,6 +235,7 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     migrate_penjualan_columns(conn)?;
     migrate_pengeluaran_tables(conn)?;
     migrate_penerimaan_tables(conn)?;
+    migrate_pelunasan_piutang_tables(conn)?;
     Ok(())
 }
 
@@ -292,6 +293,41 @@ fn migrate_penerimaan_tables(conn: &Connection) -> rusqlite::Result<()> {
 
         CREATE INDEX IF NOT EXISTS idx_penerimaan_line_nomor ON penerimaan_line(nomor);
         ",
+    )?;
+    Ok(())
+}
+
+fn migrate_pelunasan_piutang_tables(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS pelunasan_piutang (
+            nomor TEXT PRIMARY KEY NOT NULL,
+            tanggal TEXT NOT NULL,
+            pelanggan_kode TEXT NOT NULL,
+            akun_kas_kode TEXT NOT NULL REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            total INTEGER NOT NULL,
+            catatan TEXT NOT NULL DEFAULT '',
+            jurnal_id INTEGER REFERENCES jurnal_umum(id) ON DELETE SET NULL ON UPDATE CASCADE,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pelunasan_piutang_tanggal ON pelunasan_piutang(tanggal);
+
+        CREATE TABLE IF NOT EXISTS pelunasan_piutang_faktur (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pelunasan_nomor TEXT NOT NULL REFERENCES pelunasan_piutang(nomor) ON DELETE CASCADE ON UPDATE CASCADE,
+            faktur_nomor TEXT NOT NULL REFERENCES penjualan(nomor) ON UPDATE CASCADE,
+            jumlah INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pelunasan_piutang_faktur_nomor ON pelunasan_piutang_faktur(pelunasan_nomor);
+        ",
+    )?;
+    // Hapus baris hasil impor jurnal sementara (nomor PLP-J{id}), jika pernah terbuat.
+    conn.execute(
+        "DELETE FROM pelunasan_piutang WHERE nomor LIKE 'PLP-J%'",
+        [],
     )?;
     Ok(())
 }

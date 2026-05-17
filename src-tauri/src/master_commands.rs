@@ -1739,7 +1739,7 @@ pub struct PelunasanPiutangPayload {
     pub catatan: String,
 }
 
-/// Jurnal pelunasan piutang: D kas, K piutang.
+/// Jurnal pelunasan piutang: D kas, K piutang. Mengembalikan id jurnal.
 fn pelunasan_piutang_tx_post_jurnal(
     tx: &Transaction<'_>,
     tanggal: &str,
@@ -1749,7 +1749,7 @@ fn pelunasan_piutang_tx_post_jurnal(
     kas_kode: &str,
     catatan_extra: &str,
     ts: i64,
-) -> Result<(), String> {
+) -> Result<i64, String> {
     if jumlah <= 0 {
         return Err("Jumlah pelunasan harus lebih dari 0.".into());
     }
@@ -1783,6 +1783,45 @@ fn pelunasan_piutang_tx_post_jurnal(
         )
         .map_err(|e| e.to_string())?;
         akun_jurnal_apply_saldo_delta(tx, akun_kode, debit, kredit, ts)?;
+    }
+    Ok(jurnal_id)
+}
+
+fn pelunasan_piutang_tx_save_riwayat(
+    tx: &Transaction<'_>,
+    pelunasan_nomor: &str,
+    tanggal: &str,
+    pelanggan_kode: &str,
+    kas_kode: &str,
+    total: i64,
+    catatan: &str,
+    jurnal_id: i64,
+    faktur_list: &[(String, i64)],
+    ts: i64,
+) -> Result<(), String> {
+    tx.execute(
+        "INSERT INTO pelunasan_piutang (nomor, tanggal, pelanggan_kode, akun_kas_kode, total, catatan, jurnal_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
+            pelunasan_nomor,
+            tanggal,
+            pelanggan_kode,
+            kas_kode,
+            total,
+            catatan,
+            jurnal_id,
+            ts,
+            ts
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    for (faktur_nomor, jumlah) in faktur_list {
+        tx.execute(
+            "INSERT INTO pelunasan_piutang_faktur (pelunasan_nomor, faktur_nomor, jumlah) VALUES (?, ?, ?)",
+            params![pelunasan_nomor, faktur_nomor, jumlah],
+        )
+        .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -1839,10 +1878,11 @@ fn pelunasan_piutang_tx_settle_one(
     kas_kode: &str,
     catatan: &str,
     ts: i64,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let (pelanggan_kode, total) = pelunasan_piutang_tx_read_faktur(tx, nomor)?;
+    let pelunasan_nomor = format!("PLP-{}", ts);
 
-    pelunasan_piutang_tx_post_jurnal(
+    let jurnal_id = pelunasan_piutang_tx_post_jurnal(
         tx,
         tanggal,
         nomor,
@@ -1853,7 +1893,22 @@ fn pelunasan_piutang_tx_settle_one(
         ts,
     )?;
 
-    pelunasan_piutang_tx_mark_lunas(tx, nomor, kas_kode, ts)
+    pelunasan_piutang_tx_mark_lunas(tx, nomor, kas_kode, ts)?;
+
+    pelunasan_piutang_tx_save_riwayat(
+        tx,
+        &pelunasan_nomor,
+        tanggal,
+        &pelanggan_kode,
+        kas_kode,
+        total,
+        catatan,
+        jurnal_id,
+        &[(nomor.to_string(), total)],
+        ts,
+    )?;
+
+    Ok(pelunasan_nomor)
 }
 
 #[tauri::command]
@@ -1899,10 +1954,11 @@ pub fn pelunasan_piutang_apply(
         ));
     }
 
-    pelunasan_piutang_tx_settle_one(&tx, nomor, tanggal, &kas_kode, catatan, ts)?;
+    let pelunasan_nomor =
+        pelunasan_piutang_tx_settle_one(&tx, nomor, tanggal, &kas_kode, catatan, ts)?;
 
     tx.commit().map_err(|e| e.to_string())?;
-    Ok(format!("Pelunasan faktur {nomor} tercatat."))
+    Ok(pelunasan_nomor)
 }
 
 #[derive(Debug, Deserialize)]
@@ -1974,7 +2030,7 @@ pub fn pelunasan_piutang_apply_batch(
         catatan_extra.push_str(catatan);
     }
 
-    pelunasan_piutang_tx_post_jurnal(
+    let jurnal_id = pelunasan_piutang_tx_post_jurnal(
         &tx,
         tanggal,
         &referensi,
@@ -1985,13 +2041,188 @@ pub fn pelunasan_piutang_apply_batch(
         ts,
     )?;
 
+    let mut faktur_jumlah: Vec<(String, i64)> = Vec::new();
     for nomor in &nomor_list {
+        let total: i64 = tx
+            .query_row(
+                "SELECT total FROM penjualan WHERE nomor = ?",
+                params![nomor],
+                |r| r.get(0),
+            )
+            .map_err(|_| format!("Faktur '{nomor}' tidak ditemukan."))?;
         pelunasan_piutang_tx_mark_lunas(&tx, nomor, &kas_kode, ts)?;
+        faktur_jumlah.push((nomor.clone(), total));
     }
 
-    let settled = nomor_list.len() as i64;
+    let pelunasan_nomor = format!("PLP-{}", ts);
+    pelunasan_piutang_tx_save_riwayat(
+        &tx,
+        &pelunasan_nomor,
+        tanggal,
+        pelanggan_kode,
+        &kas_kode,
+        total_jumlah,
+        catatan,
+        jurnal_id,
+        &faktur_jumlah,
+        ts,
+    )?;
+
     tx.commit().map_err(|e| e.to_string())?;
-    Ok(format!("{settled} faktur berhasil dilunasi."))
+    Ok(pelunasan_nomor)
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PelunasanPiutangRiwayatRow {
+    pub nomor: String,
+    pub tanggal: String,
+    pub pelanggan_kode: String,
+    pub pelanggan_nama: String,
+    pub akun_kas_kode: String,
+    pub akun_kas_nama: String,
+    pub total: i64,
+    pub jumlah_faktur: i64,
+    pub catatan: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PelunasanPiutangFakturRow {
+    pub faktur_nomor: String,
+    pub tanggal_faktur: String,
+    pub jatuh_tempo: String,
+    pub jumlah: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PelunasanPiutangDetail {
+    pub nomor: String,
+    pub tanggal: String,
+    pub pelanggan_kode: String,
+    pub pelanggan_nama: String,
+    pub akun_kas_kode: String,
+    pub akun_kas_nama: String,
+    pub total: i64,
+    pub catatan: String,
+    pub created_at: i64,
+    pub jurnal_id: Option<i64>,
+    pub faktur: Vec<PelunasanPiutangFakturRow>,
+}
+
+#[tauri::command]
+pub fn pelunasan_piutang_riwayat_list(
+    state: State<DbState>,
+    tanggal_dari: String,
+    tanggal_sampai: String,
+) -> Result<Vec<PelunasanPiutangRiwayatRow>, String> {
+    let dari = tanggal_dari.trim();
+    let sampai = tanggal_sampai.trim();
+    let d1 = NaiveDate::parse_from_str(dari, "%Y-%m-%d")
+        .map_err(|_| "Tanggal mulai tidak valid (YYYY-MM-DD).".to_string())?;
+    let d2 = NaiveDate::parse_from_str(sampai, "%Y-%m-%d")
+        .map_err(|_| "Tanggal akhir tidak valid (YYYY-MM-DD).".to_string())?;
+    if d2 < d1 {
+        return Err("Tanggal akhir tidak boleh sebelum tanggal mulai.".into());
+    }
+
+    with_conn(&state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT pp.nomor, pp.tanggal, pp.pelanggan_kode, COALESCE(c.nama, ''), pp.akun_kas_kode,
+                    COALESCE(k.nama, ''), pp.total,
+                    (SELECT COUNT(*) FROM pelunasan_piutang_faktur pf WHERE pf.pelunasan_nomor = pp.nomor),
+                    pp.catatan, pp.created_at
+             FROM pelunasan_piutang pp
+             LEFT JOIN pelanggan c ON lower(c.kode) = lower(pp.pelanggan_kode)
+             LEFT JOIN akun_keuangan k ON lower(k.kode) = lower(pp.akun_kas_kode)
+             WHERE pp.tanggal >= ? AND pp.tanggal <= ?
+             ORDER BY pp.tanggal DESC, pp.created_at DESC, pp.nomor DESC",
+        )?;
+        let rows = stmt.query_map(params![dari, sampai], |r| {
+            Ok(PelunasanPiutangRiwayatRow {
+                nomor: r.get(0)?,
+                tanggal: r.get(1)?,
+                pelanggan_kode: r.get(2)?,
+                pelanggan_nama: r.get(3)?,
+                akun_kas_kode: r.get(4)?,
+                akun_kas_nama: r.get(5)?,
+                total: r.get(6)?,
+                jumlah_faktur: r.get(7)?,
+                catatan: r.get(8)?,
+                created_at: r.get(9)?,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+#[tauri::command]
+pub fn pelunasan_piutang_riwayat_detail(
+    state: State<DbState>,
+    nomor: String,
+) -> Result<PelunasanPiutangDetail, String> {
+    let key = nomor.trim();
+    if key.is_empty() {
+        return Err("Nomor pelunasan wajib diisi.".into());
+    }
+
+    let conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+
+    let header: PelunasanPiutangDetail = conn
+        .query_row(
+            "SELECT pp.nomor, pp.tanggal, pp.pelanggan_kode, COALESCE(c.nama, ''), pp.akun_kas_kode,
+                    COALESCE(k.nama, ''), pp.total, pp.catatan, pp.created_at, pp.jurnal_id
+             FROM pelunasan_piutang pp
+             LEFT JOIN pelanggan c ON lower(c.kode) = lower(pp.pelanggan_kode)
+             LEFT JOIN akun_keuangan k ON lower(k.kode) = lower(pp.akun_kas_kode)
+             WHERE pp.nomor = ?",
+            params![key],
+            |r| {
+                Ok(PelunasanPiutangDetail {
+                    nomor: r.get(0)?,
+                    tanggal: r.get(1)?,
+                    pelanggan_kode: r.get(2)?,
+                    pelanggan_nama: r.get(3)?,
+                    akun_kas_kode: r.get(4)?,
+                    akun_kas_nama: r.get(5)?,
+                    total: r.get(6)?,
+                    catatan: r.get(7)?,
+                    created_at: r.get(8)?,
+                    jurnal_id: r.get(9)?,
+                    faktur: Vec::new(),
+                })
+            },
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => format!("Pelunasan '{key}' tidak ditemukan."),
+            _ => e.to_string(),
+        })?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT pf.faktur_nomor, p.tanggal_faktur, p.jatuh_tempo, pf.jumlah
+             FROM pelunasan_piutang_faktur pf
+             INNER JOIN penjualan p ON p.nomor = pf.faktur_nomor
+             WHERE pf.pelunasan_nomor = ?
+             ORDER BY p.tanggal_faktur ASC, pf.faktur_nomor ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let faktur = stmt
+        .query_map(params![key], |r| {
+            Ok(PelunasanPiutangFakturRow {
+                faktur_nomor: r.get(0)?,
+                tanggal_faktur: r.get(1)?,
+                jatuh_tempo: r.get(2)?,
+                jumlah: r.get(3)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(PelunasanPiutangDetail { faktur, ..header })
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

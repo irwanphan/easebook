@@ -29,3 +29,37 @@ export type BuatPelunasanPiutangLocationState = {
   pelangganKode?: string;
   preselectNomor?: string[];
 };
+
+export type PelunasanPiutangRiwayatRow = {
+  nomor: string;
+  tanggal: string;
+  pelangganKode: string;
+  pelangganNama: string;
+  akunKasKode: string;
+  akunKasNama: string;
+  total: number;
+  jumlahFaktur: number;
+  catatan: string;
+  createdAt: number;
+};
+
+export type PelunasanPiutangFakturRow = {
+  fakturNomor: string;
+  tanggalFaktur: string;
+  jatuhTempo: string;
+  jumlah: number;
+};
+
+export type PelunasanPiutangDetail = {
+  nomor: string;
+  tanggal: string;
+  pelangganKode: string;
+  pelangganNama: string;
+  akunKasKode: string;
+  akunKasNama: string;
+  total: number;
+  catatan: string;
+  createdAt: number;
+  jurnalId: number | null;
+  faktur: PelunasanPiutangFakturRow[];
+};

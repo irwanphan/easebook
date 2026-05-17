@@ -237,6 +237,51 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     migrate_penerimaan_tables(conn)?;
     migrate_pelunasan_piutang_tables(conn)?;
     migrate_pelunasan_hutang_tables(conn)?;
+    migrate_pengguna_tables(conn)?;
+    Ok(())
+}
+
+fn migrate_pengguna_tables(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS pengguna (
+            username TEXT PRIMARY KEY NOT NULL COLLATE NOCASE,
+            nama_lengkap TEXT NOT NULL,
+            email TEXT NOT NULL DEFAULT '',
+            password_hash TEXT NOT NULL,
+            departemen TEXT NOT NULL DEFAULT '',
+            nomor_hp TEXT NOT NULL DEFAULT '',
+            aktif INTEGER NOT NULL DEFAULT 1,
+            is_admin INTEGER NOT NULL DEFAULT 0,
+            catatan TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pengguna_aktif ON pengguna(aktif);
+        ",
+    )?;
+
+    let n: i64 = conn.query_row("SELECT COUNT(*) FROM pengguna", [], |r| r.get(0))?;
+    if n == 0 {
+        let ts = now_ts();
+        let hash = bcrypt::hash("admin123", bcrypt::DEFAULT_COST).expect("bcrypt hash");
+        conn.execute(
+            "INSERT INTO pengguna (username, nama_lengkap, email, password_hash, departemen, nomor_hp, aktif, is_admin, catatan, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, ?, ?)",
+            params![
+                "admin",
+                "Administrator",
+                "",
+                hash,
+                "IT",
+                "",
+                "Akun awal — ubah password setelah login pertama.",
+                ts,
+                ts
+            ],
+        )?;
+    }
     Ok(())
 }
 

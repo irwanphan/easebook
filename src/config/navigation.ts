@@ -69,7 +69,7 @@ export const primaryNavEntries: PrimaryNavEntry[] = [
       { id: "mj-gudang", label: "Gudang", path: "/manajemen/gudang" },
       { id: "mj-pelanggan", label: "Pelanggan", path: "/manajemen/pelanggan" },
       { id: "mj-pemasok", label: "Pemasok", path: "/manajemen/pemasok" },
-      { id: "mj-lain", label: "Master lainnya", path: "/manajemen/lainnya" },
+      { id: "mj-pengguna", label: "Pengguna", path: "/manajemen/pengguna" },
     ],
   },
   {

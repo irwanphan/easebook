@@ -694,6 +694,301 @@ pub fn pemasok_kode_exists(state: State<DbState>, kode: String) -> Result<bool, 
     with_conn(&state, |conn| kontak_kode_exists_conn(conn, "pemasok", &kode))
 }
 
+// --- Pengguna aplikasi ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PenggunaRow {
+    pub username: String,
+    pub nama_lengkap: String,
+    pub email: String,
+    pub departemen: String,
+    pub nomor_hp: String,
+    pub aktif: bool,
+    pub is_admin: bool,
+    pub catatan: String,
+}
+
+fn normalize_username(raw: &str) -> Result<String, String> {
+    let u = raw.trim().to_lowercase();
+    if u.is_empty() {
+        return Err("Username wajib diisi.".into());
+    }
+    if u.len() < 3 {
+        return Err("Username minimal 3 karakter.".into());
+    }
+    if !u
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-')
+    {
+        return Err(
+            "Username hanya boleh huruf, angka, titik, strip, dan garis bawah.".into(),
+        );
+    }
+    Ok(u)
+}
+
+fn validate_password(password: &str, required: bool) -> Result<(), String> {
+    if password.is_empty() {
+        if required {
+            return Err("Password wajib diisi.".into());
+        }
+        return Ok(());
+    }
+    if password.len() < 6 {
+        return Err("Password minimal 6 karakter.".into());
+    }
+    Ok(())
+}
+
+fn hash_password(password: &str) -> Result<String, String> {
+    bcrypt::hash(password, bcrypt::DEFAULT_COST).map_err(|e| e.to_string())
+}
+
+fn map_pengguna_row(r: &rusqlite::Row) -> rusqlite::Result<PenggunaRow> {
+    Ok(PenggunaRow {
+        username: r.get(0)?,
+        nama_lengkap: r.get(1)?,
+        email: r.get(2)?,
+        departemen: r.get(3)?,
+        nomor_hp: r.get(4)?,
+        aktif: r.get::<_, i64>(5)? != 0,
+        is_admin: r.get::<_, i64>(6)? != 0,
+        catatan: r.get(7)?,
+    })
+}
+
+#[tauri::command]
+pub fn pengguna_list(state: State<DbState>) -> Result<Vec<PenggunaRow>, String> {
+    with_conn(&state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT username, nama_lengkap, email, departemen, nomor_hp, aktif, is_admin, catatan
+             FROM pengguna
+             ORDER BY username COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map([], map_pengguna_row)?;
+        rows.collect()
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PenggunaInsert {
+    pub username: String,
+    pub nama_lengkap: String,
+    pub email: String,
+    pub password: String,
+    pub departemen: String,
+    pub nomor_hp: String,
+    pub aktif: bool,
+    pub is_admin: bool,
+    pub catatan: String,
+}
+
+#[tauri::command]
+pub fn pengguna_insert(state: State<DbState>, row: PenggunaInsert) -> Result<(), String> {
+    let username = normalize_username(&row.username)?;
+    if row.nama_lengkap.trim().is_empty() {
+        return Err("Nama lengkap wajib diisi.".into());
+    }
+    validate_password(&row.password, true)?;
+    let password_hash = hash_password(&row.password)?;
+    let ts = now_ts();
+    with_conn(&state, |conn| {
+        conn.execute(
+            "INSERT INTO pengguna (username, nama_lengkap, email, password_hash, departemen, nomor_hp, aktif, is_admin, catatan, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                username,
+                row.nama_lengkap.trim(),
+                row.email.trim(),
+                password_hash,
+                row.departemen.trim(),
+                row.nomor_hp.trim(),
+                if row.aktif { 1 } else { 0 },
+                if row.is_admin { 1 } else { 0 },
+                row.catatan.trim(),
+                ts,
+                ts
+            ],
+        )?;
+        Ok(())
+    })
+    .map_err(|e| {
+        if e.contains("UNIQUE") {
+            "Username sudah dipakai.".into()
+        } else {
+            e
+        }
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PenggunaUpdate {
+    pub nama_lengkap: String,
+    pub email: String,
+    /// Kosong = tidak mengubah password.
+    pub password: String,
+    pub departemen: String,
+    pub nomor_hp: String,
+    pub aktif: bool,
+    pub is_admin: bool,
+    pub catatan: String,
+}
+
+#[tauri::command]
+pub fn pengguna_update(
+    state: State<DbState>,
+    username: String,
+    row: PenggunaUpdate,
+) -> Result<(), String> {
+    let key = normalize_username(&username)?;
+    if row.nama_lengkap.trim().is_empty() {
+        return Err("Nama lengkap wajib diisi.".into());
+    }
+    validate_password(&row.password, false)?;
+    let ts = now_ts();
+
+    with_conn_app(&state, |conn| {
+        let exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pengguna WHERE lower(username) = lower(?)",
+                params![key],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if exists == 0 {
+            return Err("Pengguna tidak ditemukan.".into());
+        }
+
+        if !row.aktif {
+            let admin_aktif: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pengguna WHERE is_admin = 1 AND aktif = 1 AND lower(username) != lower(?)",
+                    params![key],
+                    |r| r.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            if admin_aktif == 0 {
+                return Err(
+                    "Tidak dapat menonaktifkan pengguna terakhir yang aktif dan berperan admin."
+                        .into(),
+                );
+            }
+        }
+
+        if row.password.trim().is_empty() {
+            let n = conn
+                .execute(
+                    "UPDATE pengguna SET nama_lengkap = ?, email = ?, departemen = ?, nomor_hp = ?,
+                        aktif = ?, is_admin = ?, catatan = ?, updated_at = ?
+                 WHERE lower(username) = lower(?)",
+                    params![
+                        row.nama_lengkap.trim(),
+                        row.email.trim(),
+                        row.departemen.trim(),
+                        row.nomor_hp.trim(),
+                        if row.aktif { 1 } else { 0 },
+                        if row.is_admin { 1 } else { 0 },
+                        row.catatan.trim(),
+                        ts,
+                        key
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+            if n == 0 {
+                return Err("Pengguna tidak ditemukan.".into());
+            }
+        } else {
+            let password_hash = hash_password(row.password.trim())?;
+            let n = conn
+                .execute(
+                    "UPDATE pengguna SET nama_lengkap = ?, email = ?, password_hash = ?, departemen = ?, nomor_hp = ?,
+                        aktif = ?, is_admin = ?, catatan = ?, updated_at = ?
+                 WHERE lower(username) = lower(?)",
+                    params![
+                        row.nama_lengkap.trim(),
+                        row.email.trim(),
+                        password_hash,
+                        row.departemen.trim(),
+                        row.nomor_hp.trim(),
+                        if row.aktif { 1 } else { 0 },
+                        if row.is_admin { 1 } else { 0 },
+                        row.catatan.trim(),
+                        ts,
+                        key
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+            if n == 0 {
+                return Err("Pengguna tidak ditemukan.".into());
+            }
+        }
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn pengguna_delete(state: State<DbState>, username: String) -> Result<(), String> {
+    let key = normalize_username(&username)?;
+    with_conn_app(&state, |conn| {
+        let is_admin: i64 = conn.query_row(
+            "SELECT is_admin FROM pengguna WHERE lower(username) = lower(?)",
+            params![key],
+            |r| r.get(0),
+        )
+        .map_err(|_| "Pengguna tidak ditemukan.".to_string())?;
+
+        let total: i64 = conn
+            .query_row("SELECT COUNT(*) FROM pengguna", [], |r| r.get(0))
+            .map_err(|e| e.to_string())?;
+        if total <= 1 {
+            return Err("Tidak dapat menghapus satu-satunya pengguna.".into());
+        }
+
+        if is_admin != 0 {
+            let admin_count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pengguna WHERE is_admin = 1 AND lower(username) != lower(?)",
+                    params![key],
+                    |r| r.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            if admin_count == 0 {
+                return Err("Tidak dapat menghapus admin terakhir.".into());
+            }
+        }
+
+        let n = conn
+            .execute(
+                "DELETE FROM pengguna WHERE lower(username) = lower(?)",
+                params![key],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Pengguna tidak ditemukan.".into());
+        }
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn pengguna_username_exists(state: State<DbState>, username: String) -> Result<bool, String> {
+    let key = username.trim();
+    if key.is_empty() {
+        return Ok(false);
+    }
+    with_conn(&state, |conn| {
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pengguna WHERE lower(username) = lower(?)",
+            params![key],
+            |r| r.get(0),
+        )?;
+        Ok(n > 0)
+    })
+}
+
 // --- Pembelian (faktur beli) ---
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

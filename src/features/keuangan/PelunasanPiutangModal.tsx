@@ -19,6 +19,12 @@ function todayLocalISODate(): string {
   return `${y}-${m}-${day}`;
 }
 
+function formatTanggal(iso: string) {
+  const d = new Date(iso + "T12:00:00");
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+}
+
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
@@ -133,11 +139,12 @@ export function PelunasanPiutangModal({ open, faktur, onClose, onSaved }: Peluna
           ) : null}
 
           <div className="rounded-xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-sm">
-            <p className="font-mono text-xs font-semibold text-brand-700">{faktur.nomor}</p>
-            <p className="mt-1 font-medium text-zinc-900">{faktur.pelangganNama}</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">No. faktur penjualan</p>
+            <p className="mt-0.5 font-mono text-xs font-semibold text-brand-700">{faktur.nomor}</p>
+            <p className="mt-2 font-medium text-zinc-900">{faktur.pelangganNama}</p>
             <p className="mt-2 text-lg font-bold text-zinc-900">{formatRupiah(faktur.total)}</p>
             <p className="mt-1 text-xs text-zinc-500">
-              Jatuh tempo: {faktur.jatuhTempo} · Faktur: {faktur.tanggalFaktur}
+              Jatuh tempo: {formatTanggal(faktur.jatuhTempo)} · Faktur: {formatTanggal(faktur.tanggalFaktur)}
             </p>
           </div>
 
@@ -198,7 +205,7 @@ export function PelunasanPiutangModal({ open, faktur, onClose, onSaved }: Peluna
           </div>
 
           <p className="text-xs text-zinc-500">
-            Jurnal: debet kas, kredit piutang. Faktur ditandai lunas setelah disimpan.
+            Jurnal: debet kas, kredit piutang. Faktur ditandai lunas dan tercatat di daftar pelunasan piutang.
           </p>
         </form>
       )}

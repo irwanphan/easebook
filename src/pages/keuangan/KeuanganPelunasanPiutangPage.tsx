@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { PelunasanPiutangModal } from "@/features/keuangan/PelunasanPiutangModal";
 import type { BuatPelunasanPiutangLocationState, PiutangBelumLunasRow } from "@/data/pelunasanPiutang";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
@@ -46,6 +47,7 @@ export function KeuanganPelunasanPiutangPage() {
   const [filterPelangganKode, setFilterPelangganKode] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [modalFaktur, setModalFaktur] = useState<PiutangBelumLunasRow | null>(null);
 
   const pelangganOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -107,7 +109,7 @@ export function KeuanganPelunasanPiutangPage() {
   }
 
   function openPelunasan(row: PiutangBelumLunasRow) {
-    goBuatPelunasan({ pelangganKode: row.pelangganKode, preselectNomor: [row.nomor] });
+    setModalFaktur(row);
   }
 
   function openPelunasanBaru() {
@@ -259,7 +261,7 @@ export function KeuanganPelunasanPiutangPage() {
                       </td>
                       <td className="px-5 py-3 text-right">
                         <Button type="button" variant="secondary" className="!px-3 !py-1.5 text-xs" onClick={() => openPelunasan(row)}>
-                          Pelunasi
+                          Lunaskan
                         </Button>
                       </td>
                     </tr>
@@ -270,6 +272,13 @@ export function KeuanganPelunasanPiutangPage() {
           </table>
         </div>
       </Card>
+
+      <PelunasanPiutangModal
+        open={modalFaktur != null}
+        faktur={modalFaktur}
+        onClose={() => setModalFaktur(null)}
+        onSaved={fetchRows}
+      />
     </div>
   );
 }

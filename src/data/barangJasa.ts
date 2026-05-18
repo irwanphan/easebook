@@ -5,6 +5,7 @@ export type BarangSatuanTingkatRow = {
   qtyIsi: number | null;
   hargaJual: number;
   hargaBeli: number;
+  kodeBarcode?: string | null;
 };
 
 export type BarangJasaRow = {
@@ -27,10 +28,11 @@ export type BarangSatuanTingkatForm = {
   qtyIsi: string;
   hargaJual: string;
   hargaBeli: string;
+  kodeBarcode: string;
 };
 
 export function emptySatuanTingkatForm(): BarangSatuanTingkatForm {
-  return { nama: "", qtyIsi: "", hargaJual: "", hargaBeli: "" };
+  return { nama: "", qtyIsi: "", hargaJual: "", hargaBeli: "", kodeBarcode: "" };
 }
 
 export function defaultSatuanTingkatBarang(): BarangSatuanTingkatForm[] {
@@ -61,7 +63,12 @@ export function buildSatuanTingkatPayload(
     qtyIsi: number | null;
     hargaJual: number;
     hargaBeli: number;
+    kodeBarcode: string | null;
   }> } | { ok: false; error: string } {
+  const normalizeBarcode = (raw: string) => {
+    const t = raw.trim();
+    return t.length > 0 ? t : null;
+  };
   if (tipe === "Jasa") {
     const t = tiers[0];
     if (!t?.nama.trim()) return { ok: false, error: "Nama satuan wajib diisi." };
@@ -73,7 +80,14 @@ export function buildSatuanTingkatPayload(
     return {
       ok: true,
       satuanTingkat: [
-        { tingkat: 1, nama: t.nama.trim(), qtyIsi: null, hargaJual, hargaBeli },
+        {
+          tingkat: 1,
+          nama: t.nama.trim(),
+          qtyIsi: null,
+          hargaJual,
+          hargaBeli,
+          kodeBarcode: normalizeBarcode(t.kodeBarcode),
+        },
       ],
     };
   }
@@ -88,6 +102,7 @@ export function buildSatuanTingkatPayload(
     qtyIsi: number | null;
     hargaJual: number;
     hargaBeli: number;
+    kodeBarcode: string | null;
   }> = [];
 
   for (let i = 0; i < 3; i++) {
@@ -109,7 +124,14 @@ export function buildSatuanTingkatPayload(
       }
       qtyIsi = q;
     }
-    result.push({ tingkat, nama: t.nama.trim(), qtyIsi, hargaJual, hargaBeli });
+    result.push({
+      tingkat,
+      nama: t.nama.trim(),
+      qtyIsi,
+      hargaJual,
+      hargaBeli,
+      kodeBarcode: normalizeBarcode(t.kodeBarcode),
+    });
   }
 
   return { ok: true, satuanTingkat: result };

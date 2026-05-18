@@ -287,6 +287,8 @@ pub struct BarangSatuanTingkatRow {
     pub qty_isi: Option<i64>,
     pub harga_jual: i64,
     pub harga_beli: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kode_barcode: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -313,12 +315,13 @@ fn barang_jasa_load_satuan_map(
     conn: &Connection,
 ) -> rusqlite::Result<HashMap<String, Vec<BarangSatuanTingkatRow>>> {
     let mut stmt = conn.prepare(
-        "SELECT barang_kode, tingkat, nama, qty_isi, harga_jual, harga_beli
+        "SELECT barang_kode, tingkat, nama, qty_isi, harga_jual, harga_beli, kode_barcode
          FROM barang_jasa_satuan
          ORDER BY barang_kode COLLATE NOCASE, tingkat ASC",
     )?;
     let mut map: HashMap<String, Vec<BarangSatuanTingkatRow>> = HashMap::new();
     let rows = stmt.query_map([], |r| {
+        let barcode: String = r.get(6)?;
         Ok((
             r.get::<_, String>(0)?,
             BarangSatuanTingkatRow {
@@ -327,6 +330,11 @@ fn barang_jasa_load_satuan_map(
                 qty_isi: r.get(3)?,
                 harga_jual: r.get(4)?,
                 harga_beli: r.get(5)?,
+                kode_barcode: if barcode.trim().is_empty() {
+                    None
+                } else {
+                    Some(barcode.trim().to_string())
+                },
             },
         ))
     })?;
@@ -373,6 +381,8 @@ pub struct BarangSatuanTingkatInput {
     pub qty_isi: Option<i64>,
     pub harga_jual: i64,
     pub harga_beli: i64,
+    #[serde(default)]
+    pub kode_barcode: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -511,15 +521,20 @@ pub fn barang_jasa_insert(state: State<DbState>, row: BarangJasaInsert) -> Resul
 
     for t in &tiers {
         if let Err(e) = tx.execute(
-            "INSERT INTO barang_jasa_satuan (barang_kode, tingkat, nama, qty_isi, harga_jual, harga_beli)
-             VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO barang_jasa_satuan (barang_kode, tingkat, nama, qty_isi, harga_jual, harga_beli, kode_barcode)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
             params![
                 kode,
                 t.tingkat,
                 t.nama.trim(),
                 t.qty_isi,
                 t.harga_jual,
-                t.harga_beli
+                t.harga_beli,
+                t.kode_barcode
+                    .as_ref()
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("")
             ],
         ) {
             return Err(e.to_string());

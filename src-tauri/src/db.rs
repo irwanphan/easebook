@@ -279,6 +279,18 @@ fn migrate_barang_jasa_satuan(conn: &Connection) -> rusqlite::Result<()> {
            )",
         [],
     )?;
+
+    let mut stmt = conn.prepare("PRAGMA table_info(barang_jasa_satuan)")?;
+    let cols: Vec<String> = stmt
+        .query_map([], |r| r.get::<_, String>(1))?
+        .filter_map(|r| r.ok())
+        .collect();
+    if !cols.iter().any(|c| c.eq_ignore_ascii_case("kode_barcode")) {
+        conn.execute(
+            "ALTER TABLE barang_jasa_satuan ADD COLUMN kode_barcode TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
     Ok(())
 }
 

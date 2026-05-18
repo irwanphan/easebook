@@ -1,4 +1,4 @@
-import type { BarangSatuanTingkatForm } from "@/data/barangJasa";
+import { emptySatuanTingkatForm, type BarangSatuanTingkatForm } from "@/data/barangJasa";
 import { TokoInput } from "@/components/ui/TokoInput";
 
 type BarangSatuanTingkatSectionProps = {
@@ -16,6 +16,31 @@ function patchTier(
   patch: Partial<BarangSatuanTingkatForm>,
 ): BarangSatuanTingkatForm[] {
   return tiers.map((t, i) => (i === index ? { ...t, ...patch } : t));
+}
+
+function BarcodeField({
+  id,
+  value,
+  onChange,
+  disabled,
+}: {
+  id: string;
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <TokoInput
+      id={id}
+      label="Barcode"
+      labelSize="sm"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder="Opsional"
+      autoComplete="off"
+      disabled={disabled}
+    />
+  );
 }
 
 function HargaPair({
@@ -68,7 +93,7 @@ export function BarangSatuanTingkatSection({
   disabled = false,
 }: BarangSatuanTingkatSectionProps) {
   if (tipe === "Jasa") {
-    const t = tiers[0] ?? { nama: "", qtyIsi: "", hargaJual: "", hargaBeli: "" };
+    const t = tiers[0] ?? emptySatuanTingkatForm();
     return (
       <section className="space-y-4 rounded-xl border border-zinc-200 bg-zinc-50/50 p-4">
         <div>
@@ -90,6 +115,12 @@ export function BarangSatuanTingkatSection({
           hargaBeli={t.hargaBeli}
           onJual={(v) => onChange([{ ...t, hargaJual: v }])}
           onBeli={(v) => onChange([{ ...t, hargaBeli: v }])}
+          disabled={disabled}
+        />
+        <BarcodeField
+          id="satuan-jasa-barcode"
+          value={t.kodeBarcode}
+          onChange={(v) => onChange([{ ...t, kodeBarcode: v }])}
           disabled={disabled}
         />
       </section>
@@ -125,6 +156,12 @@ export function BarangSatuanTingkatSection({
             hargaBeli={t1?.hargaBeli ?? ""}
             onJual={(v) => onChange(patchTier(tiers, 0, { hargaJual: v }))}
             onBeli={(v) => onChange(patchTier(tiers, 0, { hargaBeli: v }))}
+            disabled={disabled}
+          />
+          <BarcodeField
+            id="satuan-1-barcode"
+            value={t1?.kodeBarcode ?? ""}
+            onChange={(v) => onChange(patchTier(tiers, 0, { kodeBarcode: v }))}
             disabled={disabled}
           />
         </div>
@@ -163,6 +200,12 @@ export function BarangSatuanTingkatSection({
             onBeli={(v) => onChange(patchTier(tiers, 1, { hargaBeli: v }))}
             disabled={disabled}
           />
+          <BarcodeField
+            id="satuan-2-barcode"
+            value={t2?.kodeBarcode ?? ""}
+            onChange={(v) => onChange(patchTier(tiers, 1, { kodeBarcode: v }))}
+            disabled={disabled}
+          />
         </div>
 
         <div className="space-y-3 rounded-xl border border-zinc-200 bg-white p-4">
@@ -197,6 +240,12 @@ export function BarangSatuanTingkatSection({
             hargaBeli={t3?.hargaBeli ?? ""}
             onJual={(v) => onChange(patchTier(tiers, 2, { hargaJual: v }))}
             onBeli={(v) => onChange(patchTier(tiers, 2, { hargaBeli: v }))}
+            disabled={disabled}
+          />
+          <BarcodeField
+            id="satuan-3-barcode"
+            value={t3?.kodeBarcode ?? ""}
+            onChange={(v) => onChange(patchTier(tiers, 2, { kodeBarcode: v }))}
             disabled={disabled}
           />
           {/* {onStokChange != null ? (

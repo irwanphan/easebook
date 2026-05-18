@@ -3,13 +3,14 @@ import { findSatuanPilihan, getSatuanPilihanOptions } from "@/data/barangJasa";
 import { TokoSelect } from "@/components/ui/TokoInput";
 
 type FakturLineSatuanSelectProps = {
+  id?: string;
   barang: BarangJasaRow | undefined;
   tingkat: number;
   onChange: (tingkat: number, hargaJual: number) => void;
   disabled?: boolean;
 };
 
-export function FakturLineSatuanSelect({ barang, tingkat, onChange, disabled }: FakturLineSatuanSelectProps) {
+export function FakturLineSatuanSelect({ id, barang, tingkat, onChange, disabled }: FakturLineSatuanSelectProps) {
   if (!barang) {
     return <span className="inline-block pt-2.5 text-sm text-zinc-400">—</span>;
   }
@@ -23,7 +24,7 @@ export function FakturLineSatuanSelect({ barang, tingkat, onChange, disabled }: 
 
   return (
     <TokoSelect
-      id="satuan-pilihan"
+      id={id}
       value={current?.tingkat ?? 1}
       onChange={(e) => {
         const t = Number.parseInt(e.target.value, 10);

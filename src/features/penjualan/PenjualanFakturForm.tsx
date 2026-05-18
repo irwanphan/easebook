@@ -14,10 +14,16 @@ import { loadPengaturanTransaksi } from "@/features/pengaturan/pengaturanTransak
 import type { AkunKeuanganRow } from "@/data/keuangan";
 import { FakturLineSatuanSelect } from "@/features/barang-jasa/FakturLineSatuanSelect";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
-import { getDefaultSatuanPilihan, getSatuanStokBarang, qtyToSatuanTerkecil } from "@/data/barangJasa";
+import {
+  findSatuanPilihan,
+  getDefaultSatuanPilihan,
+  getSatuanStokBarang,
+  qtyToSatuanTerkecil,
+} from "@/data/barangJasa";
 import { useGudang } from "@/features/gudang/GudangContext";
 import { usePelanggan } from "@/features/pelanggan/PelangganContext";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
 
 function todayLocalISODate(): string {
   const d = new Date();
@@ -34,9 +40,6 @@ function formatRupiah(n: number) {
     maximumFractionDigits: 0,
   }).format(n);
 }
-
-const inputClass =
-  "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
 
 type LineDraft = {
   id: string;
@@ -140,6 +143,8 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
           next.satuanTingkat = patch.satuanTingkat;
           next.hargaSatuan = patch.hargaSatuan;
         }
+        const harga = Math.max(0, next.hargaSatuan);
+        next.diskon = Math.min(Math.max(0, Math.round(next.diskon)), harga);
         return next;
       }),
     );
@@ -234,9 +239,10 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
       if (b?.tipe === "Barang") {
         const qtyStok = qtyToSatuanTerkecil(b, ln.satuanTingkat, ln.qty);
         const satuanStok = getSatuanStokBarang(b);
+        const satuanPilih = findSatuanPilihan(b, ln.satuanTingkat)?.nama ?? satuanStok;
         if ((b.stok ?? 0) < qtyStok) {
           setError(
-            `Stok ${b.kode} tidak cukup (tersedia ${b.stok ?? 0} ${satuanStok}, diminta ${ln.qty} setara ${qtyStok} ${satuanStok}).`,
+            `Stok ${b.kode} tidak cukup (tersedia ${b.stok ?? 0} ${satuanStok}, diminta ${ln.qty} ${satuanPilih} = ${qtyStok} ${satuanStok}).`,
           );
           return;
         }
@@ -313,11 +319,10 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
               <label htmlFor="fj-pelanggan" className="block text-sm font-medium text-zinc-700">
                 Pelanggan
               </label>
-              <select
+              <TokoSelect
                 id="fj-pelanggan"
                 value={pelangganKode}
                 onChange={(e) => setPelangganKode(e.target.value)}
-                className={inputClass}
                 disabled={masterLoading || submitting}
                 required
               >
@@ -327,17 +332,16 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                     {p.kode} — {p.nama}
                   </option>
                 ))}
-              </select>
+              </TokoSelect>
             </div>
             <div>
               <label htmlFor="fj-gudang" className="block text-sm font-medium text-zinc-700">
                 Dari gudang
               </label>
-              <select
+              <TokoSelect
                 id="fj-gudang"
                 value={gudangKode}
                 onChange={(e) => setGudangKode(e.target.value)}
-                className={inputClass}
                 disabled={masterLoading || submitting}
                 required
               >
@@ -347,18 +351,17 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                     {g.kode} — {g.nama}
                   </option>
                 ))}
-              </select>
+              </TokoSelect>
             </div>
             <div>
               <label htmlFor="fj-salesman" className="block text-sm font-medium text-zinc-700">
                 Salesman
               </label>
-              <input
+              <TokoInput
                 id="fj-salesman"
                 type="text"
                 value={salesman}
                 onChange={(e) => setSalesman(e.target.value)}
-                className={inputClass}
                 disabled={submitting}
                 placeholder="Nama salesman (opsional)"
               />
@@ -367,12 +370,11 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
               <label htmlFor="fj-tgl" className="block text-sm font-medium text-zinc-700">
                 Tanggal faktur
               </label>
-              <input
+              <TokoInput
                 id="fj-tgl"
                 type="date"
                 value={tanggalFaktur}
                 onChange={(e) => setTanggalFaktur(e.target.value)}
-                className={inputClass}
                 disabled={submitting}
                 required
               />
@@ -381,12 +383,11 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
               <label htmlFor="fj-jt" className="block text-sm font-medium text-zinc-700">
                 Jatuh tempo
               </label>
-              <input
+              <TokoInput
                 id="fj-jt"
                 type="date"
                 value={jatuhTempo}
                 onChange={(e) => setJatuhTempo(e.target.value)}
-                className={inputClass}
                 disabled={submitting}
                 required
               />
@@ -399,7 +400,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                 id="fj-catatan"
                 value={catatanFaktur}
                 onChange={(e) => setCatatanFaktur(e.target.value)}
-                className={`${inputClass} min-h-[88px] resize-y`}
+                className="mt-1 w-full min-h-[88px] resize-y rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-zinc-50"
                 disabled={submitting}
                 placeholder="Catatan umum untuk faktur ini (opsional)"
                 rows={3}
@@ -413,7 +414,8 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
             <div>
               <h2 className="text-sm font-semibold text-zinc-900">Item dijual</h2>
               <p className="mt-1 text-sm text-zinc-500">
-                Pilih barang/jasa; harga default dari katalog. Barang fisik mengurangi stok saat disimpan.
+                Pilih barang/jasa, satuan, dan qty. Stok dikurangi dalam satuan terkecil sesuai konversi di master
+                barang.
               </p>
             </div>
             <Button
@@ -450,10 +452,10 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                   return (
                     <tr key={row.id} className="bg-white">
                       <td className="px-3 py-2 align-top">
-                        <select
+                        <TokoSelect
+                          id={`fj-barang-${row.id}`}
                           value={row.barangKode}
                           onChange={(e) => setLine(row.id, { barangKode: e.target.value })}
-                          className={`${inputClass} mt-0`}
                           disabled={masterLoading || submitting}
                         >
                           <option value="">— Pilih item —</option>
@@ -463,7 +465,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                               {item.tipe === "Barang" ? `, stok ${item.stok ?? 0}` : ""})
                             </option>
                           ))}
-                        </select>
+                        </TokoSelect>
                         {b?.tipe === "Barang" ? (
                           <p className="mt-1 text-xs text-zinc-500">
                             Stok: {b.stok ?? 0} {getSatuanStokBarang(b)}
@@ -471,20 +473,20 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                         ) : null}
                       </td>
                       <td className="px-3 py-2 align-top">
-                        <input
-                          type="number"
-                          min={1}
-                          step={1}
+                        <TokoInput
+                          id={`fj-qty-${row.id}`}
+                          inputMode="numeric"
                           value={row.qty}
                           onChange={(e) =>
                             setLine(row.id, { qty: Math.max(1, Number.parseInt(e.target.value, 10) || 1) })
                           }
-                          className={`${inputClass} mt-0`}
+                          placeholder="1"
                           disabled={submitting}
                         />
                       </td>
                       <td className="px-3 py-2 align-top">
                         <FakturLineSatuanSelect
+                          id={`fj-satuan-${row.id}`}
                           barang={b}
                           tingkat={row.satuanTingkat}
                           onChange={(tingkat, hargaJual) =>
@@ -494,42 +496,39 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                         />
                       </td>
                       <td className="px-3 py-2 align-top">
-                        <input
-                          type="number"
-                          min={0}
-                          step={1}
+                        <TokoInput
+                          id={`fj-harga-${row.id}`}
+                          inputMode="numeric"
                           value={row.hargaSatuan}
                           onChange={(e) =>
                             setLine(row.id, {
                               hargaSatuan: Math.max(0, Math.round(Number(e.target.value) || 0)),
                             })
                           }
-                          className={`${inputClass} mt-0`}
+                          placeholder="0"
                           disabled={submitting}
                         />
                       </td>
                       <td className="px-3 py-2 align-top">
-                        <input
-                          type="number"
-                          min={0}
-                          max={maxDiskon}
-                          step={1}
+                        <TokoInput
+                          id={`fj-diskon-${row.id}`}
+                          inputMode="numeric"
                           value={row.diskon}
                           onChange={(e) => {
                             const raw = Math.max(0, Math.round(Number(e.target.value) || 0));
                             setLine(row.id, { diskon: Math.min(raw, maxDiskon) });
                           }}
-                          className={`${inputClass} mt-0`}
+                          placeholder="0"
                           disabled={submitting}
                           title="Diskon nominal per satuan (Rp)"
                         />
                       </td>
                       <td className="px-3 py-2 align-top">
-                        <input
+                        <TokoInput
+                          id={`fj-catatan-line-${row.id}`}
                           type="text"
                           value={row.catatan}
                           onChange={(e) => setLine(row.id, { catatan: e.target.value })}
-                          className={`${inputClass} mt-0`}
                           disabled={submitting}
                           placeholder="Catatan per baris"
                         />
@@ -564,18 +563,16 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
               <label htmlFor="fj-diskon-faktur" className="shrink-0 text-zinc-500">
                 Diskon faktur
               </label>
-              <input
+              <TokoInput
                 id="fj-diskon-faktur"
-                type="number"
-                min={0}
-                max={subtotalBarang}
-                step={1}
+                inputMode="numeric"
                 value={diskonFaktur}
                 onChange={(e) => {
                   const raw = Math.max(0, Math.round(Number(e.target.value) || 0));
                   setDiskonFaktur(Math.min(raw, subtotalBarang));
                 }}
-                className={`${inputClass} mt-0 w-36 text-right`}
+                className="w-36 text-right"
+                fullWidth={false}
                 disabled={submitting}
               />
             </div>
@@ -600,11 +597,10 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
             <label htmlFor="fj-akun-kas" className="block text-sm font-medium text-zinc-700">
               Diterima melalui
             </label>
-            <select
+            <TokoSelect
               id="fj-akun-kas"
               value={akunKasKode}
               onChange={(e) => setAkunKasKode(e.target.value)}
-              className={`${inputClass} mt-1`}
               disabled={submitting || akunKasLoading}
             >
               <option value="">— Piutang (belum diterima) —</option>
@@ -613,7 +609,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                   {a.kode} — {a.nama}
                 </option>
               ))}
-            </select>
+            </TokoSelect>
             {akunKasLoading ? (
               <p className="mt-1.5 text-xs text-zinc-400">Memuat daftar akun kas…</p>
             ) : akunKasList.length === 0 ? (

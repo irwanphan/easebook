@@ -38,9 +38,6 @@ function formatRupiah(n: number) {
   }).format(n);
 }
 
-const inputClass =
-  "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
-
 type LineDraft = {
   id: string;
   barangKode: string;
@@ -520,6 +517,7 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
                       </td>
                       <td className="px-3 py-2 align-top">
                         <FakturLineSatuanSelect
+                          id={`${pf}-satuan-${row.id}`}
                           barang={barang}
                           tingkat={row.satuanTingkat}
                           onChange={(tingkat, hargaJual) =>

@@ -2727,7 +2727,7 @@ fn penjualan_tx_apply_barang_stok(
             kode_b,
             gudang_kode,
             nomor,
-            qty,
+            qty_stok,
             next,
             catatan
         ],

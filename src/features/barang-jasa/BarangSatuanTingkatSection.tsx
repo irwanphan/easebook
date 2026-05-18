@@ -131,7 +131,7 @@ export function BarangSatuanTingkatSection({
 
         <div className="space-y-3 rounded-xl border border-zinc-200 bg-white p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Konversi ke satuan 2</p>
-          <div className="flex flex-wrap items-end gap-3">
+          <div className="flex items-end gap-3">
             <TokoInput
               id="satuan-1-qty"
               label="Isi"
@@ -167,7 +167,7 @@ export function BarangSatuanTingkatSection({
 
         <div className="space-y-3 rounded-xl border border-zinc-200 bg-white p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Konversi ke satuan 3 (terkecil)</p>
-          <div className="flex flex-wrap items-end gap-3">
+          <div className="flex items-end gap-3">
             <TokoInput
               id="satuan-2-qty"
               label="Isi"
@@ -199,7 +199,7 @@ export function BarangSatuanTingkatSection({
             onBeli={(v) => onChange(patchTier(tiers, 2, { hargaBeli: v }))}
             disabled={disabled}
           />
-          {onStokChange != null ? (
+          {/* {onStokChange != null ? (
             <div className="border-t border-zinc-100 pt-3">
               <TokoInput
                 id="stok-awal"
@@ -212,7 +212,7 @@ export function BarangSatuanTingkatSection({
                 disabled={disabled}
               />
             </div>
-          ) : null}
+          ) : null} */}
         </div>
       </div>
     </section>

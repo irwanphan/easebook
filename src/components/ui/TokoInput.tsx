@@ -1,8 +1,17 @@
 import { useId, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from "react";
 
-/** Kelas dasar kontrol form — dipakai internal & override terbatas. */
+/** Kelas dasar kontrol form (tanpa lebar — lebar diatur per instance). */
 export const tokoControlClass =
-  "w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-zinc-500";
+  "rounded-xl border border-zinc-200 bg-white px-3 h-10 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-zinc-500";
+
+const WIDTH_CLASS_RE = /\b(w-|max-w-|min-w-)/;
+
+function mergeControlClassName(className: string, fullWidth: boolean, withOffset: boolean): string {
+  const useFullWidth = fullWidth && !WIDTH_CLASS_RE.test(className);
+  return [withOffset ? "mt-1" : "", tokoControlClass, useFullWidth ? "w-full" : "", className]
+    .filter(Boolean)
+    .join(" ");
+}
 
 const labelMdClass = "block text-sm font-medium text-zinc-700";
 const labelSmClass = "block text-xs font-medium text-zinc-600";
@@ -63,6 +72,8 @@ function TokoFieldShell({
 
 export type TokoInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "size"> &
   TokoFieldMetaProps & {
+    /** Default `true`. Set `false` jika lebar diatur lewat `className` (mis. `w-10`). */
+    fullWidth?: boolean;
     /** Tanpa label, jangan tambah margin atas pada input. */
     withLabelOffset?: boolean;
   };
@@ -75,6 +86,7 @@ export function TokoInput({
   wrapperClassName = "",
   className = "",
   id,
+  fullWidth = true,
   withLabelOffset,
   ...rest
 }: TokoInputProps) {
@@ -97,7 +109,7 @@ export function TokoInput({
     >
       <input
         id={inputId}
-        className={`${offset ? "mt-1 " : ""}${tokoControlClass} ${className}`.trim()}
+        className={mergeControlClassName(className, fullWidth, offset)}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}
         {...rest}
@@ -106,7 +118,10 @@ export function TokoInput({
   );
 }
 
-export type TokoSelectProps = SelectHTMLAttributes<HTMLSelectElement> & TokoFieldMetaProps;
+export type TokoSelectProps = SelectHTMLAttributes<HTMLSelectElement> &
+  TokoFieldMetaProps & {
+    fullWidth?: boolean;
+  };
 
 export function TokoSelect({
   label,
@@ -116,6 +131,7 @@ export function TokoSelect({
   wrapperClassName = "",
   className = "",
   id,
+  fullWidth = true,
   children,
   ...rest
 }: TokoSelectProps) {
@@ -137,7 +153,7 @@ export function TokoSelect({
     >
       <select
         id={selectId}
-        className={`${label != null ? "mt-1 " : ""}${tokoControlClass} ${className}`.trim()}
+        className={mergeControlClassName(className, fullWidth, label != null)}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}
         {...rest}

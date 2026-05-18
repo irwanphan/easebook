@@ -13,6 +13,7 @@ import { MutasiAntarGudangPage } from "@/pages/MutasiAntarGudangPage";
 import { PenjualanPage } from "@/pages/PenjualanPage";
 import { TambahPenjualanPage } from "@/pages/TambahPenjualanPage";
 import { PenjualanDetailPage } from "@/pages/PenjualanDetailPage";
+import { UbahPenjualanPage } from "@/pages/UbahPenjualanPage";
 import { PembelianPage } from "@/pages/PembelianPage";
 import { PembelianDetailPage } from "@/pages/PembelianDetailPage";
 import { TambahPembelianPage } from "@/pages/TambahPembelianPage";
@@ -85,6 +86,7 @@ export const router = createHashRouter([
       { path: "laporan/mutasi-antar-gudang", element: <LaporanMutasiAntarGudangPage /> },
       { path: "penjualan/tambah", element: <TambahPenjualanPage /> },
       { path: "penjualan/detail/:nomor", element: <PenjualanDetailPage /> },
+      { path: "penjualan/ubah/:nomor", element: <UbahPenjualanPage /> },
       { path: "penjualan", element: <PenjualanPage /> },
       { path: "pembelian/tambah", element: <TambahPembelianPage /> },
       { path: "pembelian/detail/:nomor", element: <PembelianDetailPage /> },

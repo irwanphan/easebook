@@ -4,6 +4,10 @@ import { PenjualanFakturForm } from "@/features/penjualan/PenjualanFakturForm";
 export function TambahPenjualanPage() {
   const navigate = useNavigate();
   return (
-    <PenjualanFakturForm cancelHref="/penjualan" onSuccess={() => navigate("/penjualan")} />
+    <PenjualanFakturForm
+      mode="create"
+      cancelHref="/penjualan"
+      onSuccess={() => navigate("/penjualan")}
+    />
   );
 }

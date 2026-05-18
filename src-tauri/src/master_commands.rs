@@ -1920,6 +1920,30 @@ fn jurnal_tx_delete_pembelian_by_referensi(tx: &Transaction<'_>, referensi: &str
     Ok(())
 }
 
+fn jurnal_tx_delete_penjualan_by_referensi(tx: &Transaction<'_>, referensi: &str, ts: i64) -> Result<(), String> {
+    let mut ids: Vec<i64> = Vec::new();
+    {
+        let mut stmt = tx
+            .prepare(
+                "SELECT id FROM jurnal_umum
+                 WHERE referensi = ? AND jenis IN ('PENJUALAN', 'PENJUALAN_TUNAI')",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![referensi], |r| r.get(0))
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            ids.push(row.map_err(|e| e.to_string())?);
+        }
+    }
+    for id in ids {
+        jurnal_tx_reverse_kas_lines(tx, id, ts)?;
+        tx.execute("DELETE FROM jurnal_umum WHERE id = ?", params![id])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Posting jurnal pembelian: D inventori (akun pembelian), K hutang atau K kas.
 fn pembelian_tx_post_jurnal(
     tx: &Transaction<'_>,
@@ -2736,6 +2760,48 @@ fn penjualan_tx_apply_barang_stok(
     Ok(())
 }
 
+/// Kembalikan stok (balikkan dampak penjualan) untuk baris bertipe Barang.
+fn penjualan_tx_revert_barang_stok(
+    tx: &Transaction<'_>,
+    kode_b: &str,
+    qty: i64,
+    satuan_tingkat: u8,
+    ts: i64,
+) -> Result<(), String> {
+    let tipe: String = match tx.query_row(
+        "SELECT tipe FROM barang_jasa WHERE lower(kode) = lower(?)",
+        params![kode_b],
+        |r| r.get(0),
+    ) {
+        Ok(s) => s,
+        Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(()),
+        Err(e) => return Err(e.to_string()),
+    };
+    if tipe != "Barang" {
+        return Ok(());
+    }
+    let qty_stok = barang_line_qty_to_smallest_conn(&*tx, kode_b, qty, satuan_tingkat)?;
+    let cur: i64 = tx
+        .query_row(
+            "SELECT COALESCE(stok, 0) FROM barang_jasa WHERE lower(kode) = lower(?)",
+            params![kode_b],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let next = cur.checked_add(qty_stok).ok_or_else(|| {
+        format!(
+            "Stok melimpahi batas saat mengoreksi faktur penjualan ({}).",
+            kode_b
+        )
+    })?;
+    tx.execute(
+        "UPDATE barang_jasa SET stok = ?, updated_at = ? WHERE lower(kode) = lower(?)",
+        params![next, ts, kode_b],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn penjualan_list(state: State<DbState>) -> Result<Vec<PenjualanListRow>, String> {
     with_conn(&state, |conn| {
@@ -3196,6 +3262,150 @@ pub fn penjualan_insert(state: State<DbState>, payload: PenjualanInsertPayload) 
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(nomor)
+}
+
+#[tauri::command]
+pub fn penjualan_update(
+    state: State<DbState>,
+    nomor: String,
+    payload: PenjualanInsertPayload,
+) -> Result<(), String> {
+    let nomor_trim = nomor.trim();
+    if nomor_trim.is_empty() {
+        return Err("Nomor faktur tidak valid.".into());
+    }
+    let (tgl, jt, _sub, diskon_faktur, pajak, total) = penjualan_validate_and_total(&payload)?;
+    let pelanggan_kode = payload.pelanggan_kode.trim();
+    let gudang_kode = payload.gudang_kode.trim();
+    let salesman = payload.salesman.trim();
+    let catatan_faktur = payload.catatan_faktur.trim();
+    let akun_kas_kode = pembelian_normalize_akun_kas(&payload.akun_kas_kode);
+    let tanggal_str = tgl.format("%Y-%m-%d").to_string();
+    let jatuh_str = jt.format("%Y-%m-%d").to_string();
+    let ts = now_ts();
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    jurnal_tx_delete_penjualan_by_referensi(&tx, nomor_trim, ts)?;
+
+    let exists: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM penjualan WHERE nomor = ?",
+            params![nomor_trim],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if exists == 0 {
+        return Err("Faktur penjualan tidak ditemukan.".into());
+    }
+
+    let mut old_lines: Vec<(String, i64, u8)> = Vec::new();
+    {
+        let mut stmt = tx
+            .prepare("SELECT barang_kode, qty, satuan_tingkat FROM penjualan_line WHERE nomor = ?")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![nomor_trim], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, u8>(2)?))
+            })
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            old_lines.push(row.map_err(|e| e.to_string())?);
+        }
+    }
+
+    tx.execute(
+        "DELETE FROM stok_mutasi WHERE referensi = ? AND upper(trim(jenis)) = 'PENJUALAN'",
+        params![nomor_trim],
+    )
+    .map_err(|e| e.to_string())?;
+
+    for (kode_b, qty, satuan_tingkat) in &old_lines {
+        penjualan_tx_revert_barang_stok(&tx, kode_b.trim(), *qty, *satuan_tingkat, ts)?;
+    }
+
+    tx.execute(
+        "DELETE FROM penjualan_line WHERE nomor = ?",
+        params![nomor_trim],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "UPDATE penjualan SET pelanggan_kode = ?, gudang_kode = ?, salesman = ?, tanggal_faktur = ?, jatuh_tempo = ?, catatan_faktur = ?, diskon_faktur = ?, pajak = ?, akun_kas_kode = ?, total = ?, updated_at = ? WHERE nomor = ?",
+        params![
+            pelanggan_kode,
+            gudang_kode,
+            salesman,
+            tanggal_str,
+            jatuh_str,
+            catatan_faktur,
+            diskon_faktur,
+            pajak,
+            akun_kas_kode.as_deref(),
+            total,
+            ts,
+            nomor_trim
+        ],
+    )
+    .map_err(|e| {
+        if e.to_string().contains("FOREIGN KEY") {
+            "Pelanggan atau gudang tidak ditemukan.".into()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    for line in &payload.lines {
+        let kode_b = line.barang_kode.trim();
+        let sub = penjualan_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
+        let line_catatan = line.catatan.trim();
+        tx.execute(
+            "INSERT INTO penjualan_line (nomor, barang_kode, qty, satuan_tingkat, harga_satuan, diskon, subtotal, catatan) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                nomor_trim,
+                kode_b,
+                line.qty,
+                line.satuan_tingkat,
+                line.harga_satuan,
+                line.diskon,
+                sub,
+                line_catatan
+            ],
+        )
+        .map_err(|e| {
+            if e.to_string().contains("FOREIGN KEY") {
+                "Salah satu kode barang tidak ditemukan.".into()
+            } else {
+                e.to_string()
+            }
+        })?;
+        penjualan_tx_apply_barang_stok(
+            &tx,
+            nomor_trim,
+            kode_b,
+            line.qty,
+            line.satuan_tingkat,
+            gudang_kode,
+            &tanggal_str,
+            line_catatan,
+            ts,
+            ts,
+        )?;
+    }
+
+    penjualan_tx_post_jurnal(
+        &tx,
+        &tanggal_str,
+        nomor_trim,
+        pelanggan_kode,
+        total,
+        akun_kas_kode.as_deref(),
+        ts,
+    )?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

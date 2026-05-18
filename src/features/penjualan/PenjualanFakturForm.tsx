@@ -9,6 +9,7 @@ import {
   penjualanFakturTotal,
   penjualanHitungPajakPpn,
   penjualanLineSubtotal,
+  type PenjualanDetail,
 } from "@/data/penjualan";
 import { loadPengaturanTransaksi } from "@/features/pengaturan/pengaturanTransaksiStorage";
 import type { AkunKeuanganRow } from "@/data/keuangan";
@@ -64,11 +65,14 @@ function newLine(): LineDraft {
 }
 
 export type PenjualanFakturFormProps = {
+  mode: "create" | "edit";
+  /** Wajib jika `mode === 'edit'` */
+  nomor?: string;
   cancelHref: string;
-  onSuccess: () => void;
+  onSuccess: (nomor: string) => void;
 };
 
-export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFormProps) {
+export function PenjualanFakturForm({ mode, nomor, cancelHref, onSuccess }: PenjualanFakturFormProps) {
   const navigate = useNavigate();
   const { items: pelangganItems, loading: loadPelanggan } = usePelanggan();
   const { items: gudangItems, loading: loadGudang } = useGudang();
@@ -86,10 +90,12 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
   const [akunKasList, setAkunKasList] = useState<AkunKeuanganRow[]>([]);
   const [akunKasLoading, setAkunKasLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const ppnPersen = loadPengaturanTransaksi().ppnPersen;
+  const [hydrating, setHydrating] = useState(mode === "edit");
+  const [saving, setSaving] = useState(false);
 
   const masterLoading = loadPelanggan || loadGudang || loadBarang;
+  const busy = masterLoading || hydrating || saving;
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +122,52 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
     }
     return m;
   }, [barangItems]);
+
+  useEffect(() => {
+    if (mode !== "edit" || !nomor?.trim()) {
+      setHydrating(false);
+      return;
+    }
+    if (masterLoading) return;
+
+    let cancelled = false;
+    (async () => {
+      setError(null);
+      try {
+        const d = await invoke<PenjualanDetail>("penjualan_detail", { nomor: nomor.trim() });
+        if (cancelled) return;
+        setPelangganKode(d.pelangganKode);
+        setGudangKode(d.gudangKode);
+        setSalesman(d.salesman);
+        setTanggalFaktur(d.tanggalFaktur);
+        setJatuhTempo(d.jatuhTempo);
+        setCatatanFaktur(d.catatanFaktur ?? "");
+        setDiskonFaktur(d.diskonFaktur ?? 0);
+        setAkunKasKode(d.akunKasKode ?? "");
+        setLines(
+          d.lines.length > 0
+            ? d.lines.map((l) => ({
+                id: crypto.randomUUID(),
+                barangKode: l.barangKode,
+                qty: l.qty,
+                satuanTingkat: l.satuanTingkat ?? 1,
+                hargaSatuan: l.hargaSatuan,
+                diskon: l.diskon ?? 0,
+                catatan: l.catatan ?? "",
+              }))
+            : [newLine()],
+        );
+      } catch (e) {
+        if (!cancelled) setError(tauriErrorMessage(e));
+      } finally {
+        if (!cancelled) setHydrating(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, nomor, masterLoading]);
 
   function setLine(id: string, patch: Partial<LineDraft>) {
     setLines((prev) =>
@@ -235,16 +287,18 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
         setError("Diskon per satuan tidak boleh melebihi harga satuan.");
         return;
       }
-      const b = barangByKode.get(ln.barangKode.toLowerCase());
-      if (b?.tipe === "Barang") {
-        const qtyStok = qtyToSatuanTerkecil(b, ln.satuanTingkat, ln.qty);
-        const satuanStok = getSatuanStokBarang(b);
-        const satuanPilih = findSatuanPilihan(b, ln.satuanTingkat)?.nama ?? satuanStok;
-        if ((b.stok ?? 0) < qtyStok) {
-          setError(
-            `Stok ${b.kode} tidak cukup (tersedia ${b.stok ?? 0} ${satuanStok}, diminta ${ln.qty} ${satuanPilih} = ${qtyStok} ${satuanStok}).`,
-          );
-          return;
+      if (mode === "create") {
+        const b = barangByKode.get(ln.barangKode.toLowerCase());
+        if (b?.tipe === "Barang") {
+          const qtyStok = qtyToSatuanTerkecil(b, ln.satuanTingkat, ln.qty);
+          const satuanStok = getSatuanStokBarang(b);
+          const satuanPilih = findSatuanPilihan(b, ln.satuanTingkat)?.nama ?? satuanStok;
+          if ((b.stok ?? 0) < qtyStok) {
+            setError(
+              `Stok ${b.kode} tidak cukup (tersedia ${b.stok ?? 0} ${satuanStok}, diminta ${ln.qty} ${satuanPilih} = ${qtyStok} ${satuanStok}).`,
+            );
+            return;
+          }
         }
       }
     }
@@ -273,15 +327,25 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
       lines: payloadLines,
     };
 
-    setSubmitting(true);
+    setSaving(true);
     try {
-      await invoke("penjualan_insert", { payload });
+      let savedNomor: string;
+      if (mode === "edit") {
+        if (!nomor?.trim()) {
+          setError("Nomor faktur tidak valid.");
+          return;
+        }
+        savedNomor = nomor.trim();
+        await invoke("penjualan_update", { nomor: savedNomor, payload });
+      } else {
+        savedNomor = await invoke<string>("penjualan_insert", { payload });
+      }
       await refreshBarang();
-      onSuccess();
+      onSuccess(savedNomor);
     } catch (err) {
       setError(tauriErrorMessage(err));
     } finally {
-      setSubmitting(false);
+      setSaving(false);
     }
   }
 
@@ -293,11 +357,15 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
           className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
-          Kembali ke penjualan
+          {mode === "edit" ? "Kembali ke detail" : "Kembali ke penjualan"}
         </Link>
         <PageHeader
-          title="Faktur jual baru"
-          description="Catat penjualan ke pelanggan. Barang fisik mengurangi stok dan tercatat di pergerakan stok."
+          title={mode === "edit" ? "Ubah faktur penjualan" : "Faktur jual baru"}
+          description={
+            mode === "edit"
+              ? "Perbarui header dan baris: stok dan pergerakan stok disesuaikan ulang dari selisih faktur lama vs baru."
+              : "Catat penjualan ke pelanggan. Barang fisik mengurangi stok dan tercatat di pergerakan stok."
+          }
         />
       </div>
 
@@ -309,6 +377,13 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
           >
             {error}
           </div>
+        ) : null}
+
+        {mode === "edit" && nomor ? (
+          <Card>
+            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Nomor faktur</p>
+            <p className="mt-1 font-mono text-sm font-semibold text-brand-800">{nomor}</p>
+          </Card>
         ) : null}
 
         <Card>
@@ -323,7 +398,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                 id="fj-pelanggan"
                 value={pelangganKode}
                 onChange={(e) => setPelangganKode(e.target.value)}
-                disabled={masterLoading || submitting}
+                disabled={busy}
                 required
               >
                 <option value="">— Pilih pelanggan —</option>
@@ -342,7 +417,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                 id="fj-gudang"
                 value={gudangKode}
                 onChange={(e) => setGudangKode(e.target.value)}
-                disabled={masterLoading || submitting}
+                disabled={busy}
                 required
               >
                 <option value="">— Pilih gudang —</option>
@@ -362,7 +437,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                 type="text"
                 value={salesman}
                 onChange={(e) => setSalesman(e.target.value)}
-                disabled={submitting}
+                disabled={busy}
                 placeholder="Nama salesman (opsional)"
               />
             </div>
@@ -375,7 +450,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                 type="date"
                 value={tanggalFaktur}
                 onChange={(e) => setTanggalFaktur(e.target.value)}
-                disabled={submitting}
+                disabled={busy}
                 required
               />
             </div>
@@ -388,7 +463,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                 type="date"
                 value={jatuhTempo}
                 onChange={(e) => setJatuhTempo(e.target.value)}
-                disabled={submitting}
+                disabled={busy}
                 required
               />
             </div>
@@ -401,7 +476,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                 value={catatanFaktur}
                 onChange={(e) => setCatatanFaktur(e.target.value)}
                 className="mt-1 w-full min-h-[88px] resize-y rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-zinc-50"
-                disabled={submitting}
+                disabled={busy}
                 placeholder="Catatan umum untuk faktur ini (opsional)"
                 rows={3}
               />
@@ -423,7 +498,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
               variant="secondary"
               className="shrink-0 gap-2"
               onClick={addLine}
-              disabled={submitting}
+              disabled={busy}
             >
               <Plus className="h-4 w-4" aria-hidden />
               Tambah baris
@@ -456,7 +531,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                           id={`fj-barang-${row.id}`}
                           value={row.barangKode}
                           onChange={(e) => setLine(row.id, { barangKode: e.target.value })}
-                          disabled={masterLoading || submitting}
+                          disabled={busy}
                         >
                           <option value="">— Pilih item —</option>
                           {barangItems.map((item) => (
@@ -481,7 +556,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                             setLine(row.id, { qty: Math.max(1, Number.parseInt(e.target.value, 10) || 1) })
                           }
                           placeholder="1"
-                          disabled={submitting}
+                          disabled={busy}
                         />
                       </td>
                       <td className="px-3 py-2 align-top">
@@ -492,7 +567,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                           onChange={(tingkat, hargaJual) =>
                             setLine(row.id, { satuanTingkat: tingkat, hargaSatuan: hargaJual })
                           }
-                          disabled={submitting || !b}
+                          disabled={busy || !b}
                         />
                       </td>
                       <td className="px-3 py-2 align-top">
@@ -506,7 +581,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                             })
                           }
                           placeholder="0"
-                          disabled={submitting}
+                          disabled={busy}
                         />
                       </td>
                       <td className="px-3 py-2 align-top">
@@ -519,7 +594,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                             setLine(row.id, { diskon: Math.min(raw, maxDiskon) });
                           }}
                           placeholder="0"
-                          disabled={submitting}
+                          disabled={busy}
                           title="Diskon nominal per satuan (Rp)"
                         />
                       </td>
@@ -529,7 +604,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                           type="text"
                           value={row.catatan}
                           onChange={(e) => setLine(row.id, { catatan: e.target.value })}
-                          disabled={submitting}
+                          disabled={busy}
                           placeholder="Catatan per baris"
                         />
                       </td>
@@ -542,7 +617,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                           onClick={() => removeLine(row.id)}
                           className="mt-1.5 inline-flex rounded-lg p-2 text-zinc-400 transition hover:bg-rose-50 hover:text-rose-600"
                           aria-label="Hapus baris"
-                          disabled={submitting}
+                          disabled={busy}
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -573,7 +648,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                 }}
                 className="w-36 text-right"
                 fullWidth={false}
-                disabled={submitting}
+                disabled={busy}
               />
             </div>
             <div className="flex items-center justify-between gap-4 text-sm">
@@ -601,7 +676,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
               id="fj-akun-kas"
               value={akunKasKode}
               onChange={(e) => setAkunKasKode(e.target.value)}
-              disabled={submitting || akunKasLoading}
+              disabled={busy || akunKasLoading}
             >
               <option value="">— Piutang (belum diterima) —</option>
               {akunKasList.map((a) => (
@@ -621,11 +696,11 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
         </Card>
 
         <div className="flex flex-wrap justify-end gap-3">
-          <Button type="button" variant="ghost" onClick={() => navigate(cancelHref)} disabled={submitting}>
+          <Button type="button" variant="ghost" onClick={() => navigate(cancelHref)} disabled={busy}>
             Batal
           </Button>
-          <Button type="submit" disabled={masterLoading || submitting}>
-            {submitting ? "Menyimpan…" : "Simpan faktur"}
+          <Button type="submit" disabled={busy}>
+            {saving ? "Menyimpan…" : mode === "edit" ? "Simpan perubahan" : "Simpan faktur"}
           </Button>
         </div>
       </form>

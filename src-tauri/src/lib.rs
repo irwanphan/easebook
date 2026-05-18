@@ -86,6 +86,7 @@ pub fn run() {
             master_commands::penjualan_list,
             master_commands::penjualan_detail,
             master_commands::penjualan_insert,
+            master_commands::penjualan_update,
             master_commands::dashboard_penjualan_bulanan,
             master_commands::dashboard_penjualan_ringkasan,
             master_commands::piutang_belum_lunas_list,

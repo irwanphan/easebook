@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -69,6 +69,8 @@ export function PenjualanDetailPage() {
     );
   }
 
+  const ubahHref = `/penjualan/ubah/${encodeURIComponent(nomor)}`;
+
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
       <div>
@@ -82,6 +84,14 @@ export function PenjualanDetailPage() {
         <PageHeader
           title="Detail faktur penjualan"
           description={detail ? `Nomor ${detail.nomor}` : "Memuat data faktur…"}
+          actions={
+            detail ? (
+              <Button type="button" className="gap-2" onClick={() => navigate(ubahHref)}>
+                <Pencil className="h-4 w-4" aria-hidden />
+                Ubah faktur
+              </Button>
+            ) : null
+          }
         />
       </div>
 
@@ -214,6 +224,10 @@ export function PenjualanDetailPage() {
               </table>
             </div>
           </Card>
+
+          <p className="text-xs text-zinc-500">
+            Ubah faktur menyesuaikan ulang stok barang fisik dan riwayat mutasi sesuai isi faktur terbaru.
+          </p>
         </>
       ) : null}
     </div>

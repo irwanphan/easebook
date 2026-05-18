@@ -95,9 +95,12 @@ export function BarangJasaPage() {
                           Kartu stok
                         </Link>
                       ) : null}
-                      <Button variant="ghost" className="px-2 py-1 text-xs font-semibold" type="button">
+                      <Link
+                        to={`/barang-jasa/ubah/${encodeURIComponent(row.kode)}`}
+                        className="rounded-lg px-2 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100"
+                      >
                         Ubah
-                      </Button>
+                      </Link>
                     </div>
                   </td>
                 </tr>

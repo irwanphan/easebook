@@ -27,6 +27,7 @@ export const halamanAksesGroups: HalamanAksesGroup[] = [
     pages: [
       { key: "barang-jasa", label: "Daftar barang & jasa", pathPattern: "barang-jasa" },
       { key: "barang-jasa-tambah", label: "Tambah barang / jasa", pathPattern: "barang-jasa/tambah" },
+      { key: "barang-jasa-ubah", label: "Ubah barang / jasa", pathPattern: "barang-jasa/ubah/:kode" },
       { key: "barang-jasa-kartu-stok", label: "Kartu stok barang", pathPattern: "barang-jasa/kartu-stok/:kode" },
       { key: "barang-jasa-per-gudang", label: "Stok per gudang", pathPattern: "barang-jasa/per-gudang" },
       {

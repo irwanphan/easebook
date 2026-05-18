@@ -15,6 +15,7 @@ import {
   buildSatuanTingkatPayload,
   defaultSatuanTingkatBarang,
   emptySatuanTingkatForm,
+  getSatuanTerkecilFromPayload,
   type BarangSatuanTingkatForm,
 } from "@/data/barangJasa";
 import { applyBarangFotoChanges, emptyBarangFotoState, type BarangFotoState } from "@/lib/barangFoto";
@@ -72,6 +73,10 @@ export function TambahBarangJasaPage() {
       setError("Nama wajib diisi.");
       return;
     }
+    if (!kategoriKode) {
+      setError("Kategori / grup wajib dipilih.");
+      return;
+    }
 
     const satuanResult = buildSatuanTingkatPayload(tipe, satuanTiers);
     if (!satuanResult.ok) {
@@ -79,7 +84,7 @@ export function TambahBarangJasaPage() {
       return;
     }
 
-    const utama = satuanResult.satuanTingkat.find((t) => t.tingkat === (tipe === "Barang" ? 3 : 1))!;
+    const utama = getSatuanTerkecilFromPayload(satuanResult.satuanTingkat);
     let stokVal: number | undefined;
     if (tipe === "Barang") {
       const s = parseStok(stok);
@@ -171,10 +176,11 @@ export function TambahBarangJasaPage() {
           <div className="grid gap-5 sm:grid-cols-2">
             <TokoSelect
               id="kategori"
-              label="Kategori / grup"
+              label="Kategori / grup *"
               value={kategoriKode}
               onChange={(e) => setKategoriKode(e.target.value)}
               disabled={saving || kategoriLoading}
+              required
               hint={
                 !kategoriLoading && kategoriList.length === 0 ? (
                   <>
@@ -186,7 +192,7 @@ export function TambahBarangJasaPage() {
                 ) : undefined
               }
             >
-              <option value={EMPTY_OPTION}>— Tidak ada —</option>
+              <option value={EMPTY_OPTION}>— Pilih kategori —</option>
               {kategoriList.map((k) => (
                 <option key={k.kode} value={k.kode}>
                   {k.kode} — {k.nama}
@@ -195,7 +201,7 @@ export function TambahBarangJasaPage() {
             </TokoSelect>
             <TokoSelect
               id="merek"
-              label="Merek"
+              label="Merek (opsional)"
               value={merekKode}
               onChange={(e) => setMerekKode(e.target.value)}
               disabled={saving || merekLoading}

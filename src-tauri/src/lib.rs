@@ -47,6 +47,8 @@ pub fn run() {
             master_commands::gudang_kode_exists,
             master_commands::barang_jasa_list,
             master_commands::barang_jasa_insert,
+            master_commands::barang_jasa_update,
+            master_commands::barang_jasa_punya_transaksi,
             master_commands::barang_jasa_kode_exists,
             master_commands::barang_foto_path,
             master_commands::barang_foto_save,

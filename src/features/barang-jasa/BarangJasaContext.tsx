@@ -8,13 +8,15 @@ import {
   type ReactNode,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { BarangJasaRow } from "@/data/barangJasa";
+import type { BarangJasaRow, BarangJasaUpdatePayload } from "@/data/barangJasa";
 
 type BarangJasaContextValue = {
   items: BarangJasaRow[];
   loading: boolean;
   refresh: () => Promise<void>;
   addItem: (row: BarangJasaRow) => Promise<void>;
+  updateItem: (kode: string, payload: BarangJasaUpdatePayload) => Promise<void>;
+  getByKode: (kode: string) => BarangJasaRow | undefined;
   kodeExists: (kode: string) => Promise<boolean>;
 };
 
@@ -43,6 +45,11 @@ export function BarangJasaProvider({ children }: { children: ReactNode }) {
     return invoke<boolean>("barang_jasa_kode_exists", { kode });
   }, []);
 
+  const getByKode = useCallback(
+    (kode: string) => items.find((r) => r.kode.toLowerCase() === kode.trim().toLowerCase()),
+    [items],
+  );
+
   const addItem = useCallback(
     async (row: BarangJasaRow) => {
       await invoke("barang_jasa_insert", {
@@ -64,9 +71,17 @@ export function BarangJasaProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const updateItem = useCallback(
+    async (kode: string, payload: BarangJasaUpdatePayload) => {
+      await invoke("barang_jasa_update", { kode, row: payload });
+      await refresh();
+    },
+    [refresh],
+  );
+
   const value = useMemo(
-    () => ({ items, loading, refresh, addItem, kodeExists }),
-    [items, loading, refresh, addItem, kodeExists],
+    () => ({ items, loading, refresh, addItem, updateItem, getByKode, kodeExists }),
+    [items, loading, refresh, addItem, updateItem, getByKode, kodeExists],
   );
 
   return (

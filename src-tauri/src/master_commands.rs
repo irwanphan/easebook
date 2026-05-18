@@ -400,20 +400,52 @@ pub struct BarangJasaInsert {
     pub satuan_tingkat: Vec<BarangSatuanTingkatInput>,
 }
 
+fn barang_jasa_satuan_terkecil<'a>(
+    tiers: &'a [BarangSatuanTingkatInput],
+) -> Result<&'a BarangSatuanTingkatInput, String> {
+    tiers
+        .iter()
+        .max_by_key(|t| t.tingkat)
+        .ok_or_else(|| "Satuan utama tidak ditemukan.".to_string())
+}
+
+fn barang_jasa_has_transaksi(conn: &rusqlite::Connection, kode: &str) -> Result<bool, String> {
+    let count: i64 = conn
+        .query_row(
+            "SELECT
+               (SELECT COUNT(*) FROM pembelian_line WHERE lower(barang_kode) = lower(?))
+             + (SELECT COUNT(*) FROM penjualan_line WHERE lower(barang_kode) = lower(?))
+             + (SELECT COUNT(*) FROM stok_mutasi WHERE lower(barang_kode) = lower(?))",
+            rusqlite::params![kode, kode, kode],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(count > 0)
+}
+
 fn barang_jasa_validate_satuan_tingkat(
     tipe: &str,
     tiers: &[BarangSatuanTingkatInput],
 ) -> Result<Vec<BarangSatuanTingkatInput>, String> {
     if tipe == "Barang" {
-        if tiers.len() != 3 {
-            return Err("Barang wajib memiliki 3 tingkat satuan.".into());
+        if tiers.is_empty() {
+            return Err("Minimal satu tingkat satuan (tingkat 1) wajib diisi.".into());
         }
         let mut sorted = tiers.to_vec();
         sorted.sort_by_key(|t| t.tingkat);
+        let max_tingkat = sorted
+            .last()
+            .map(|t| t.tingkat)
+            .ok_or_else(|| "Satuan tidak valid.".to_string())?;
+        if max_tingkat > 3 {
+            return Err("Maksimal 3 tingkat satuan.".into());
+        }
         for (i, t) in sorted.iter().enumerate() {
             let expected = (i + 1) as u8;
             if t.tingkat != expected {
-                return Err("Tingkat satuan harus 1, 2, dan 3.".into());
+                return Err(
+                    "Tingkat satuan harus berurutan (1, 2, …) tanpa melompati tingkat.".into(),
+                );
             }
             if t.nama.trim().is_empty() {
                 return Err(format!("Nama satuan tingkat {} wajib diisi.", t.tingkat));
@@ -421,24 +453,21 @@ fn barang_jasa_validate_satuan_tingkat(
             if t.harga_jual < 0 || t.harga_beli < 0 {
                 return Err("Harga jual/beli tidak valid.".into());
             }
-            match t.tingkat {
-                1 | 2 => {
-                    let q = t.qty_isi.ok_or_else(|| {
-                        format!("Isi satuan tingkat {} wajib diisi (bilangan bulat > 0).", t.tingkat)
-                    })?;
-                    if q <= 0 {
-                        return Err(format!(
-                            "Isi satuan tingkat {} harus lebih dari 0.",
-                            t.tingkat
-                        ));
-                    }
+            if t.tingkat < max_tingkat {
+                let q = t.qty_isi.ok_or_else(|| {
+                    format!(
+                        "Isi konversi tingkat {} wajib diisi (bilangan bulat > 0).",
+                        t.tingkat
+                    )
+                })?;
+                if q <= 0 {
+                    return Err(format!(
+                        "Isi satuan tingkat {} harus lebih dari 0.",
+                        t.tingkat
+                    ));
                 }
-                3 => {
-                    if t.qty_isi.is_some() {
-                        return Err("Satuan tingkat 3 tidak memiliki isi konversi.".into());
-                    }
-                }
-                _ => return Err("Tingkat satuan tidak valid.".into()),
+            } else if t.qty_isi.is_some() {
+                return Err("Satuan terkecil tidak memiliki isi konversi.".into());
             }
         }
         return Ok(sorted);
@@ -469,17 +498,21 @@ pub fn barang_jasa_insert(state: State<DbState>, row: BarangJasaInsert) -> Resul
     if row.nama.trim().is_empty() {
         return Err("Nama wajib diisi.".into());
     }
+    if row
+        .kategori_kode
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .is_none()
+    {
+        return Err("Kategori / grup wajib dipilih.".into());
+    }
     let tipe = row.tipe.trim();
     if tipe != "Barang" && tipe != "Jasa" {
         return Err("Tipe harus Barang atau Jasa.".into());
     }
     let tiers = barang_jasa_validate_satuan_tingkat(tipe, &row.satuan_tingkat)?;
-
-    let satuan_terkecil = tiers
-        .iter()
-        .find(|t| t.tingkat == if tipe == "Barang" { 3 } else { 1 })
-        .ok_or_else(|| "Satuan utama tidak ditemukan.".to_string())?;
-
+    let satuan_terkecil = barang_jasa_satuan_terkecil(&tiers)?;
     let satuan = satuan_terkecil.nama.trim().to_string();
     let harga = satuan_terkecil.harga_jual;
 
@@ -553,6 +586,161 @@ fn map_barang_jasa_insert_error(e: &str) -> String {
     } else {
         e.to_string()
     }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BarangJasaUpdate {
+    pub nama: String,
+    pub stok: Option<i64>,
+    pub kategori_kode: Option<String>,
+    pub merek_kode: Option<String>,
+    pub default_gudang_kode: Option<String>,
+    pub satuan_tingkat: Option<Vec<BarangSatuanTingkatInput>>,
+}
+
+#[tauri::command]
+pub fn barang_jasa_punya_transaksi(state: State<DbState>, kode: String) -> Result<bool, String> {
+    let key = kode.trim();
+    if key.is_empty() {
+        return Err("Kode tidak valid.".into());
+    }
+    let conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    barang_jasa_has_transaksi(&conn, key)
+}
+
+#[tauri::command]
+pub fn barang_jasa_update(
+    state: State<DbState>,
+    kode: String,
+    row: BarangJasaUpdate,
+) -> Result<(), String> {
+    let key = kode.trim().to_uppercase();
+    if key.is_empty() {
+        return Err("Kode tidak valid.".into());
+    }
+    if row.nama.trim().is_empty() {
+        return Err("Nama wajib diisi.".into());
+    }
+    if row
+        .kategori_kode
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .is_none()
+    {
+        return Err("Kategori / grup wajib dipilih.".into());
+    }
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tipe: String = conn
+        .query_row(
+            "SELECT tipe FROM barang_jasa WHERE lower(kode) = lower(?)",
+            params![&key],
+            |r| r.get(0),
+        )
+        .map_err(|_| format!("Barang/jasa '{key}' tidak ditemukan."))?;
+
+    if tipe == "Barang" && row.stok.is_none() {
+        return Err("Stok wajib untuk barang (satuan terkecil).".into());
+    }
+    if tipe == "Jasa" && row.stok.is_some() {
+        return Err("Stok harus kosong untuk jasa.".into());
+    }
+
+    let punya_trx = barang_jasa_has_transaksi(&conn, &key)?;
+    if punya_trx && row.satuan_tingkat.is_some() {
+        return Err(
+            "Satuan tidak dapat diubah karena barang/jasa ini sudah memiliki transaksi.".into(),
+        );
+    }
+
+    let ts = now_ts();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let (satuan, harga) = if let Some(ref new_tiers) = row.satuan_tingkat {
+        let tiers = barang_jasa_validate_satuan_tingkat(&tipe, new_tiers)?;
+        let utama = barang_jasa_satuan_terkecil(&tiers)?;
+        (utama.nama.trim().to_string(), utama.harga_jual)
+    } else {
+        let (s, h): (String, i64) = tx
+            .query_row(
+                "SELECT satuan, harga FROM barang_jasa WHERE lower(kode) = lower(?)",
+                params![&key],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(|_| format!("Barang/jasa '{key}' tidak ditemukan."))?;
+        (s, h)
+    };
+
+    let updated = tx
+        .execute(
+            "UPDATE barang_jasa SET nama = ?, satuan = ?, harga = ?, stok = ?, kategori_kode = ?, merek_kode = ?, default_gudang_kode = ?, updated_at = ?
+             WHERE lower(kode) = lower(?)",
+            params![
+                row.nama.trim(),
+                satuan,
+                harga,
+                row.stok,
+                row.kategori_kode
+                    .as_ref()
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty()),
+                row.merek_kode
+                    .as_ref()
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty()),
+                row.default_gudang_kode
+                    .as_ref()
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty()),
+                ts,
+                key
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+
+    if updated == 0 {
+        return Err(format!("Barang/jasa '{key}' tidak ditemukan."));
+    }
+
+    if let Some(ref new_tiers) = row.satuan_tingkat {
+        let tiers = barang_jasa_validate_satuan_tingkat(&tipe, new_tiers)?;
+        tx.execute(
+            "DELETE FROM barang_jasa_satuan WHERE lower(barang_kode) = lower(?)",
+            params![&key],
+        )
+        .map_err(|e| e.to_string())?;
+
+        for t in &tiers {
+            tx.execute(
+                "INSERT INTO barang_jasa_satuan (barang_kode, tingkat, nama, qty_isi, harga_jual, harga_beli, kode_barcode)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)",
+                params![
+                    &key,
+                    t.tingkat,
+                    t.nama.trim(),
+                    t.qty_isi,
+                    t.harga_jual,
+                    t.harga_beli,
+                    t.kode_barcode
+                        .as_ref()
+                        .map(|s| s.trim())
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or("")
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
+    tx.commit().map_err(|e| e.to_string()).map_err(|e| {
+        if e.contains("FOREIGN KEY") {
+            "Kategori, merek, atau gudang rujukan tidak ditemukan.".into()
+        } else {
+            e
+        }
+    })
 }
 
 fn barang_images_dir(db_path: &Path) -> PathBuf {

@@ -6,6 +6,7 @@ import { LoginPage } from "@/pages/LoginPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { BarangJasaPage } from "@/pages/BarangJasaPage";
 import { TambahBarangJasaPage } from "@/pages/TambahBarangJasaPage";
+import { UbahBarangJasaPage } from "@/pages/UbahBarangJasaPage";
 import { KartuStokBarangPage } from "@/pages/KartuStokBarangPage";
 import { BarangStokPerGudangPage } from "@/pages/BarangStokPerGudangPage";
 import { MutasiAntarGudangPage } from "@/pages/MutasiAntarGudangPage";
@@ -74,6 +75,7 @@ export const router = createHashRouter([
       { index: true, element: <DashboardPage /> },
       { path: "profil", element: <ProfilPenggunaPage /> },
       { path: "barang-jasa/tambah", element: <TambahBarangJasaPage /> },
+      { path: "barang-jasa/ubah/:kode", element: <UbahBarangJasaPage /> },
       { path: "barang-jasa/kartu-stok/:kode", element: <KartuStokBarangPage /> },
       { path: "barang-jasa/per-gudang", element: <BarangStokPerGudangPage /> },
       { path: "barang-jasa/mutasi-antar-gudang", element: <MutasiAntarGudangPage /> },

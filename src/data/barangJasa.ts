@@ -46,11 +46,48 @@ export function parseHargaInput(raw: string): number | null {
   return Math.round(n);
 }
 
+/** Kosong → 0; nilai tidak valid → null. */
+export function parseHargaInputOptional(raw: string): number | null {
+  if (raw.trim() === "") return 0;
+  return parseHargaInput(raw);
+}
+
 export function parseQtyIsiInput(raw: string): number | null {
   if (raw.trim() === "") return null;
   const n = Number(raw);
   if (!Number.isInteger(n) || n <= 0) return null;
   return n;
+}
+
+/** Pastikan form barang selalu punya 3 slot tingkat (UI). */
+export function ensureBarangSatuanTiers(tiers: BarangSatuanTingkatForm[]): BarangSatuanTingkatForm[] {
+  const out = [...tiers];
+  while (out.length < 3) {
+    out.push(emptySatuanTingkatForm());
+  }
+  return out.slice(0, 3);
+}
+
+type SatuanPayloadRow = {
+  tingkat: number;
+  nama: string;
+  qtyIsi: number | null;
+  hargaJual: number;
+  hargaBeli: number;
+  kodeBarcode: string | null;
+};
+
+/** Satuan terkecil / utama dari payload (tingkat tertinggi yang ada). */
+export function getSatuanTerkecilFromPayload(satuanTingkat: SatuanPayloadRow[]): SatuanPayloadRow {
+  return [...satuanTingkat].sort((a, b) => b.tingkat - a.tingkat)[0]!;
+}
+
+/** Indeks kolom form untuk field stok (satuan terkecil yang dipakai). */
+export function stokFormTierIndex(tiers: BarangSatuanTingkatForm[]): number {
+  const form = ensureBarangSatuanTiers(tiers);
+  if (form[2]?.nama.trim()) return 2;
+  if (form[1]?.nama.trim()) return 1;
+  return 0;
 }
 
 /** Validasi form satuan → payload untuk API. */
@@ -72,10 +109,10 @@ export function buildSatuanTingkatPayload(
   if (tipe === "Jasa") {
     const t = tiers[0];
     if (!t?.nama.trim()) return { ok: false, error: "Nama satuan wajib diisi." };
-    const hargaJual = parseHargaInput(t.hargaJual);
-    const hargaBeli = parseHargaInput(t.hargaBeli);
+    const hargaJual = parseHargaInputOptional(t.hargaJual);
+    const hargaBeli = parseHargaInputOptional(t.hargaBeli);
     if (hargaJual == null || hargaBeli == null) {
-      return { ok: false, error: "Harga jual dan harga beli harus valid." };
+      return { ok: false, error: "Harga jual atau harga beli tidak valid." };
     }
     return {
       ok: true,
@@ -92,49 +129,152 @@ export function buildSatuanTingkatPayload(
     };
   }
 
-  if (tiers.length < 3) {
-    return { ok: false, error: "Lengkapi ketiga tingkat satuan." };
+  const formTiers = ensureBarangSatuanTiers(tiers);
+  const t1 = formTiers[0]!;
+  const nama1 = t1.nama.trim();
+  if (!nama1) {
+    return { ok: false, error: "Nama satuan tingkat 1 wajib diisi." };
   }
 
-  const result: Array<{
+  const harga1 = parseHargaInputOptional(t1.hargaJual);
+  const beli1 = parseHargaInputOptional(t1.hargaBeli);
+  if (harga1 == null || beli1 == null) {
+    return { ok: false, error: "Harga tingkat 1 tidak valid." };
+  }
+
+  const result: SatuanPayloadRow[] = [
+    {
+      tingkat: 1,
+      nama: nama1,
+      qtyIsi: null,
+      hargaJual: harga1,
+      hargaBeli: beli1,
+      kodeBarcode: normalizeBarcode(t1.kodeBarcode),
+    },
+  ];
+
+  const nama2 = formTiers[1]?.nama.trim() ?? "";
+  if (nama2) {
+    const qty1 = parseQtyIsiInput(formTiers[0]!.qtyIsi);
+    if (qty1 == null) {
+      return { ok: false, error: "Isi konversi ke satuan 2 wajib diisi (bilangan bulat > 0)." };
+    }
+    result[0]!.qtyIsi = qty1;
+
+    const harga2 = parseHargaInputOptional(formTiers[1]!.hargaJual);
+    const beli2 = parseHargaInputOptional(formTiers[1]!.hargaBeli);
+    if (harga2 == null || beli2 == null) {
+      return { ok: false, error: "Harga tingkat 2 tidak valid." };
+    }
+    result.push({
+      tingkat: 2,
+      nama: nama2,
+      qtyIsi: null,
+      hargaJual: harga2,
+      hargaBeli: beli2,
+      kodeBarcode: normalizeBarcode(formTiers[1]!.kodeBarcode),
+    });
+
+    const nama3 = formTiers[2]?.nama.trim() ?? "";
+    if (nama3) {
+      const qty2 = parseQtyIsiInput(formTiers[1]!.qtyIsi);
+      if (qty2 == null) {
+        return { ok: false, error: "Isi konversi ke satuan 3 wajib diisi (bilangan bulat > 0)." };
+      }
+      result[1]!.qtyIsi = qty2;
+
+      const harga3 = parseHargaInputOptional(formTiers[2]!.hargaJual);
+      const beli3 = parseHargaInputOptional(formTiers[2]!.hargaBeli);
+      if (harga3 == null || beli3 == null) {
+        return { ok: false, error: "Harga tingkat 3 tidak valid." };
+      }
+      result.push({
+        tingkat: 3,
+        nama: nama3,
+        qtyIsi: null,
+        hargaJual: harga3,
+        hargaBeli: beli3,
+        kodeBarcode: normalizeBarcode(formTiers[2]!.kodeBarcode),
+      });
+    }
+  }
+
+  return { ok: true, satuanTingkat: result };
+}
+
+export type BarangJasaUpdatePayload = {
+  nama: string;
+  stok?: number | null;
+  kategoriKode?: string | null;
+  merekKode?: string | null;
+  defaultGudangKode?: string | null;
+  /** Diabaikan jika item sudah punya transaksi (satuan dikunci). */
+  satuanTingkat?: Array<{
     tingkat: number;
     nama: string;
     qtyIsi: number | null;
     hargaJual: number;
     hargaBeli: number;
     kodeBarcode: string | null;
-  }> = [];
+  }>;
+};
 
-  for (let i = 0; i < 3; i++) {
-    const t = tiers[i]!;
-    const tingkat = i + 1;
-    if (!t.nama.trim()) {
-      return { ok: false, error: `Nama satuan tingkat ${tingkat} wajib diisi.` };
+/** Konversi baris DB → form satuan (termasuk data lama tanpa tingkat). */
+export function satuanTingkatRowsToForm(
+  tiers: BarangSatuanTingkatRow[] | undefined,
+  tipe: "Barang" | "Jasa",
+  fallbackSatuan: string,
+  fallbackHarga: number,
+): BarangSatuanTingkatForm[] {
+  if (tiers && tiers.length > 0) {
+    const sorted = [...tiers].sort((a, b) => a.tingkat - b.tingkat);
+    const forms = defaultSatuanTingkatBarang();
+    // Data migrasi: satu satuan di tingkat 3 → tampilkan di tingkat 1 agar cukup isi satu kolom.
+    if (sorted.length === 1 && sorted[0]!.tingkat === 3) {
+      const t = sorted[0]!;
+      forms[0] = {
+        nama: t.nama,
+        qtyIsi: "",
+        hargaJual: String(t.hargaJual),
+        hargaBeli: String(t.hargaBeli),
+        kodeBarcode: t.kodeBarcode ?? "",
+      };
+      return forms;
     }
-    const hargaJual = parseHargaInput(t.hargaJual);
-    const hargaBeli = parseHargaInput(t.hargaBeli);
-    if (hargaJual == null || hargaBeli == null) {
-      return { ok: false, error: `Harga tingkat ${tingkat} tidak valid.` };
-    }
-    let qtyIsi: number | null = null;
-    if (tingkat < 3) {
-      const q = parseQtyIsiInput(t.qtyIsi);
-      if (q == null) {
-        return { ok: false, error: `Isi konversi tingkat ${tingkat} wajib bilangan bulat > 0.` };
+    for (const t of sorted) {
+      const idx = t.tingkat - 1;
+      if (idx >= 0 && idx < 3) {
+        forms[idx] = {
+          nama: t.nama,
+          qtyIsi: t.qtyIsi != null ? String(t.qtyIsi) : "",
+          hargaJual: String(t.hargaJual),
+          hargaBeli: String(t.hargaBeli),
+          kodeBarcode: t.kodeBarcode ?? "",
+        };
       }
-      qtyIsi = q;
     }
-    result.push({
-      tingkat,
-      nama: t.nama.trim(),
-      qtyIsi,
-      hargaJual,
-      hargaBeli,
-      kodeBarcode: normalizeBarcode(t.kodeBarcode),
-    });
+    return forms;
   }
-
-  return { ok: true, satuanTingkat: result };
+  if (tipe === "Jasa") {
+    return [
+      {
+        nama: fallbackSatuan,
+        qtyIsi: "",
+        hargaJual: String(fallbackHarga),
+        hargaBeli: "",
+        kodeBarcode: "",
+      },
+    ];
+  }
+  const forms = defaultSatuanTingkatBarang();
+  forms[2] = {
+    nama: fallbackSatuan,
+    qtyIsi: "",
+    hargaJual: String(fallbackHarga),
+    hargaBeli: "",
+    kodeBarcode: "",
+  };
+  return forms;
 }
 
 export function formatSatuanTingkatRingkasan(

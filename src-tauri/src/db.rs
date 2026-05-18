@@ -527,6 +527,12 @@ fn migrate_pembelian_line_columns(conn: &Connection) -> rusqlite::Result<()> {
             [],
         )?;
     }
+    if !cols.iter().any(|c| c.eq_ignore_ascii_case("satuan_tingkat")) {
+        conn.execute(
+            "ALTER TABLE pembelian_line ADD COLUMN satuan_tingkat INTEGER NOT NULL DEFAULT 1",
+            [],
+        )?;
+    }
     Ok(())
 }
 
@@ -585,6 +591,12 @@ fn migrate_penjualan_line_columns(conn: &Connection) -> rusqlite::Result<()> {
     if !cols.iter().any(|c| c.eq_ignore_ascii_case("diskon")) {
         conn.execute(
             "ALTER TABLE penjualan_line ADD COLUMN diskon INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    if !cols.iter().any(|c| c.eq_ignore_ascii_case("satuan_tingkat")) {
+        conn.execute(
+            "ALTER TABLE penjualan_line ADD COLUMN satuan_tingkat INTEGER NOT NULL DEFAULT 1",
             [],
         )?;
     }

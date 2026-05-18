@@ -320,6 +320,58 @@ export function getSatuanStokMeta(barang: Pick<BarangJasaRow, "satuan" | "satuan
 }
 
 /** Format kuantitas mutasi/saldo dengan label satuan. */
+export type SatuanPilihanOption = {
+  tingkat: number;
+  nama: string;
+  hargaJual: number;
+};
+
+/** Opsi satuan yang bisa dipilih di baris faktur pembelian/penjualan. */
+export function getSatuanPilihanOptions(barang: Pick<BarangJasaRow, "satuan" | "satuanTingkat" | "harga">): SatuanPilihanOption[] {
+  if (barang.satuanTingkat?.length) {
+    return [...barang.satuanTingkat]
+      .sort((a, b) => a.tingkat - b.tingkat)
+      .map((t) => ({
+        tingkat: t.tingkat,
+        nama: t.nama,
+        hargaJual: t.hargaJual,
+      }));
+  }
+  return [{ tingkat: 1, nama: barang.satuan, hargaJual: barang.harga }];
+}
+
+export function getDefaultSatuanPilihan(barang: Pick<BarangJasaRow, "satuan" | "satuanTingkat" | "harga">): SatuanPilihanOption {
+  const opts = getSatuanPilihanOptions(barang);
+  return opts[opts.length - 1]!;
+}
+
+export function findSatuanPilihan(
+  barang: Pick<BarangJasaRow, "satuan" | "satuanTingkat" | "harga">,
+  tingkat: number,
+): SatuanPilihanOption | undefined {
+  return getSatuanPilihanOptions(barang).find((o) => o.tingkat === tingkat);
+}
+
+/** Konversi qty dari tingkat terpilih ke satuan terkecil (untuk cek stok). */
+export function qtyToSatuanTerkecil(
+  barang: Pick<BarangJasaRow, "satuanTingkat">,
+  fromTingkat: number,
+  qty: number,
+): number {
+  const tiers = barang.satuanTingkat;
+  if (!tiers?.length) return qty;
+  const sorted = [...tiers].sort((a, b) => a.tingkat - b.tingkat);
+  const maxTingkat = sorted[sorted.length - 1]!.tingkat;
+  let result = qty;
+  for (const t of sorted) {
+    if (t.tingkat >= fromTingkat && t.tingkat < maxTingkat) {
+      const mul = t.qtyIsi ?? 1;
+      result *= mul > 0 ? mul : 1;
+    }
+  }
+  return result;
+}
+
 export function formatQtyDenganSatuan(
   qty: number,
   satuan: string,

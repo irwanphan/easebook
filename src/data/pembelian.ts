@@ -26,10 +26,20 @@ export type PembelianDetailLine = {
   barangKode: string;
   barangNama: string;
   qty: number;
+  satuanTingkat: number;
+  satuanNama: string;
   hargaSatuan: number;
   /** Diskon nominal per satuan (Rp). */
   diskon: number;
   subtotal: number;
+};
+
+export type PembelianLineInput = {
+  barangKode: string;
+  qty: number;
+  satuanTingkat: number;
+  hargaSatuan: number;
+  diskon: number;
 };
 
 /** Subtotal baris: qty × (harga satuan − diskon per satuan). */

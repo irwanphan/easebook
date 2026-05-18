@@ -11,6 +11,7 @@ export type PenjualanListRow = {
 export type PenjualanLineInput = {
   barangKode: string;
   qty: number;
+  satuanTingkat: number;
   hargaSatuan: number;
   /** Diskon nominal per satuan (Rp). */
   diskon: number;

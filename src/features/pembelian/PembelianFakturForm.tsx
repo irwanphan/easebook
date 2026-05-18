@@ -14,7 +14,9 @@ import {
 } from "@/data/pembelian";
 import { loadPengaturanTransaksi } from "@/features/pengaturan/pengaturanTransaksiStorage";
 import type { AkunKeuanganRow } from "@/data/keuangan";
+import { FakturLineSatuanSelect } from "@/features/barang-jasa/FakturLineSatuanSelect";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
+import { getDefaultSatuanPilihan } from "@/data/barangJasa";
 import { useGudang } from "@/features/gudang/GudangContext";
 import { usePemasok } from "@/features/pemasok/PemasokContext";
 import { tauriErrorMessage } from "@/lib/tauriError";
@@ -42,12 +44,13 @@ type LineDraft = {
   id: string;
   barangKode: string;
   qty: number;
+  satuanTingkat: number;
   hargaSatuan: number;
   diskon: number;
 };
 
 function newLine(): LineDraft {
-  return { id: crypto.randomUUID(), barangKode: "", qty: 1, hargaSatuan: 0, diskon: 0 };
+  return { id: crypto.randomUUID(), barangKode: "", qty: 1, satuanTingkat: 1, hargaSatuan: 0, diskon: 0 };
 }
 
 export type PembelianFakturFormProps = {
@@ -137,6 +140,7 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
                 id: crypto.randomUUID(),
                 barangKode: l.barangKode,
                 qty: l.qty,
+                satuanTingkat: l.satuanTingkat ?? 1,
                 hargaSatuan: l.hargaSatuan,
                 diskon: l.diskon ?? 0,
               }))
@@ -163,16 +167,23 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
           const raw = patch.barangKode.trim();
           if (!raw) {
             next.barangKode = "";
+            next.satuanTingkat = 1;
             next.hargaSatuan = 0;
             next.diskon = 0;
           } else {
             const b = barangByKode.get(raw.toLowerCase());
             if (b) {
+              const def = getDefaultSatuanPilihan(b);
               next.barangKode = b.kode;
-              next.hargaSatuan = b.harga;
+              next.satuanTingkat = def.tingkat;
+              next.hargaSatuan = def.hargaJual;
               if (next.qty < 1) next.qty = 1;
             }
           }
+        }
+        if (patch.satuanTingkat !== undefined && patch.hargaSatuan !== undefined) {
+          next.satuanTingkat = patch.satuanTingkat;
+          next.hargaSatuan = patch.hargaSatuan;
         }
         const harga = Math.max(0, next.hargaSatuan);
         next.diskon = Math.min(Math.max(0, Math.round(next.diskon)), harga);
@@ -238,6 +249,7 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
       .map((r) => ({
         barangKode: r.barangKode.trim(),
         qty: Math.floor(r.qty),
+        satuanTingkat: r.satuanTingkat,
         hargaSatuan: Math.round(r.hargaSatuan),
         diskon: Math.round(r.diskon),
       }));
@@ -463,11 +475,12 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
           </div>
 
           <div className="mt-6 overflow-x-auto rounded-xl border border-zinc-100">
-            <table className="w-full min-w-[760px] text-left text-sm">
+            <table className="w-full min-w-[860px] text-left text-sm">
               <thead>
                 <tr className="border-b border-zinc-100 bg-zinc-50/90 text-xs font-semibold uppercase tracking-wide text-zinc-500">
                   <th className="px-3 py-2.5">Barang</th>
                   <th className="w-24 px-3 py-2.5">Qty</th>
+                  <th className="w-28 px-3 py-2.5">Satuan</th>
                   <th className="w-36 px-3 py-2.5">Harga satuan</th>
                   <th className="w-32 px-3 py-2.5">Diskon/satuan</th>
                   <th className="w-36 px-3 py-2.5 text-right">Subtotal</th>
@@ -478,6 +491,9 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
                 {lines.map((row) => {
                   const sub = pembelianLineSubtotal(row.qty, row.hargaSatuan, row.diskon);
                   const maxDiskon = Math.max(0, row.hargaSatuan);
+                  const barang = row.barangKode
+                    ? barangByKode.get(row.barangKode.toLowerCase())
+                    : undefined;
                   return (
                     <tr key={row.id} className="bg-white">
                       <td className="px-3 py-2 align-top">
@@ -506,6 +522,16 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
                           }
                           className={`${inputClass} mt-0`}
                           disabled={hydrating}
+                        />
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <FakturLineSatuanSelect
+                          barang={barang}
+                          tingkat={row.satuanTingkat}
+                          onChange={(tingkat, hargaJual) =>
+                            setLine(row.id, { satuanTingkat: tingkat, hargaSatuan: hargaJual })
+                          }
+                          disabled={hydrating || !barang}
                         />
                       </td>
                       <td className="px-3 py-2 align-top">

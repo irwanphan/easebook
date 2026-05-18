@@ -12,7 +12,9 @@ import {
 } from "@/data/penjualan";
 import { loadPengaturanTransaksi } from "@/features/pengaturan/pengaturanTransaksiStorage";
 import type { AkunKeuanganRow } from "@/data/keuangan";
+import { FakturLineSatuanSelect } from "@/features/barang-jasa/FakturLineSatuanSelect";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
+import { getDefaultSatuanPilihan, getSatuanStokBarang, qtyToSatuanTerkecil } from "@/data/barangJasa";
 import { useGudang } from "@/features/gudang/GudangContext";
 import { usePelanggan } from "@/features/pelanggan/PelangganContext";
 import { tauriErrorMessage } from "@/lib/tauriError";
@@ -40,13 +42,22 @@ type LineDraft = {
   id: string;
   barangKode: string;
   qty: number;
+  satuanTingkat: number;
   hargaSatuan: number;
   diskon: number;
   catatan: string;
 };
 
 function newLine(): LineDraft {
-  return { id: crypto.randomUUID(), barangKode: "", qty: 1, hargaSatuan: 0, diskon: 0, catatan: "" };
+  return {
+    id: crypto.randomUUID(),
+    barangKode: "",
+    qty: 1,
+    satuanTingkat: 1,
+    hargaSatuan: 0,
+    diskon: 0,
+    catatan: "",
+  };
 }
 
 export type PenjualanFakturFormProps = {
@@ -112,15 +123,22 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
           const raw = patch.barangKode.trim();
           if (!raw) {
             next.barangKode = "";
+            next.satuanTingkat = 1;
             next.hargaSatuan = 0;
           } else {
             const b = barangByKode.get(raw.toLowerCase());
             if (b) {
+              const def = getDefaultSatuanPilihan(b);
               next.barangKode = b.kode;
-              next.hargaSatuan = b.harga;
+              next.satuanTingkat = def.tingkat;
+              next.hargaSatuan = def.hargaJual;
               if (next.qty < 1) next.qty = 1;
             }
           }
+        }
+        if (patch.satuanTingkat !== undefined && patch.hargaSatuan !== undefined) {
+          next.satuanTingkat = patch.satuanTingkat;
+          next.hargaSatuan = patch.hargaSatuan;
         }
         return next;
       }),
@@ -184,6 +202,7 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
       .map((r) => ({
         barangKode: r.barangKode.trim(),
         qty: Math.floor(r.qty),
+        satuanTingkat: r.satuanTingkat,
         hargaSatuan: Math.round(r.hargaSatuan),
         diskon: Math.round(r.diskon),
         catatan: r.catatan.trim(),
@@ -212,9 +231,15 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
         return;
       }
       const b = barangByKode.get(ln.barangKode.toLowerCase());
-      if (b?.tipe === "Barang" && (b.stok ?? 0) < ln.qty) {
-        setError(`Stok ${b.kode} tidak cukup (tersedia ${b.stok ?? 0}, diminta ${ln.qty}).`);
-        return;
+      if (b?.tipe === "Barang") {
+        const qtyStok = qtyToSatuanTerkecil(b, ln.satuanTingkat, ln.qty);
+        const satuanStok = getSatuanStokBarang(b);
+        if ((b.stok ?? 0) < qtyStok) {
+          setError(
+            `Stok ${b.kode} tidak cukup (tersedia ${b.stok ?? 0} ${satuanStok}, diminta ${ln.qty} setara ${qtyStok} ${satuanStok}).`,
+          );
+          return;
+        }
       }
     }
 
@@ -404,11 +429,12 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
           </div>
 
           <div className="mt-6 overflow-x-auto rounded-xl border border-zinc-100">
-            <table className="w-full min-w-[980px] text-left text-sm">
+            <table className="w-full min-w-[1080px] text-left text-sm">
               <thead>
                 <tr className="border-b border-zinc-100 bg-zinc-50/90 text-xs font-semibold uppercase tracking-wide text-zinc-500">
                   <th className="px-3 py-2.5">Barang / jasa</th>
                   <th className="w-24 px-3 py-2.5">Qty</th>
+                  <th className="w-28 px-3 py-2.5">Satuan</th>
                   <th className="w-32 px-3 py-2.5">Harga satuan</th>
                   <th className="w-28 px-3 py-2.5">Diskon/sat</th>
                   <th className="min-w-[160px] px-3 py-2.5">Catatan baris</th>
@@ -439,7 +465,9 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                           ))}
                         </select>
                         {b?.tipe === "Barang" ? (
-                          <p className="mt-1 text-xs text-zinc-500">Stok tersedia: {b.stok ?? 0}</p>
+                          <p className="mt-1 text-xs text-zinc-500">
+                            Stok: {b.stok ?? 0} {getSatuanStokBarang(b)}
+                          </p>
                         ) : null}
                       </td>
                       <td className="px-3 py-2 align-top">
@@ -453,6 +481,16 @@ export function PenjualanFakturForm({ cancelHref, onSuccess }: PenjualanFakturFo
                           }
                           className={`${inputClass} mt-0`}
                           disabled={submitting}
+                        />
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <FakturLineSatuanSelect
+                          barang={b}
+                          tingkat={row.satuanTingkat}
+                          onChange={(tingkat, hargaJual) =>
+                            setLine(row.id, { satuanTingkat: tingkat, hargaSatuan: hargaJual })
+                          }
+                          disabled={submitting || !b}
                         />
                       </td>
                       <td className="px-3 py-2 align-top">

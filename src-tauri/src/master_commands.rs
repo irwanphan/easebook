@@ -409,6 +409,121 @@ fn barang_jasa_satuan_terkecil<'a>(
         .ok_or_else(|| "Satuan utama tidak ditemukan.".to_string())
 }
 
+#[derive(Debug, Clone)]
+struct BarangSatuanTierQty {
+    tingkat: u8,
+    qty_isi: Option<i64>,
+}
+
+fn barang_load_satuan_tiers(conn: &Connection, kode_b: &str) -> Result<Vec<BarangSatuanTierQty>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT tingkat, qty_isi FROM barang_jasa_satuan
+             WHERE lower(barang_kode) = lower(?)
+             ORDER BY tingkat ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![kode_b], |r| {
+            Ok(BarangSatuanTierQty {
+                tingkat: r.get(0)?,
+                qty_isi: r.get(1)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    let mut tiers: Vec<BarangSatuanTierQty> = Vec::new();
+    for row in rows {
+        tiers.push(row.map_err(|e| e.to_string())?);
+    }
+    if tiers.is_empty() {
+        let _: String = conn
+            .query_row(
+                "SELECT satuan FROM barang_jasa WHERE lower(kode) = lower(?)",
+                params![kode_b],
+                |r| r.get(0),
+            )
+            .map_err(|_| format!("Barang '{kode_b}' tidak ditemukan."))?;
+        tiers.push(BarangSatuanTierQty {
+            tingkat: 1,
+            qty_isi: None,
+        });
+    }
+    Ok(tiers)
+}
+
+fn barang_qty_to_smallest(
+    tiers: &[BarangSatuanTierQty],
+    from_tingkat: u8,
+    qty: i64,
+) -> Result<i64, String> {
+    if qty <= 0 {
+        return Err("Jumlah harus lebih dari 0.".into());
+    }
+    if tiers.is_empty() {
+        return Err("Satuan barang tidak ditemukan.".into());
+    }
+    let max_tingkat = tiers
+        .iter()
+        .map(|t| t.tingkat)
+        .max()
+        .ok_or_else(|| "Satuan barang tidak valid.".to_string())?;
+    if from_tingkat < 1 || from_tingkat > max_tingkat {
+        return Err(format!(
+            "Tingkat satuan {from_tingkat} tidak tersedia untuk barang ini (1–{max_tingkat})."
+        ));
+    }
+    if !tiers.iter().any(|t| t.tingkat == from_tingkat) {
+        return Err(format!("Satuan tingkat {from_tingkat} tidak terdaftar untuk barang ini."));
+    }
+    let mut result = qty;
+    for t in tiers {
+        if t.tingkat >= from_tingkat && t.tingkat < max_tingkat {
+            let mul = t.qty_isi.ok_or_else(|| {
+                format!(
+                    "Isi konversi tingkat {} belum diatur; tidak bisa menghitung stok.",
+                    t.tingkat
+                )
+            })?;
+            if mul <= 0 {
+                return Err(format!("Isi konversi tingkat {} tidak valid.", t.tingkat));
+            }
+            result = result
+                .checked_mul(mul)
+                .ok_or_else(|| "Jumlah stok melimpahi batas.".to_string())?;
+        }
+    }
+    Ok(result)
+}
+
+fn barang_line_qty_to_smallest_conn(
+    conn: &Connection,
+    kode_b: &str,
+    qty: i64,
+    satuan_tingkat: u8,
+) -> Result<i64, String> {
+    let tiers = barang_load_satuan_tiers(conn, kode_b)?;
+    barang_qty_to_smallest(&tiers, satuan_tingkat, qty)
+}
+
+fn barang_satuan_nama(conn: &Connection, kode_b: &str, tingkat: u8) -> Result<String, String> {
+    if let Ok(nama) = conn.query_row(
+        "SELECT nama FROM barang_jasa_satuan WHERE lower(barang_kode) = lower(?) AND tingkat = ?",
+        params![kode_b, tingkat],
+        |r| r.get::<_, String>(0),
+    ) {
+        let n = nama.trim().to_string();
+        if !n.is_empty() {
+            return Ok(n);
+        }
+    }
+    conn.query_row(
+        "SELECT satuan FROM barang_jasa WHERE lower(kode) = lower(?)",
+        params![kode_b],
+        |r| r.get(0),
+    )
+    .map_err(|_| format!("Satuan barang '{kode_b}' tidak ditemukan."))
+}
+
 fn barang_jasa_has_transaksi(conn: &rusqlite::Connection, kode: &str) -> Result<bool, String> {
     let count: i64 = conn
         .query_row(
@@ -1699,6 +1814,10 @@ pub fn pembelian_list(state: State<DbState>) -> Result<Vec<PembelianListRow>, St
     })
 }
 
+fn default_satuan_tingkat_line() -> u8 {
+    1
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PembelianLineInput {
@@ -1707,6 +1826,8 @@ pub struct PembelianLineInput {
     pub harga_satuan: i64,
     #[serde(default)]
     pub diskon: i64,
+    #[serde(default = "default_satuan_tingkat_line")]
+    pub satuan_tingkat: u8,
 }
 
 fn pembelian_line_subtotal(qty: i64, harga_satuan: i64, diskon: i64) -> Result<i64, String> {
@@ -1931,6 +2052,7 @@ fn pembelian_tx_apply_barang_stok(
     nomor: &str,
     kode_b: &str,
     qty: i64,
+    satuan_tingkat: u8,
     gudang_kode: &str,
     tanggal_transaksi: &str,
     waktu_mutasi: i64,
@@ -1950,6 +2072,7 @@ fn pembelian_tx_apply_barang_stok(
     if tipe != "Barang" {
         return Ok(());
     }
+    let qty_stok = barang_line_qty_to_smallest_conn(&*tx, kode_b, qty, satuan_tingkat)?;
     let prev: i64 = tx
         .query_row(
             "SELECT COALESCE(stok, 0) FROM barang_jasa WHERE lower(kode) = lower(?)",
@@ -1958,7 +2081,7 @@ fn pembelian_tx_apply_barang_stok(
         )
         .map_err(|e| e.to_string())?;
     let next = prev
-        .checked_add(qty)
+        .checked_add(qty_stok)
         .ok_or_else(|| "Stok melimpahi batas.".to_string())?;
     tx.execute(
         "UPDATE barang_jasa SET stok = ?, updated_at = ? WHERE lower(kode) = lower(?)",
@@ -1974,7 +2097,7 @@ fn pembelian_tx_apply_barang_stok(
             kode_b,
             gudang_kode,
             nomor,
-            qty,
+            qty_stok,
             next
         ],
     )
@@ -1983,7 +2106,13 @@ fn pembelian_tx_apply_barang_stok(
 }
 
 /// Kurangi stok (balikkan dampak pembelian) untuk baris bertipe Barang.
-fn pembelian_tx_revert_barang_stok(tx: &Transaction<'_>, kode_b: &str, qty: i64, ts: i64) -> Result<(), String> {
+fn pembelian_tx_revert_barang_stok(
+    tx: &Transaction<'_>,
+    kode_b: &str,
+    qty: i64,
+    satuan_tingkat: u8,
+    ts: i64,
+) -> Result<(), String> {
     let tipe: String = match tx.query_row(
         "SELECT tipe FROM barang_jasa WHERE lower(kode) = lower(?)",
         params![kode_b],
@@ -1996,6 +2125,7 @@ fn pembelian_tx_revert_barang_stok(tx: &Transaction<'_>, kode_b: &str, qty: i64,
     if tipe != "Barang" {
         return Ok(());
     }
+    let qty_stok = barang_line_qty_to_smallest_conn(&*tx, kode_b, qty, satuan_tingkat)?;
     let cur: i64 = tx
         .query_row(
             "SELECT COALESCE(stok, 0) FROM barang_jasa WHERE lower(kode) = lower(?)",
@@ -2003,13 +2133,13 @@ fn pembelian_tx_revert_barang_stok(tx: &Transaction<'_>, kode_b: &str, qty: i64,
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
-    if cur < qty {
+    if cur < qty_stok {
         return Err(format!(
             "Stok tidak cukup untuk mengoreksi faktur ({}). Stok saat ini {} unit; butuh mengurangi {} dari faktur lama.",
-            kode_b, cur, qty
+            kode_b, cur, qty_stok
         ));
     }
-    let next = cur - qty;
+    let next = cur - qty_stok;
     tx.execute(
         "UPDATE barang_jasa SET stok = ?, updated_at = ? WHERE lower(kode) = lower(?)",
         params![next, ts, kode_b],
@@ -2064,8 +2194,16 @@ pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) 
         let kode_b = line.barang_kode.trim();
         let sub = pembelian_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
         tx.execute(
-            "INSERT INTO pembelian_line (nomor, barang_kode, qty, harga_satuan, diskon, subtotal) VALUES (?, ?, ?, ?, ?, ?)",
-            params![&nomor, kode_b, line.qty, line.harga_satuan, line.diskon, sub],
+            "INSERT INTO pembelian_line (nomor, barang_kode, qty, satuan_tingkat, harga_satuan, diskon, subtotal) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &nomor,
+                kode_b,
+                line.qty,
+                line.satuan_tingkat,
+                line.harga_satuan,
+                line.diskon,
+                sub
+            ],
         )
         .map_err(|e| {
             if e.to_string().contains("FOREIGN KEY") {
@@ -2074,7 +2212,17 @@ pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) 
                 e.to_string()
             }
         })?;
-        pembelian_tx_apply_barang_stok(&tx, &nomor, kode_b, line.qty, gudang_kode, &tanggal_str, ts, ts)?;
+        pembelian_tx_apply_barang_stok(
+            &tx,
+            &nomor,
+            kode_b,
+            line.qty,
+            line.satuan_tingkat,
+            gudang_kode,
+            &tanggal_str,
+            ts,
+            ts,
+        )?;
     }
 
     pembelian_tx_post_jurnal(
@@ -2097,6 +2245,8 @@ pub struct PembelianDetailLine {
     pub barang_kode: String,
     pub barang_nama: String,
     pub qty: i64,
+    pub satuan_tingkat: u8,
+    pub satuan_nama: String,
     pub harga_satuan: i64,
     pub diskon: i64,
     pub subtotal: i64,
@@ -2169,7 +2319,7 @@ pub fn pembelian_detail(state: State<DbState>, nomor: String) -> Result<Pembelia
 
     let mut stmt = conn
         .prepare(
-            "SELECT l.barang_kode, b.nama, l.qty, l.harga_satuan, COALESCE(l.diskon, 0), l.subtotal
+            "SELECT l.barang_kode, b.nama, l.qty, l.satuan_tingkat, l.harga_satuan, COALESCE(l.diskon, 0), l.subtotal
              FROM pembelian_line l
              JOIN barang_jasa b ON lower(b.kode) = lower(l.barang_kode)
              WHERE l.nomor = ?
@@ -2178,19 +2328,32 @@ pub fn pembelian_detail(state: State<DbState>, nomor: String) -> Result<Pembelia
         .map_err(|e| e.to_string())?;
     let line_rows = stmt
         .query_map(params![n], |r| {
-            Ok(PembelianDetailLine {
-                barang_kode: r.get(0)?,
-                barang_nama: r.get(1)?,
-                qty: r.get(2)?,
-                harga_satuan: r.get(3)?,
-                diskon: r.get(4)?,
-                subtotal: r.get(5)?,
-            })
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, u8>(3)?,
+                r.get::<_, i64>(4)?,
+                r.get::<_, i64>(5)?,
+                r.get::<_, i64>(6)?,
+            ))
         })
         .map_err(|e| e.to_string())?;
     let mut lines = Vec::new();
     for lr in line_rows {
-        lines.push(lr.map_err(|e| e.to_string())?);
+        let (barang_kode, barang_nama, qty, satuan_tingkat, harga_satuan, diskon, subtotal) =
+            lr.map_err(|e| e.to_string())?;
+        let satuan_nama = barang_satuan_nama(&conn, &barang_kode, satuan_tingkat)?;
+        lines.push(PembelianDetailLine {
+            barang_kode,
+            barang_nama,
+            qty,
+            satuan_tingkat,
+            satuan_nama,
+            harga_satuan,
+            diskon,
+            subtotal,
+        });
     }
     detail.subtotal_barang = lines.iter().map(|l| l.subtotal).sum();
     detail.lines = lines;
@@ -2232,13 +2395,15 @@ pub fn pembelian_update(
         return Err("Faktur pembelian tidak ditemukan.".into());
     }
 
-    let mut old_lines: Vec<(String, i64)> = Vec::new();
+    let mut old_lines: Vec<(String, i64, u8)> = Vec::new();
     {
         let mut stmt = tx
-            .prepare("SELECT barang_kode, qty FROM pembelian_line WHERE nomor = ?")
+            .prepare("SELECT barang_kode, qty, satuan_tingkat FROM pembelian_line WHERE nomor = ?")
             .map_err(|e| e.to_string())?;
         let rows = stmt
-            .query_map(params![nomor_trim], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+            .query_map(params![nomor_trim], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, u8>(2)?))
+            })
             .map_err(|e| e.to_string())?;
         for row in rows {
             old_lines.push(row.map_err(|e| e.to_string())?);
@@ -2251,8 +2416,8 @@ pub fn pembelian_update(
     )
     .map_err(|e| e.to_string())?;
 
-    for (kode_b, qty) in &old_lines {
-        pembelian_tx_revert_barang_stok(&tx, kode_b.trim(), *qty, ts)?;
+    for (kode_b, qty, satuan_tingkat) in &old_lines {
+        pembelian_tx_revert_barang_stok(&tx, kode_b.trim(), *qty, *satuan_tingkat, ts)?;
     }
 
     tx.execute(
@@ -2289,8 +2454,16 @@ pub fn pembelian_update(
         let kode_b = line.barang_kode.trim();
         let sub = pembelian_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
         tx.execute(
-            "INSERT INTO pembelian_line (nomor, barang_kode, qty, harga_satuan, diskon, subtotal) VALUES (?, ?, ?, ?, ?, ?)",
-            params![nomor_trim, kode_b, line.qty, line.harga_satuan, line.diskon, sub],
+            "INSERT INTO pembelian_line (nomor, barang_kode, qty, satuan_tingkat, harga_satuan, diskon, subtotal) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![
+                nomor_trim,
+                kode_b,
+                line.qty,
+                line.satuan_tingkat,
+                line.harga_satuan,
+                line.diskon,
+                sub
+            ],
         )
         .map_err(|e| {
             if e.to_string().contains("FOREIGN KEY") {
@@ -2299,7 +2472,17 @@ pub fn pembelian_update(
                 e.to_string()
             }
         })?;
-        pembelian_tx_apply_barang_stok(&tx, nomor_trim, kode_b, line.qty, gudang_kode, &tanggal_str, ts, ts)?;
+        pembelian_tx_apply_barang_stok(
+            &tx,
+            nomor_trim,
+            kode_b,
+            line.qty,
+            line.satuan_tingkat,
+            gudang_kode,
+            &tanggal_str,
+            ts,
+            ts,
+        )?;
     }
 
     pembelian_tx_post_jurnal(
@@ -2337,6 +2520,8 @@ pub struct PenjualanLineInput {
     pub harga_satuan: i64,
     #[serde(default)]
     pub diskon: i64,
+    #[serde(default = "default_satuan_tingkat_line")]
+    pub satuan_tingkat: u8,
     pub catatan: String,
 }
 
@@ -2488,6 +2673,7 @@ fn penjualan_tx_apply_barang_stok(
     nomor: &str,
     kode_b: &str,
     qty: i64,
+    satuan_tingkat: u8,
     gudang_kode: &str,
     tanggal_transaksi: &str,
     catatan: &str,
@@ -2508,6 +2694,11 @@ fn penjualan_tx_apply_barang_stok(
     if tipe != "Barang" {
         return Ok(());
     }
+    let qty_stok = barang_line_qty_to_smallest_conn(&*tx, kode_b, qty, satuan_tingkat)?;
+    let tiers = barang_load_satuan_tiers(&*tx, kode_b)?;
+    let max_tingkat = tiers.iter().map(|t| t.tingkat).max().unwrap_or(1);
+    let satuan_stok = barang_satuan_nama(&*tx, kode_b, max_tingkat)?;
+    let satuan_pilih = barang_satuan_nama(&*tx, kode_b, satuan_tingkat)?;
     let prev: i64 = tx
         .query_row(
             "SELECT COALESCE(stok, 0) FROM barang_jasa WHERE lower(kode) = lower(?)",
@@ -2515,13 +2706,13 @@ fn penjualan_tx_apply_barang_stok(
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
-    if prev < qty {
+    if prev < qty_stok {
         return Err(format!(
-            "Stok tidak cukup untuk {} ({}). Stok saat ini {} unit; diminta {} unit.",
-            kode_b, nomor, prev, qty
+            "Stok tidak cukup untuk {} ({}). Stok saat ini {} {}; diminta {} {} (setara {} {}).",
+            kode_b, nomor, prev, satuan_stok, qty, satuan_pilih, qty_stok, satuan_stok
         ));
     }
-    let next = prev - qty;
+    let next = prev - qty_stok;
     tx.execute(
         "UPDATE barang_jasa SET stok = ?, updated_at = ? WHERE lower(kode) = lower(?)",
         params![next, barang_updated_at, kode_b],
@@ -2824,11 +3015,12 @@ pub fn penjualan_insert(state: State<DbState>, payload: PenjualanInsertPayload) 
         let sub = penjualan_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
         let line_catatan = line.catatan.trim();
         tx.execute(
-            "INSERT INTO penjualan_line (nomor, barang_kode, qty, harga_satuan, diskon, subtotal, catatan) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO penjualan_line (nomor, barang_kode, qty, satuan_tingkat, harga_satuan, diskon, subtotal, catatan) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 &nomor,
                 kode_b,
                 line.qty,
+                line.satuan_tingkat,
                 line.harga_satuan,
                 line.diskon,
                 sub,
@@ -2847,6 +3039,7 @@ pub fn penjualan_insert(state: State<DbState>, payload: PenjualanInsertPayload) 
             &nomor,
             kode_b,
             line.qty,
+            line.satuan_tingkat,
             gudang_kode,
             &tanggal_str,
             line_catatan,
@@ -4395,23 +4588,28 @@ pub fn stok_mutasi_sinkron_dari_pembelian(state: State<DbState>) -> Result<Strin
     for (nomor, gudang_kode, tanggal_faktur) in invoices {
         let base_waktu = waktu_mutasi_dari_tgl_faktur(tanggal_faktur.trim())?;
         let mut line_stmt = tx
-            .prepare("SELECT barang_kode, qty FROM pembelian_line WHERE nomor = ? ORDER BY id ASC")
+            .prepare("SELECT barang_kode, qty, satuan_tingkat FROM pembelian_line WHERE nomor = ? ORDER BY id ASC")
             .map_err(|e| e.to_string())?;
         let lines = line_stmt
             .query_map(params![nomor.as_str()], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, u8>(2)?,
+                ))
             })
             .map_err(|e| e.to_string())?;
 
         let mut line_idx = 0_i64;
         for ln in lines {
-            let (kode_b, qty) = ln.map_err(|e| e.to_string())?;
+            let (kode_b, qty, satuan_tingkat) = ln.map_err(|e| e.to_string())?;
             line_idx += 1;
             pembelian_tx_apply_barang_stok(
                 &tx,
                 nomor.as_str(),
                 kode_b.trim(),
                 qty,
+                satuan_tingkat,
                 gudang_kode.trim(),
                 tanggal_faktur.trim(),
                 base_waktu.saturating_add(line_idx),

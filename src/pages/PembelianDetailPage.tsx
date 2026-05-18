@@ -197,6 +197,7 @@ export function PembelianDetailPage() {
                     <th className="px-5 py-3">Kode</th>
                     <th className="px-5 py-3">Nama</th>
                     <th className="px-5 py-3 text-right">Qty</th>
+                    <th className="px-5 py-3">Satuan</th>
                     <th className="px-5 py-3 text-right">Harga satuan</th>
                     <th className="px-5 py-3 text-right">Diskon/satuan</th>
                     <th className="px-5 py-3 text-right">Subtotal</th>
@@ -208,6 +209,7 @@ export function PembelianDetailPage() {
                       <td className="px-5 py-3 font-mono text-xs text-zinc-800">{row.barangKode}</td>
                       <td className="px-5 py-3 font-medium text-zinc-900">{row.barangNama}</td>
                       <td className="px-5 py-3 text-right text-zinc-700">{row.qty}</td>
+                      <td className="px-5 py-3 text-zinc-700">{row.satuanNama ?? "—"}</td>
                       <td className="px-5 py-3 text-right text-zinc-700">{formatRupiah(row.hargaSatuan)}</td>
                       <td className="px-5 py-3 text-right text-zinc-700">
                         {(row.diskon ?? 0) > 0 ? formatRupiah(row.diskon ?? 0) : "—"}

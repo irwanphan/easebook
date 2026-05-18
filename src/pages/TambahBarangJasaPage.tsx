@@ -5,7 +5,11 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
+import { BarangFotoField } from "@/features/barang-jasa/BarangFotoField";
+import { useKategoriGrup } from "@/features/kategori-grup/KategoriGrupContext";
+import { useMerek } from "@/features/merek/MerekContext";
 import type { BarangJasaRow } from "@/data/mockData";
+import { applyBarangFotoChanges, emptyBarangFotoState, type BarangFotoState } from "@/lib/barangFoto";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
 function FieldLabel({ htmlFor, children }: { htmlFor: string; children: ReactNode }) {
@@ -19,9 +23,16 @@ function FieldLabel({ htmlFor, children }: { htmlFor: string; children: ReactNod
 const inputClass =
   "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
 
+const selectClass =
+  "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
+
+const EMPTY_OPTION = "";
+
 export function TambahBarangJasaPage() {
   const navigate = useNavigate();
   const { addItem, kodeExists } = useBarangJasa();
+  const { items: kategoriList, loading: kategoriLoading } = useKategoriGrup();
+  const { items: merekList, loading: merekLoading } = useMerek();
 
   const [kode, setKode] = useState("");
   const [nama, setNama] = useState("");
@@ -29,7 +40,11 @@ export function TambahBarangJasaPage() {
   const [satuan, setSatuan] = useState("pcs");
   const [harga, setHarga] = useState("");
   const [stok, setStok] = useState("");
+  const [kategoriKode, setKategoriKode] = useState(EMPTY_OPTION);
+  const [merekKode, setMerekKode] = useState(EMPTY_OPTION);
+  const [foto, setFoto] = useState<BarangFotoState>(emptyBarangFotoState);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   function parseHarga(raw: string): number | null {
     const n = Number(raw.replace(/\./g, "").replace(/,/g, "."));
@@ -77,20 +92,27 @@ export function TambahBarangJasaPage() {
       stokVal = s;
     }
 
+    const kodeFinal = kodeTrim.toUpperCase();
     const row: BarangJasaRow = {
-      kode: kodeTrim.toUpperCase(),
+      kode: kodeFinal,
       nama: nama.trim(),
       tipe,
       satuan: satuan.trim() || (tipe === "Barang" ? "pcs" : "job"),
       harga: hargaNum,
       ...(tipe === "Barang" ? { stok: stokVal } : {}),
+      kategoriKode: kategoriKode || null,
+      merekKode: merekKode || null,
     };
 
+    setSaving(true);
     try {
       await addItem(row);
+      await applyBarangFotoChanges(kodeFinal, foto);
       navigate("/barang-jasa");
     } catch (err) {
       setError(tauriErrorMessage(err));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -111,7 +133,7 @@ export function TambahBarangJasaPage() {
       </div>
 
       <Card>
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={(e) => void handleSubmit(e)} className="space-y-5">
           {error ? (
             <div
               role="alert"
@@ -121,29 +143,87 @@ export function TambahBarangJasaPage() {
             </div>
           ) : null}
 
-          <div>
-            <FieldLabel htmlFor="kode">Kode</FieldLabel>
-            <input
-              id="kode"
-              name="kode"
-              value={kode}
-              onChange={(e) => setKode(e.target.value)}
-              placeholder="Contoh: BRG-003"
-              className={inputClass}
-              autoComplete="off"
-            />
+          <BarangFotoField value={foto} onChange={setFoto} disabled={saving} />
+
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div>
+              <FieldLabel htmlFor="kode">Kode</FieldLabel>
+              <input
+                id="kode"
+                name="kode"
+                value={kode}
+                onChange={(e) => setKode(e.target.value)}
+                placeholder="Contoh: BRG-003"
+                className={inputClass}
+                autoComplete="off"
+                disabled={saving}
+              />
+            </div>
+            <div>
+              <FieldLabel htmlFor="nama">Nama</FieldLabel>
+              <input
+                id="nama"
+                name="nama"
+                value={nama}
+                onChange={(e) => setNama(e.target.value)}
+                placeholder="Nama barang atau layanan"
+                className={inputClass}
+                disabled={saving}
+              />
+            </div>
           </div>
 
-          <div>
-            <FieldLabel htmlFor="nama">Nama</FieldLabel>
-            <input
-              id="nama"
-              name="nama"
-              value={nama}
-              onChange={(e) => setNama(e.target.value)}
-              placeholder="Nama barang atau layanan"
-              className={inputClass}
-            />
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div>
+              <FieldLabel htmlFor="kategori">Kategori / grup</FieldLabel>
+              <select
+                id="kategori"
+                value={kategoriKode}
+                onChange={(e) => setKategoriKode(e.target.value)}
+                className={selectClass}
+                disabled={saving || kategoriLoading}
+              >
+                <option value={EMPTY_OPTION}>— Tidak ada —</option>
+                {kategoriList.map((k) => (
+                  <option key={k.kode} value={k.kode}>
+                    {k.kode} — {k.nama}
+                  </option>
+                ))}
+              </select>
+              {!kategoriLoading && kategoriList.length === 0 ? (
+                <p className="mt-1 text-xs text-zinc-500">
+                  Belum ada kategori.{" "}
+                  <Link to="/manajemen/kategori/tambah" className="font-medium text-brand-600 hover:text-brand-700">
+                    Tambah kategori
+                  </Link>
+                </p>
+              ) : null}
+            </div>
+            <div>
+              <FieldLabel htmlFor="merek">Merek</FieldLabel>
+              <select
+                id="merek"
+                value={merekKode}
+                onChange={(e) => setMerekKode(e.target.value)}
+                className={selectClass}
+                disabled={saving || merekLoading}
+              >
+                <option value={EMPTY_OPTION}>— Tidak ada —</option>
+                {merekList.map((m) => (
+                  <option key={m.kode} value={m.kode}>
+                    {m.kode} — {m.nama}
+                  </option>
+                ))}
+              </select>
+              {!merekLoading && merekList.length === 0 ? (
+                <p className="mt-1 text-xs text-zinc-500">
+                  Belum ada merek.{" "}
+                  <Link to="/manajemen/merek/tambah" className="font-medium text-brand-600 hover:text-brand-700">
+                    Tambah merek
+                  </Link>
+                </p>
+              ) : null}
+            </div>
           </div>
 
           <fieldset>
@@ -159,6 +239,7 @@ export function TambahBarangJasaPage() {
                     setSatuan((s) => (s === "job" ? "pcs" : s));
                   }}
                   className="h-4 w-4 border-zinc-300 text-brand-600 focus:ring-brand-500"
+                  disabled={saving}
                 />
                 Barang
               </label>
@@ -173,6 +254,7 @@ export function TambahBarangJasaPage() {
                     setSatuan((s) => (s === "pcs" ? "job" : s));
                   }}
                   className="h-4 w-4 border-zinc-300 text-brand-600 focus:ring-brand-500"
+                  disabled={saving}
                 />
                 Jasa
               </label>
@@ -188,6 +270,7 @@ export function TambahBarangJasaPage() {
               onChange={(e) => setSatuan(e.target.value)}
               placeholder={tipe === "Barang" ? "pcs, box, kg…" : "job, jam, hari…"}
               className={inputClass}
+              disabled={saving}
             />
           </div>
 
@@ -201,6 +284,7 @@ export function TambahBarangJasaPage() {
               onChange={(e) => setHarga(e.target.value)}
               placeholder="899000"
               className={inputClass}
+              disabled={saving}
             />
             <p className="mt-1 text-xs text-zinc-500">Angka saja; titik sebagai pemisah ribuan boleh dipakai.</p>
           </div>
@@ -216,15 +300,18 @@ export function TambahBarangJasaPage() {
                 onChange={(e) => setStok(e.target.value)}
                 placeholder="0"
                 className={inputClass}
+                disabled={saving}
               />
             </div>
           ) : null}
 
           <div className="flex flex-wrap items-center justify-end gap-3 border-t border-zinc-100 pt-5">
-            <Button type="button" variant="ghost" onClick={() => navigate("/barang-jasa")}>
+            <Button type="button" variant="ghost" onClick={() => navigate("/barang-jasa")} disabled={saving}>
               Batal
             </Button>
-            <Button type="submit">Simpan</Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? "Menyimpan…" : "Simpan"}
+            </Button>
           </div>
         </form>
       </Card>

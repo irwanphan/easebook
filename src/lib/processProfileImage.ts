@@ -1,4 +1,5 @@
-const MAX_SIZE_PX = 160;
+const PROFILE_MAX_SIZE_PX = 160;
+const BARANG_MAX_SIZE_PX = 320;
 const WEBP_QUALITY = 0.88;
 
 export type ProcessedProfileImage = {
@@ -22,8 +23,7 @@ function loadImageFromFile(file: File): Promise<HTMLImageElement> {
   });
 }
 
-/** Crop center square lalu resize ke 160×160, ekspor WebP. */
-export async function processProfileImageFile(file: File): Promise<ProcessedProfileImage> {
+async function processSquareImageFile(file: File, maxSizePx: number): Promise<ProcessedProfileImage> {
   if (!file.type.startsWith("image/")) {
     throw new Error("File harus berupa gambar (JPG, PNG, WebP, dll.).");
   }
@@ -37,13 +37,13 @@ export async function processProfileImageFile(file: File): Promise<ProcessedProf
   const sy = Math.floor((img.naturalHeight - size) / 2);
 
   const canvas = document.createElement("canvas");
-  canvas.width = MAX_SIZE_PX;
-  canvas.height = MAX_SIZE_PX;
+  canvas.width = maxSizePx;
+  canvas.height = maxSizePx;
   const ctx = canvas.getContext("2d");
   if (!ctx) {
     throw new Error("Canvas tidak didukung di perangkat ini.");
   }
-  ctx.drawImage(img, sx, sy, size, size, 0, 0, MAX_SIZE_PX, MAX_SIZE_PX);
+  ctx.drawImage(img, sx, sy, size, size, 0, 0, maxSizePx, maxSizePx);
 
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
@@ -61,4 +61,14 @@ export async function processProfileImageFile(file: File): Promise<ProcessedProf
   const previewUrl = URL.createObjectURL(blob);
 
   return { previewUrl, webpBytes };
+}
+
+/** Crop center square lalu resize ke 160×160, ekspor WebP. */
+export function processProfileImageFile(file: File): Promise<ProcessedProfileImage> {
+  return processSquareImageFile(file, PROFILE_MAX_SIZE_PX);
+}
+
+/** Crop center square lalu resize ke 320×320, ekspor WebP — untuk foto barang. */
+export function processBarangImageFile(file: File): Promise<ProcessedProfileImage> {
+  return processSquareImageFile(file, BARANG_MAX_SIZE_PX);
 }

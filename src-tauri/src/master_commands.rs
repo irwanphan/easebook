@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use tauri::State;
 
 const PENGGUNA_FOTO_MAX_BYTES: usize = 512_000;
+const BARANG_FOTO_MAX_BYTES: usize = 512_000;
 
 fn now_ts() -> i64 {
     Utc::now().timestamp()
@@ -392,6 +393,83 @@ pub fn barang_jasa_insert(state: State<DbState>, row: BarangJasaInsert) -> Resul
             e
         }
     })
+}
+
+fn barang_images_dir(db_path: &Path) -> PathBuf {
+    db_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("barang-images")
+}
+
+fn barang_foto_file(db_path: &Path, kode: &str) -> PathBuf {
+    barang_images_dir(db_path).join(format!("{}.webp", kode.trim().to_uppercase()))
+}
+
+fn barang_foto_path_option(db_path: &Path, kode: &str) -> Option<String> {
+    let path = barang_foto_file(db_path, kode);
+    if path.is_file() {
+        Some(path.to_string_lossy().into_owned())
+    } else {
+        None
+    }
+}
+
+fn barang_foto_remove_file(db_path: &Path, kode: &str) -> Result<(), String> {
+    let path = barang_foto_file(db_path, kode);
+    if path.is_file() {
+        std::fs::remove_file(&path).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn normalize_barang_kode(kode: &str) -> Result<String, String> {
+    let key = kode.trim().to_uppercase();
+    if key.is_empty() {
+        return Err("Kode barang tidak valid.".into());
+    }
+    Ok(key)
+}
+
+#[tauri::command]
+pub fn barang_foto_path(state: State<DbState>, kode: String) -> Result<Option<String>, String> {
+    let key = normalize_barang_kode(&kode)?;
+    Ok(barang_foto_path_option(&state.path, &key))
+}
+
+#[tauri::command]
+pub fn barang_foto_save(state: State<DbState>, kode: String, data: Vec<u8>) -> Result<(), String> {
+    let key = normalize_barang_kode(&kode)?;
+    if data.is_empty() {
+        return Err("Data foto kosong.".into());
+    }
+    if data.len() > BARANG_FOTO_MAX_BYTES {
+        return Err("Ukuran foto terlalu besar (maks. 512 KB).".into());
+    }
+    with_conn_app(&state, |conn| {
+        let exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM barang_jasa WHERE lower(kode) = lower(?)",
+                params![key],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if exists == 0 {
+            return Err("Barang/jasa tidak ditemukan.".into());
+        }
+        Ok(())
+    })?;
+    let dir = barang_images_dir(&state.path);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = barang_foto_file(&state.path, &key);
+    std::fs::write(&path, &data).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn barang_foto_remove(state: State<DbState>, kode: String) -> Result<(), String> {
+    let key = normalize_barang_kode(&kode)?;
+    barang_foto_remove_file(&state.path, &key)
 }
 
 #[tauri::command]

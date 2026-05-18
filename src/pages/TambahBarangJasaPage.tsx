@@ -155,34 +155,36 @@ export function TambahBarangJasaPage() {
             </div>
           ) : null}
 
-          <BarangFotoField value={foto} onChange={setFoto} disabled={saving} />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-3 rounded-xl border border-zinc-200 bg-white p-4">
+              <div>
+                <FieldLabel htmlFor="kode">Kode</FieldLabel>
+                <input
+                  id="kode"
+                  name="kode"
+                  value={kode}
+                  onChange={(e) => setKode(e.target.value)}
+                  placeholder="Contoh: BRG-003"
+                  className={inputClass}
+                  autoComplete="off"
+                  disabled={saving}
+                />
+              </div>
+              <div>
+                <FieldLabel htmlFor="nama">Nama</FieldLabel>
+                <input
+                  id="nama"
+                  name="nama"
+                  value={nama}
+                  onChange={(e) => setNama(e.target.value)}
+                  placeholder="Nama barang atau layanan"
+                  className={inputClass}
+                  disabled={saving}
+                />
+              </div>
+            </div>
 
-          <div className="grid gap-5 sm:grid-cols-2">
-            <div>
-              <FieldLabel htmlFor="kode">Kode</FieldLabel>
-              <input
-                id="kode"
-                name="kode"
-                value={kode}
-                onChange={(e) => setKode(e.target.value)}
-                placeholder="Contoh: BRG-003"
-                className={inputClass}
-                autoComplete="off"
-                disabled={saving}
-              />
-            </div>
-            <div>
-              <FieldLabel htmlFor="nama">Nama</FieldLabel>
-              <input
-                id="nama"
-                name="nama"
-                value={nama}
-                onChange={(e) => setNama(e.target.value)}
-                placeholder="Nama barang atau layanan"
-                className={inputClass}
-                disabled={saving}
-              />
-            </div>
+            <BarangFotoField value={foto} onChange={setFoto} disabled={saving} />
           </div>
 
           <div className="grid gap-5 sm:grid-cols-2">

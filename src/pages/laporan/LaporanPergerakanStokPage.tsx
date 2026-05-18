@@ -8,6 +8,11 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import type { StokMutasiRow } from "@/data/stokMutasi";
 import { labelJenisMutasi } from "@/data/stokMutasi";
+import {
+  formatQtyDenganSatuan,
+  getSatuanStokBarang,
+  getSatuanStokMeta,
+} from "@/data/barangJasa";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
@@ -63,6 +68,31 @@ export function LaporanPergerakanStokPage() {
     () => [...barangItems].sort((a, b) => a.kode.localeCompare(b.kode, undefined, { sensitivity: "base" })),
     [barangItems],
   );
+
+  const barangByKode = useMemo(() => {
+    const m = new Map<string, (typeof barangItems)[number]>();
+    for (const b of barangItems) {
+      m.set(b.kode.toLowerCase(), b);
+    }
+    return m;
+  }, [barangItems]);
+
+  const filterBarangRow = filterBarang.trim()
+    ? barangByKode.get(filterBarang.trim().toLowerCase())
+    : undefined;
+
+  const filterSatuanMeta = useMemo(
+    () =>
+      filterBarangRow
+        ? getSatuanStokMeta(filterBarangRow)
+        : { satuanStok: null as string | null, konversiRingkasan: null as string | null },
+    [filterBarangRow],
+  );
+
+  function satuanStokUntukBaris(barangKode: string): string {
+    const b = barangByKode.get(barangKode.toLowerCase());
+    return b ? getSatuanStokBarang(b) : "—";
+  }
 
   const load = useCallback(async () => {
     const requestId = ++loadRequestId.current;
@@ -123,7 +153,7 @@ export function LaporanPergerakanStokPage() {
         </Link>
         <PageHeader
           title="Pergerakan stok"
-          description="Mutasi difilter menurut tanggal pencatatan di sistem (bukan tanggal faktur), supaya koreksi pembelian lama tetap terlihat saat Anda simpan dalam rentang ini. Kolom tanggal tabel = tanggal transaksi dokumen."
+          description="Mutasi difilter menurut tanggal pencatatan di sistem (bukan tanggal faktur), supaya koreksi pembelian lama tetap terlihat saat Anda simpan dalam rentang ini. Kolom tanggal tabel = tanggal transaksi dokumen. Qty masuk/keluar/saldo dalam satuan terkecil per barang (hasil konversi dari faktur pembelian/penjualan)."
         />
       </div>
 
@@ -168,6 +198,7 @@ export function LaporanPergerakanStokPage() {
               {barangSorted.map((b) => (
                 <option key={b.kode} value={b.kode}>
                   {b.kode} — {b.nama}
+                  {b.tipe === "Barang" ? ` (stok ${b.stok ?? 0} ${getSatuanStokBarang(b)})` : ""}
                 </option>
               ))}
             </select>
@@ -220,6 +251,22 @@ export function LaporanPergerakanStokPage() {
 
       {loading ? <p className="text-sm text-zinc-500">Memuat laporan…</p> : null}
 
+      {filterBarangRow?.tipe === "Barang" && filterSatuanMeta.satuanStok ? (
+        <Card className="border-brand-100/80 bg-brand-50/40">
+          <p className="text-xs font-semibold uppercase tracking-wide text-brand-800">Satuan pencatatan stok</p>
+          <p className="mt-1 text-lg font-semibold text-zinc-900">{filterSatuanMeta.satuanStok}</p>
+          {filterSatuanMeta.konversiRingkasan ? (
+            <p className="mt-1 text-sm text-zinc-600">
+              Hirarki satuan: <span className="font-medium">{filterSatuanMeta.konversiRingkasan}</span>
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-zinc-500">
+              Semua qty di tabel dalam {filterSatuanMeta.satuanStok} (satuan terkecil).
+            </p>
+          )}
+        </Card>
+      ) : null}
+
       <Card className="overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[960px] text-left text-sm">
@@ -231,9 +278,15 @@ export function LaporanPergerakanStokPage() {
                 <th className="px-4 py-3">Jenis</th>
                 <th className="px-4 py-3">Referensi</th>
                 <th className="px-4 py-3">Gudang</th>
-                <th className="px-4 py-3 text-right">Masuk</th>
-                <th className="px-4 py-3 text-right">Keluar</th>
-                <th className="px-4 py-3 text-right">Saldo stok</th>
+                <th className="px-4 py-3 text-right">
+                  {filterSatuanMeta.satuanStok ? `Masuk (${filterSatuanMeta.satuanStok})` : "Masuk"}
+                </th>
+                <th className="px-4 py-3 text-right">
+                  {filterSatuanMeta.satuanStok ? `Keluar (${filterSatuanMeta.satuanStok})` : "Keluar"}
+                </th>
+                <th className="px-4 py-3 text-right">
+                  {filterSatuanMeta.satuanStok ? `Saldo (${filterSatuanMeta.satuanStok})` : "Saldo stok"}
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -244,30 +297,38 @@ export function LaporanPergerakanStokPage() {
                   </td>
                 </tr>
               ) : (
-                rows.map((r) => (
-                  <tr key={r.id} className="bg-white hover:bg-zinc-50/50">
-                    <td className="px-4 py-3 text-zinc-700">{formatTanggal(r.tanggalTransaksi)}</td>
-                    <td className="px-4 py-3 text-zinc-600">{formatWaktu(r.waktu)}</td>
-                    <td className="max-w-[200px] px-4 py-3">
-                      <span className="font-mono text-xs text-zinc-500">{r.barangKode}</span>
-                      <span className="mt-0.5 line-clamp-2 block font-medium text-zinc-900">{r.barangNama}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant="neutral">{labelJenisMutasi(r.jenis)}</Badge>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-brand-800">{r.referensi}</td>
-                    <td className="max-w-[160px] px-4 py-3 text-xs text-zinc-600">
-                      <span className="line-clamp-2">{r.gudangNama}</span>
-                    </td>
-                    <td className="px-4 py-3 text-right font-medium text-emerald-700">
-                      {r.qtyMasuk > 0 ? `+${r.qtyMasuk}` : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right font-medium text-rose-700">
-                      {r.qtyKeluar > 0 ? `-${r.qtyKeluar}` : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right font-semibold text-zinc-900">{r.saldoSetelah}</td>
-                  </tr>
-                ))
+                rows.map((r) => {
+                  const satuan = satuanStokUntukBaris(r.barangKode);
+                  return (
+                    <tr key={r.id} className="bg-white hover:bg-zinc-50/50">
+                      <td className="px-4 py-3 text-zinc-700">{formatTanggal(r.tanggalTransaksi)}</td>
+                      <td className="px-4 py-3 text-zinc-600">{formatWaktu(r.waktu)}</td>
+                      <td className="max-w-[200px] px-4 py-3">
+                        <span className="font-mono text-xs text-zinc-500">{r.barangKode}</span>
+                        <span className="mt-0.5 line-clamp-2 block font-medium text-zinc-900">{r.barangNama}</span>
+                        {!filterBarang.trim() && satuan !== "—" ? (
+                          <span className="mt-0.5 block text-xs text-zinc-500">Satuan stok: {satuan}</span>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant="neutral">{labelJenisMutasi(r.jenis)}</Badge>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-brand-800">{r.referensi}</td>
+                      <td className="max-w-[160px] px-4 py-3 text-xs text-zinc-600">
+                        <span className="line-clamp-2">{r.gudangNama}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium text-emerald-700">
+                        {formatQtyDenganSatuan(r.qtyMasuk, satuan, "masuk")}
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium text-rose-700">
+                        {formatQtyDenganSatuan(r.qtyKeluar, satuan, "keluar")}
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-zinc-900">
+                        {formatQtyDenganSatuan(r.saldoSetelah, satuan, "saldo")}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

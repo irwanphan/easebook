@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
@@ -7,6 +7,11 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import type { StokMutasiRow } from "@/data/stokMutasi";
 import { labelJenisMutasi } from "@/data/stokMutasi";
+import {
+  formatQtyDenganSatuan,
+  getSatuanStokBarang,
+  getSatuanStokMeta,
+} from "@/data/barangJasa";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
@@ -32,6 +37,12 @@ export function KartuStokBarangPage() {
   const { items: barangItems } = useBarangJasa();
   const barang = barangItems.find((b) => b.kode.toLowerCase() === kode.trim().toLowerCase());
 
+  const satuanMeta = useMemo(
+    () => (barang ? getSatuanStokMeta(barang) : { satuanStok: "—", konversiRingkasan: null as string | null }),
+    [barang],
+  );
+  const satuanStok = barang ? getSatuanStokBarang(barang) : "—";
+
   const [rows, setRows] = useState<StokMutasiRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +66,8 @@ export function KartuStokBarangPage() {
     void load();
   }, [load]);
 
+  const saldoTerakhir = rows.length > 0 ? rows[rows.length - 1]!.saldoSetelah : barang?.stok;
+
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
       <div>
@@ -74,6 +87,30 @@ export function KartuStokBarangPage() {
           }
         />
       </div>
+
+      {barang?.tipe === "Barang" ? (
+        <Card className="flex flex-wrap items-start justify-between gap-4 border-brand-100/80 bg-brand-50/40">
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-wide text-brand-800">Satuan pencatatan stok</p>
+            <p className="text-lg font-semibold text-zinc-900">{satuanMeta.satuanStok}</p>
+            {satuanMeta.konversiRingkasan ? (
+              <p className="text-sm text-zinc-600">
+                Hirarki satuan: <span className="font-medium">{satuanMeta.konversiRingkasan}</span>
+              </p>
+            ) : (
+              <p className="text-sm text-zinc-500">Satu tingkat satuan — semua mutasi dalam {satuanMeta.satuanStok}.</p>
+            )}
+          </div>
+          {saldoTerakhir != null ? (
+            <div className="text-right">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Saldo saat ini</p>
+              <p className="text-lg font-semibold text-zinc-900">
+                {formatQtyDenganSatuan(saldoTerakhir, satuanMeta.satuanStok, "saldo")}
+              </p>
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
 
       {barang?.tipe === "Jasa" ? (
         <Card>
@@ -102,16 +139,17 @@ export function KartuStokBarangPage() {
                 <th className="px-4 py-3">Jenis</th>
                 <th className="px-4 py-3">Referensi</th>
                 <th className="px-4 py-3">Gudang</th>
-                <th className="px-4 py-3 text-right">Masuk</th>
-                <th className="px-4 py-3 text-right">Keluar</th>
-                <th className="px-4 py-3 text-right">Saldo</th>
+                <th className="px-4 py-3 text-right">Masuk ({satuanStok})</th>
+                <th className="px-4 py-3 text-right">Keluar ({satuanStok})</th>
+                <th className="px-4 py-3 text-right">Saldo ({satuanStok})</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {!loading && rows.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-5 py-10 text-center text-sm text-zinc-500">
-                    Belum ada mutasi stok untuk barang ini. Setelah pembelian barang tercatat, baris akan muncul di sini.
+                    Belum ada mutasi stok untuk barang ini. Setelah pembelian barang tercatat, baris akan muncul di
+                    sini.
                   </td>
                 </tr>
               ) : (
@@ -129,12 +167,14 @@ export function KartuStokBarangPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-emerald-700">
-                      {r.qtyMasuk > 0 ? `+${r.qtyMasuk}` : "—"}
+                      {formatQtyDenganSatuan(r.qtyMasuk, satuanStok, "masuk")}
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-rose-700">
-                      {r.qtyKeluar > 0 ? `-${r.qtyKeluar}` : "—"}
+                      {formatQtyDenganSatuan(r.qtyKeluar, satuanStok, "keluar")}
                     </td>
-                    <td className="px-4 py-3 text-right font-semibold text-zinc-900">{r.saldoSetelah}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-zinc-900">
+                      {formatQtyDenganSatuan(r.saldoSetelah, satuanStok, "saldo")}
+                    </td>
                   </tr>
                 ))
               )}

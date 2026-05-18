@@ -298,3 +298,34 @@ export function formatSatuanTingkatRingkasan(
   }
   return parts.join(" · ");
 }
+
+/** Nama satuan terkecil tempat stok dicatat. */
+export function getSatuanStokBarang(barang: Pick<BarangJasaRow, "satuan" | "satuanTingkat">): string {
+  const tiers = barang.satuanTingkat;
+  if (tiers?.length) {
+    const terkecil = [...tiers].sort((a, b) => b.tingkat - a.tingkat)[0];
+    if (terkecil?.nama.trim()) return terkecil.nama.trim();
+  }
+  return barang.satuan?.trim() || "—";
+}
+
+export function getSatuanStokMeta(barang: Pick<BarangJasaRow, "satuan" | "satuanTingkat">) {
+  const satuanStok = getSatuanStokBarang(barang);
+  const tiers = barang.satuanTingkat;
+  const punyaKonversi = Boolean(tiers && tiers.length > 1);
+  return {
+    satuanStok,
+    konversiRingkasan: punyaKonversi ? formatSatuanTingkatRingkasan(tiers, satuanStok) : null,
+  };
+}
+
+/** Format kuantitas mutasi/saldo dengan label satuan. */
+export function formatQtyDenganSatuan(
+  qty: number,
+  satuan: string,
+  mode: "masuk" | "keluar" | "saldo",
+): string {
+  if (mode !== "saldo" && qty <= 0) return "—";
+  const angka = mode === "masuk" ? `+${qty}` : mode === "keluar" ? `-${qty}` : String(qty);
+  return `${angka} ${satuan}`;
+}

@@ -207,7 +207,7 @@ export function BarangSatuanTingkatSection({
             onChange={(v) => onChange(patchTier(tiers, 0, { kodeBarcode: v }))}
             disabled={sectionDisabled}
           />
-          {/* {stokCol === 0 ? stokField : null} */}
+          {stokCol === 0 ? stokField : null}
         </div>
 
         <div className="space-y-3 rounded-xl border border-zinc-200 bg-white p-4">

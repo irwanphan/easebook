@@ -2761,6 +2761,142 @@ pub fn penjualan_list(state: State<DbState>) -> Result<Vec<PenjualanListRow>, St
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct PenjualanDetailLine {
+    pub barang_kode: String,
+    pub barang_nama: String,
+    pub qty: i64,
+    pub satuan_tingkat: u8,
+    pub satuan_nama: String,
+    pub harga_satuan: i64,
+    pub diskon: i64,
+    pub subtotal: i64,
+    pub catatan: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PenjualanDetail {
+    pub nomor: String,
+    pub pelanggan_kode: String,
+    pub pelanggan_nama: String,
+    pub gudang_kode: String,
+    pub gudang_nama: String,
+    pub salesman: String,
+    pub tanggal_faktur: String,
+    pub jatuh_tempo: String,
+    pub catatan_faktur: String,
+    pub subtotal_barang: i64,
+    pub diskon_faktur: i64,
+    pub pajak: i64,
+    pub akun_kas_kode: Option<String>,
+    pub akun_kas_nama: Option<String>,
+    pub total: i64,
+    pub status: String,
+    pub lines: Vec<PenjualanDetailLine>,
+}
+
+#[tauri::command]
+pub fn penjualan_detail(state: State<DbState>, nomor: String) -> Result<PenjualanDetail, String> {
+    let n = nomor.trim();
+    if n.is_empty() {
+        return Err("Nomor faktur wajib diisi.".into());
+    }
+    let conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+
+    let mut detail: PenjualanDetail = conn
+        .query_row(
+            "SELECT p.nomor, p.pelanggan_kode, c.nama, p.gudang_kode, g.nama, p.salesman,
+                    p.tanggal_faktur, p.jatuh_tempo, p.catatan_faktur,
+                    COALESCE(p.diskon_faktur, 0), COALESCE(p.pajak, 0), p.akun_kas_kode, k.nama, p.total, p.status
+             FROM penjualan p
+             JOIN pelanggan c ON lower(c.kode) = lower(p.pelanggan_kode)
+             JOIN gudang g ON lower(g.kode) = lower(p.gudang_kode)
+             LEFT JOIN akun_keuangan k ON lower(k.kode) = lower(p.akun_kas_kode)
+             WHERE p.nomor = ?",
+            params![n],
+            |r| {
+                Ok(PenjualanDetail {
+                    nomor: r.get(0)?,
+                    pelanggan_kode: r.get(1)?,
+                    pelanggan_nama: r.get(2)?,
+                    gudang_kode: r.get(3)?,
+                    gudang_nama: r.get(4)?,
+                    salesman: r.get(5)?,
+                    tanggal_faktur: r.get(6)?,
+                    jatuh_tempo: r.get(7)?,
+                    catatan_faktur: r.get(8)?,
+                    subtotal_barang: 0,
+                    diskon_faktur: r.get(9)?,
+                    pajak: r.get(10)?,
+                    akun_kas_kode: r.get(11)?,
+                    akun_kas_nama: r.get(12)?,
+                    total: r.get(13)?,
+                    status: r.get(14)?,
+                    lines: Vec::new(),
+                })
+            },
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => "Faktur tidak ditemukan.".into(),
+            _ => e.to_string(),
+        })?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT l.barang_kode, b.nama, l.qty, l.satuan_tingkat, l.harga_satuan, COALESCE(l.diskon, 0), l.subtotal, l.catatan
+             FROM penjualan_line l
+             JOIN barang_jasa b ON lower(b.kode) = lower(l.barang_kode)
+             WHERE l.nomor = ?
+             ORDER BY l.id ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let line_rows = stmt
+        .query_map(params![n], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, u8>(3)?,
+                r.get::<_, i64>(4)?,
+                r.get::<_, i64>(5)?,
+                r.get::<_, i64>(6)?,
+                r.get::<_, String>(7)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+    let mut lines = Vec::new();
+    for lr in line_rows {
+        let (
+            barang_kode,
+            barang_nama,
+            qty,
+            satuan_tingkat,
+            harga_satuan,
+            diskon,
+            subtotal,
+            catatan,
+        ) = lr.map_err(|e| e.to_string())?;
+        let satuan_nama = barang_satuan_nama(&conn, &barang_kode, satuan_tingkat)?;
+        lines.push(PenjualanDetailLine {
+            barang_kode,
+            barang_nama,
+            qty,
+            satuan_tingkat,
+            satuan_nama,
+            harga_satuan,
+            diskon,
+            subtotal,
+            catatan,
+        });
+    }
+    detail.subtotal_barang = lines.iter().map(|l| l.subtotal).sum();
+    detail.lines = lines;
+
+    Ok(detail)
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct DashboardPenjualanBulananPoint {
     pub month: String,
     pub month_num: u8,

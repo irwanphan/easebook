@@ -51,6 +51,38 @@ export function penjualanFakturTotal(
   return Math.max(0, sub - diskon + tax);
 }
 
+export type PenjualanDetailLine = {
+  barangKode: string;
+  barangNama: string;
+  qty: number;
+  satuanTingkat: number;
+  satuanNama: string;
+  hargaSatuan: number;
+  diskon: number;
+  subtotal: number;
+  catatan: string;
+};
+
+export type PenjualanDetail = {
+  nomor: string;
+  pelangganKode: string;
+  pelangganNama: string;
+  gudangKode: string;
+  gudangNama: string;
+  salesman: string;
+  tanggalFaktur: string;
+  jatuhTempo: string;
+  catatanFaktur: string;
+  subtotalBarang: number;
+  diskonFaktur: number;
+  pajak: number;
+  akunKasKode: string | null;
+  akunKasNama: string | null;
+  total: number;
+  status: string;
+  lines: PenjualanDetailLine[];
+};
+
 export type PenjualanInsertPayload = {
   pelangganKode: string;
   gudangKode: string;

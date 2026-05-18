@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -86,12 +86,13 @@ export function PenjualanPage() {
                 <th className="px-5 py-3">Salesman</th>
                 <th className="px-5 py-3">Total</th>
                 <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {!loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center text-sm text-zinc-500">
+                  <td colSpan={7} className="px-5 py-12 text-center text-sm text-zinc-500">
                     Belum ada faktur penjualan.{" "}
                     <button
                       type="button"
@@ -113,6 +114,14 @@ export function PenjualanPage() {
                     <td className="px-5 py-3 font-medium text-zinc-900">{formatRupiah(row.total)}</td>
                     <td className="px-5 py-3">
                       <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <Link
+                        to={`/penjualan/detail/${encodeURIComponent(row.nomor)}`}
+                        className="inline-flex rounded-xl px-2 py-1 text-xs font-semibold text-brand-700 transition hover:bg-brand-50"
+                      >
+                        Detail
+                      </Link>
                     </td>
                   </tr>
                 ))

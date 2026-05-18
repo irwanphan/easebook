@@ -1,8 +1,6 @@
 import type { BarangJasaRow } from "@/data/barangJasa";
 import { findSatuanPilihan, getSatuanPilihanOptions } from "@/data/barangJasa";
-
-const selectClass =
-  "w-full min-w-[5.5rem] rounded-xl border border-zinc-200 bg-white px-2.5 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-zinc-50";
+import { TokoSelect } from "@/components/ui/TokoInput";
 
 type FakturLineSatuanSelectProps = {
   barang: BarangJasaRow | undefined;
@@ -24,22 +22,22 @@ export function FakturLineSatuanSelect({ barang, tingkat, onChange, disabled }: 
   }
 
   return (
-    <select
+    <TokoSelect
+      id="satuan-pilihan"
       value={current?.tingkat ?? 1}
       onChange={(e) => {
         const t = Number.parseInt(e.target.value, 10);
         const opt = options.find((o) => o.tingkat === t);
         if (opt) onChange(opt.tingkat, opt.hargaJual);
       }}
-      className={selectClass}
       disabled={disabled}
-      aria-label="Satuan"
+      required
     >
       {options.map((o) => (
         <option key={o.tingkat} value={o.tingkat}>
           {o.nama}
         </option>
       ))}
-    </select>
+    </TokoSelect>
   );
 }

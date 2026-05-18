@@ -20,6 +20,7 @@ import { getDefaultSatuanPilihan } from "@/data/barangJasa";
 import { useGudang } from "@/features/gudang/GudangContext";
 import { usePemasok } from "@/features/pemasok/PemasokContext";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
 
 function todayLocalISODate(): string {
   const d = new Date();
@@ -366,11 +367,10 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
               <label htmlFor={`${pf}-pemasok`} className="block text-sm font-medium text-zinc-700">
                 Pemasok
               </label>
-              <select
+              <TokoSelect
                 id={`${pf}-pemasok`}
                 value={pemasokKode}
                 onChange={(e) => setPemasokKode(e.target.value)}
-                className={inputClass}
                 disabled={masterLoading || hydrating}
                 required
               >
@@ -380,17 +380,16 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
                     {p.kode} — {p.nama}
                   </option>
                 ))}
-              </select>
+              </TokoSelect>
             </div>
             <div>
               <label htmlFor={`${pf}-gudang`} className="block text-sm font-medium text-zinc-700">
                 Gudang tujuan
               </label>
-              <select
+              <TokoSelect
                 id={`${pf}-gudang`}
                 value={gudangKode}
                 onChange={(e) => setGudangKode(e.target.value)}
-                className={inputClass}
                 disabled={masterLoading || hydrating}
                 required
               >
@@ -400,39 +399,35 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
                     {g.kode} — {g.nama}
                   </option>
                 ))}
-              </select>
+              </TokoSelect>
             </div>
             <div>
               <label htmlFor={`${pf}-metode`} className="block text-sm font-medium text-zinc-700">
                 Pembayaran
               </label>
-              <select
+              <TokoSelect
                 id={`${pf}-metode`}
                 value={metodePembayaran}
                 onChange={(e) => setMetodePembayaran(e.target.value)}
-                className={inputClass}
                 disabled={hydrating}
               >
+                <option value="">— Pilih pembayaran —</option>
                 {METODE_PEMBAYARAN_PEMBELIAN.map((m) => (
                   <option key={m.value} value={m.value}>
                     {m.label}
-                  </option>
+                  </option>  
                 ))}
-                {metodePembayaran && !METODE_PEMBAYARAN_PEMBELIAN.some((m) => m.value === metodePembayaran) ? (
-                  <option value={metodePembayaran}>{metodePembayaran}</option>
-                ) : null}
-              </select>
+              </TokoSelect>
             </div>
             <div>
               <label htmlFor={`${pf}-tgl`} className="block text-sm font-medium text-zinc-700">
                 Tanggal faktur
               </label>
-              <input
+              <TokoInput
                 id={`${pf}-tgl`}
                 type="date"
                 value={tanggalFaktur}
                 onChange={(e) => setTanggalFaktur(e.target.value)}
-                className={inputClass}
                 disabled={hydrating}
                 required
               />
@@ -441,12 +436,11 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
               <label htmlFor={`${pf}-jt`} className="block text-sm font-medium text-zinc-700">
                 Jatuh tempo
               </label>
-              <input
+              <TokoInput
                 id={`${pf}-jt`}
                 type="date"
                 value={jatuhTempo}
                 onChange={(e) => setJatuhTempo(e.target.value)}
-                className={inputClass}
                 disabled={hydrating}
                 required
               />
@@ -497,11 +491,12 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
                   return (
                     <tr key={row.id} className="bg-white">
                       <td className="px-3 py-2 align-top">
-                        <select
+                        <TokoSelect
+                          id={`${pf}-barang-${row.id}`}
                           value={row.barangKode}
                           onChange={(e) => setLine(row.id, { barangKode: e.target.value })}
-                          className={`${inputClass} mt-0`}
                           disabled={masterLoading || hydrating}
+                          required
                         >
                           <option value="">— Pilih barang —</option>
                           {barangItems.map((b) => (
@@ -509,18 +504,17 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
                               {b.kode} — {b.nama} ({b.tipe})
                             </option>
                           ))}
-                        </select>
+                        </TokoSelect>
                       </td>
                       <td className="px-3 py-2 align-top">
-                        <input
-                          type="number"
-                          min={1}
-                          step={1}
+                        <TokoInput
+                          id={`${pf}-qty-${row.id}`}
+                          inputMode="numeric"
                           value={row.qty}
                           onChange={(e) =>
                             setLine(row.id, { qty: Math.max(1, Number.parseInt(e.target.value, 10) || 1) })
                           }
-                          className={`${inputClass} mt-0`}
+                          placeholder="1"
                           disabled={hydrating}
                         />
                       </td>
@@ -535,34 +529,28 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
                         />
                       </td>
                       <td className="px-3 py-2 align-top">
-                        <input
-                          type="number"
-                          min={0}
-                          step={1}
+                        <TokoInput
+                          inputMode="numeric"
                           value={row.hargaSatuan}
                           onChange={(e) =>
                             setLine(row.id, {
                               hargaSatuan: Math.max(0, Math.round(Number(e.target.value) || 0)),
                             })
                           }
-                          className={`${inputClass} mt-0`}
+                          placeholder="0"
                           disabled={hydrating}
                         />
                       </td>
                       <td className="px-3 py-2 align-top">
-                        <input
-                          type="number"
-                          min={0}
-                          max={maxDiskon}
-                          step={1}
+                        <TokoInput
+                          inputMode="numeric"
                           value={row.diskon}
                           onChange={(e) => {
                             const raw = Math.max(0, Math.round(Number(e.target.value) || 0));
                             setLine(row.id, { diskon: Math.min(raw, maxDiskon) });
                           }}
-                          className={`${inputClass} mt-0`}
+                          placeholder="0"
                           disabled={hydrating}
-                          title="Diskon nominal per satuan (Rp)"
                         />
                       </td>
                       <td className="px-3 py-2 align-top text-right font-medium text-zinc-900">
@@ -595,18 +583,16 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
               <label htmlFor={`${pf}-diskon-faktur`} className="shrink-0 text-zinc-500">
                 Diskon faktur
               </label>
-              <input
+              <TokoInput
                 id={`${pf}-diskon-faktur`}
-                type="number"
-                min={0}
-                max={subtotalBarang}
-                step={1}
+                inputMode="numeric"
                 value={diskonFaktur}
                 onChange={(e) => {
                   const raw = Math.max(0, Math.round(Number(e.target.value) || 0));
                   setDiskonFaktur(Math.min(raw, subtotalBarang));
                 }}
-                className={`${inputClass} mt-0 w-36 text-right`}
+                placeholder="0"
+                className="w-36 text-right"
                 disabled={hydrating}
               />
             </div>
@@ -632,12 +618,11 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
             <label htmlFor={`${pf}-akun-kas`} className="block text-sm font-medium text-zinc-700">
               Dibayarkan menggunakan
             </label>
-            <select
+            <TokoSelect
               id={`${pf}-akun-kas`}
               value={akunKasKode}
               onChange={(e) => setAkunKasKode(e.target.value)}
-              className={`${inputClass} mt-1`}
-              disabled={hydrating || akunKasLoading}
+              disabled={hydrating || akunKasLoading}  
             >
               <option value="">— Hutang dagang (belum dibayar) —</option>
               {akunKasList.map((a) => (
@@ -645,7 +630,7 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
                   {a.kode} — {a.nama}
                 </option>
               ))}
-            </select>
+            </TokoSelect>
             {akunKasLoading ? (
               <p className="mt-1.5 text-xs text-zinc-400">Memuat daftar akun kas…</p>
             ) : akunKasList.length === 0 ? (

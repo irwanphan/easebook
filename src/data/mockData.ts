@@ -97,18 +97,8 @@ export const stockProducts: StockProduct[] = [
   },
 ];
 
-export type BarangJasaRow = {
-  kode: string;
-  nama: string;
-  tipe: "Barang" | "Jasa";
-  satuan: string;
-  harga: number;
-  stok?: number;
-  /** Diisi dari SQLite bila ada relasi master */
-  kategoriKode?: string | null;
-  merekKode?: string | null;
-  defaultGudangKode?: string | null;
-};
+export type { BarangJasaRow, BarangSatuanTingkatRow } from "@/data/barangJasa";
+import type { BarangJasaRow } from "@/data/barangJasa";
 
 export const mockBarangJasa: BarangJasaRow[] = [
   { kode: "BRG-001", nama: "Headphones ANC", tipe: "Barang", satuan: "pcs", harga: 899000, stok: 48 },

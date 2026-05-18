@@ -238,6 +238,47 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     migrate_pelunasan_piutang_tables(conn)?;
     migrate_pelunasan_hutang_tables(conn)?;
     migrate_pengguna_tables(conn)?;
+    migrate_barang_jasa_satuan(conn)?;
+    Ok(())
+}
+
+/// Satuan bertingkat per barang (1 = terbesar, 3 = terkecil).
+fn migrate_barang_jasa_satuan(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS barang_jasa_satuan (
+            barang_kode TEXT NOT NULL REFERENCES barang_jasa(kode) ON DELETE CASCADE ON UPDATE CASCADE,
+            tingkat INTEGER NOT NULL CHECK (tingkat IN (1, 2, 3)),
+            nama TEXT NOT NULL,
+            qty_isi INTEGER,
+            harga_jual INTEGER NOT NULL DEFAULT 0,
+            harga_beli INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (barang_kode, tingkat)
+        );
+        CREATE INDEX IF NOT EXISTS idx_barang_satuan_kode ON barang_jasa_satuan(barang_kode);
+        ",
+    )?;
+
+    conn.execute(
+        "INSERT OR IGNORE INTO barang_jasa_satuan (barang_kode, tingkat, nama, qty_isi, harga_jual, harga_beli)
+         SELECT kode, 3, satuan, NULL, harga, harga
+         FROM barang_jasa
+         WHERE tipe = 'Barang'
+           AND NOT EXISTS (
+             SELECT 1 FROM barang_jasa_satuan s WHERE lower(s.barang_kode) = lower(barang_jasa.kode)
+           )",
+        [],
+    )?;
+    conn.execute(
+        "INSERT OR IGNORE INTO barang_jasa_satuan (barang_kode, tingkat, nama, qty_isi, harga_jual, harga_beli)
+         SELECT kode, 1, satuan, NULL, harga, harga
+         FROM barang_jasa
+         WHERE tipe = 'Jasa'
+           AND NOT EXISTS (
+             SELECT 1 FROM barang_jasa_satuan s WHERE lower(s.barang_kode) = lower(barang_jasa.kode)
+           )",
+        [],
+    )?;
     Ok(())
 }
 

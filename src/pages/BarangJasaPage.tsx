@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
+import { formatSatuanTingkatRingkasan } from "@/data/barangJasa";
 
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -66,7 +67,7 @@ export function BarangJasaPage() {
                 <th className="px-5 py-3">Nama</th>
                 <th className="px-5 py-3">Tipe</th>
                 <th className="px-5 py-3">Satuan</th>
-                <th className="px-5 py-3">Harga</th>
+                <th className="px-5 py-3">Harga jual</th>
                 <th className="px-5 py-3">Stok</th>
                 <th className="px-5 py-3 text-right">Aksi</th>
               </tr>
@@ -79,7 +80,9 @@ export function BarangJasaPage() {
                   <td className="px-5 py-3">
                     <Badge variant={row.tipe === "Barang" ? "neutral" : "processing"}>{row.tipe}</Badge>
                   </td>
-                  <td className="px-5 py-3 text-zinc-600">{row.satuan}</td>
+                  <td className="px-5 py-3 text-zinc-600">
+                    {formatSatuanTingkatRingkasan(row.satuanTingkat, row.satuan)}
+                  </td>
                   <td className="px-5 py-3 font-medium text-zinc-900">{formatRupiah(row.harga)}</td>
                   <td className="px-5 py-3 text-zinc-600">{row.stok != null ? row.stok : "—"}</td>
                   <td className="px-5 py-3 text-right">

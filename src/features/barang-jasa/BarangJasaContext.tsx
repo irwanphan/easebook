@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { BarangJasaRow } from "@/data/mockData";
+import type { BarangJasaRow } from "@/data/barangJasa";
 
 type BarangJasaContextValue = {
   items: BarangJasaRow[];
@@ -56,6 +56,7 @@ export function BarangJasaProvider({ children }: { children: ReactNode }) {
           kategoriKode: row.kategoriKode ?? null,
           merekKode: row.merekKode ?? null,
           defaultGudangKode: row.defaultGudangKode ?? null,
+          satuanTingkat: row.satuanTingkat ?? [],
         },
       });
       await refresh();

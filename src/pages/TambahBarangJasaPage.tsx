@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -6,9 +6,16 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { BarangFotoField } from "@/features/barang-jasa/BarangFotoField";
+import { BarangSatuanTingkatSection } from "@/features/barang-jasa/BarangSatuanTingkatSection";
 import { useKategoriGrup } from "@/features/kategori-grup/KategoriGrupContext";
 import { useMerek } from "@/features/merek/MerekContext";
-import type { BarangJasaRow } from "@/data/mockData";
+import type { BarangJasaRow } from "@/data/barangJasa";
+import {
+  buildSatuanTingkatPayload,
+  defaultSatuanTingkatBarang,
+  emptySatuanTingkatForm,
+  type BarangSatuanTingkatForm,
+} from "@/data/barangJasa";
 import { applyBarangFotoChanges, emptyBarangFotoState, type BarangFotoState } from "@/lib/barangFoto";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
@@ -37,8 +44,7 @@ export function TambahBarangJasaPage() {
   const [kode, setKode] = useState("");
   const [nama, setNama] = useState("");
   const [tipe, setTipe] = useState<"Barang" | "Jasa">("Barang");
-  const [satuan, setSatuan] = useState("pcs");
-  const [harga, setHarga] = useState("");
+  const [satuanTiers, setSatuanTiers] = useState<BarangSatuanTingkatForm[]>(defaultSatuanTingkatBarang());
   const [stok, setStok] = useState("");
   const [kategoriKode, setKategoriKode] = useState(EMPTY_OPTION);
   const [merekKode, setMerekKode] = useState(EMPTY_OPTION);
@@ -46,11 +52,14 @@ export function TambahBarangJasaPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  function parseHarga(raw: string): number | null {
-    const n = Number(raw.replace(/\./g, "").replace(/,/g, "."));
-    if (!Number.isFinite(n) || n < 0) return null;
-    return Math.round(n);
-  }
+  useEffect(() => {
+    if (tipe === "Jasa") {
+      setSatuanTiers([emptySatuanTingkatForm()]);
+      setStok("");
+    } else {
+      setSatuanTiers(defaultSatuanTingkatBarang());
+    }
+  }, [tipe]);
 
   function parseStok(raw: string): number | null {
     if (raw.trim() === "") return null;
@@ -76,17 +85,19 @@ export function TambahBarangJasaPage() {
       setError("Nama wajib diisi.");
       return;
     }
-    const hargaNum = parseHarga(harga);
-    if (hargaNum == null) {
-      setError("Harga tidak valid.");
+
+    const satuanResult = buildSatuanTingkatPayload(tipe, satuanTiers);
+    if (!satuanResult.ok) {
+      setError(satuanResult.error);
       return;
     }
 
+    const utama = satuanResult.satuanTingkat.find((t) => t.tingkat === (tipe === "Barang" ? 3 : 1))!;
     let stokVal: number | undefined;
     if (tipe === "Barang") {
       const s = parseStok(stok);
       if (s == null) {
-        setError("Stok wajib diisi (bilangan bulat ≥ 0).");
+        setError(`Stok awal wajib diisi dalam satuan ${utama.nama} (bilangan bulat ≥ 0).`);
         return;
       }
       stokVal = s;
@@ -97,11 +108,12 @@ export function TambahBarangJasaPage() {
       kode: kodeFinal,
       nama: nama.trim(),
       tipe,
-      satuan: satuan.trim() || (tipe === "Barang" ? "pcs" : "job"),
-      harga: hargaNum,
+      satuan: utama.nama,
+      harga: utama.hargaJual,
       ...(tipe === "Barang" ? { stok: stokVal } : {}),
       kategoriKode: kategoriKode || null,
       merekKode: merekKode || null,
+      satuanTingkat: satuanResult.satuanTingkat,
     };
 
     setSaving(true);
@@ -117,7 +129,7 @@ export function TambahBarangJasaPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6">
+    <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <div>
         <Link
           to="/barang-jasa"
@@ -234,10 +246,7 @@ export function TambahBarangJasaPage() {
                   type="radio"
                   name="tipe"
                   checked={tipe === "Barang"}
-                  onChange={() => {
-                    setTipe("Barang");
-                    setSatuan((s) => (s === "job" ? "pcs" : s));
-                  }}
+                  onChange={() => setTipe("Barang")}
                   className="h-4 w-4 border-zinc-300 text-brand-600 focus:ring-brand-500"
                   disabled={saving}
                 />
@@ -248,11 +257,7 @@ export function TambahBarangJasaPage() {
                   type="radio"
                   name="tipe"
                   checked={tipe === "Jasa"}
-                  onChange={() => {
-                    setTipe("Jasa");
-                    setStok("");
-                    setSatuan((s) => (s === "pcs" ? "job" : s));
-                  }}
+                  onChange={() => setTipe("Jasa")}
                   className="h-4 w-4 border-zinc-300 text-brand-600 focus:ring-brand-500"
                   disabled={saving}
                 />
@@ -261,49 +266,14 @@ export function TambahBarangJasaPage() {
             </div>
           </fieldset>
 
-          <div>
-            <FieldLabel htmlFor="satuan">Satuan</FieldLabel>
-            <input
-              id="satuan"
-              name="satuan"
-              value={satuan}
-              onChange={(e) => setSatuan(e.target.value)}
-              placeholder={tipe === "Barang" ? "pcs, box, kg…" : "job, jam, hari…"}
-              className={inputClass}
-              disabled={saving}
-            />
-          </div>
-
-          <div>
-            <FieldLabel htmlFor="harga">Harga (IDR)</FieldLabel>
-            <input
-              id="harga"
-              name="harga"
-              inputMode="decimal"
-              value={harga}
-              onChange={(e) => setHarga(e.target.value)}
-              placeholder="899000"
-              className={inputClass}
-              disabled={saving}
-            />
-            <p className="mt-1 text-xs text-zinc-500">Angka saja; titik sebagai pemisah ribuan boleh dipakai.</p>
-          </div>
-
-          {tipe === "Barang" ? (
-            <div>
-              <FieldLabel htmlFor="stok">Stok awal</FieldLabel>
-              <input
-                id="stok"
-                name="stok"
-                inputMode="numeric"
-                value={stok}
-                onChange={(e) => setStok(e.target.value)}
-                placeholder="0"
-                className={inputClass}
-                disabled={saving}
-              />
-            </div>
-          ) : null}
+          <BarangSatuanTingkatSection
+            tipe={tipe}
+            tiers={satuanTiers}
+            onChange={setSatuanTiers}
+            stok={stok}
+            onStokChange={tipe === "Barang" ? setStok : undefined}
+            disabled={saving}
+          />
 
           <div className="flex flex-wrap items-center justify-end gap-3 border-t border-zinc-100 pt-5">
             <Button type="button" variant="ghost" onClick={() => navigate("/barang-jasa")} disabled={saving}>

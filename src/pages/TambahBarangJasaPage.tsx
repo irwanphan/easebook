@@ -1,9 +1,10 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { BarangFotoField } from "@/features/barang-jasa/BarangFotoField";
 import { BarangSatuanTingkatSection } from "@/features/barang-jasa/BarangSatuanTingkatSection";
@@ -18,20 +19,6 @@ import {
 } from "@/data/barangJasa";
 import { applyBarangFotoChanges, emptyBarangFotoState, type BarangFotoState } from "@/lib/barangFoto";
 import { tauriErrorMessage } from "@/lib/tauriError";
-
-function FieldLabel({ htmlFor, children }: { htmlFor: string; children: ReactNode }) {
-  return (
-    <label htmlFor={htmlFor} className="block text-sm font-medium text-zinc-700">
-      {children}
-    </label>
-  );
-}
-
-const inputClass =
-  "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
-
-const selectClass =
-  "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
 
 const EMPTY_OPTION = "";
 
@@ -157,87 +144,79 @@ export function TambahBarangJasaPage() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-3 rounded-xl border border-zinc-200 bg-white p-4">
-              <div>
-                <FieldLabel htmlFor="kode">Kode</FieldLabel>
-                <input
-                  id="kode"
-                  name="kode"
-                  value={kode}
-                  onChange={(e) => setKode(e.target.value)}
-                  placeholder="Contoh: BRG-003"
-                  className={inputClass}
-                  autoComplete="off"
-                  disabled={saving}
-                />
-              </div>
-              <div>
-                <FieldLabel htmlFor="nama">Nama</FieldLabel>
-                <input
-                  id="nama"
-                  name="nama"
-                  value={nama}
-                  onChange={(e) => setNama(e.target.value)}
-                  placeholder="Nama barang atau layanan"
-                  className={inputClass}
-                  disabled={saving}
-                />
-              </div>
+              <TokoInput
+                id="kode"
+                name="kode"
+                label="Kode"
+                value={kode}
+                onChange={(e) => setKode(e.target.value)}
+                placeholder="Contoh: BRG-003"
+                autoComplete="off"
+                disabled={saving}
+              />
+              <TokoInput
+                id="nama"
+                name="nama"
+                label="Nama"
+                value={nama}
+                onChange={(e) => setNama(e.target.value)}
+                placeholder="Nama barang atau layanan"
+                disabled={saving}
+              />
             </div>
 
             <BarangFotoField value={foto} onChange={setFoto} disabled={saving} />
           </div>
 
           <div className="grid gap-5 sm:grid-cols-2">
-            <div>
-              <FieldLabel htmlFor="kategori">Kategori / grup</FieldLabel>
-              <select
-                id="kategori"
-                value={kategoriKode}
-                onChange={(e) => setKategoriKode(e.target.value)}
-                className={selectClass}
-                disabled={saving || kategoriLoading}
-              >
-                <option value={EMPTY_OPTION}>— Tidak ada —</option>
-                {kategoriList.map((k) => (
-                  <option key={k.kode} value={k.kode}>
-                    {k.kode} — {k.nama}
-                  </option>
-                ))}
-              </select>
-              {!kategoriLoading && kategoriList.length === 0 ? (
-                <p className="mt-1 text-xs text-zinc-500">
-                  Belum ada kategori.{" "}
-                  <Link to="/manajemen/kategori/tambah" className="font-medium text-brand-600 hover:text-brand-700">
-                    Tambah kategori
-                  </Link>
-                </p>
-              ) : null}
-            </div>
-            <div>
-              <FieldLabel htmlFor="merek">Merek</FieldLabel>
-              <select
-                id="merek"
-                value={merekKode}
-                onChange={(e) => setMerekKode(e.target.value)}
-                className={selectClass}
-                disabled={saving || merekLoading}
-              >
-                <option value={EMPTY_OPTION}>— Tidak ada —</option>
-                {merekList.map((m) => (
-                  <option key={m.kode} value={m.kode}>
-                    {m.kode} — {m.nama}
-                  </option>
-                ))}
-              </select>
-              {!merekLoading && merekList.length === 0 ? (
-                <p className="mt-1 text-xs text-zinc-500">
-                  Belum ada merek.{" "}
-                  <Link to="/manajemen/merek/tambah" className="font-medium text-brand-600 hover:text-brand-700">
-                    Tambah merek
-                  </Link>
-                </p>
-              ) : null}
-            </div>
+            <TokoSelect
+              id="kategori"
+              label="Kategori / grup"
+              value={kategoriKode}
+              onChange={(e) => setKategoriKode(e.target.value)}
+              disabled={saving || kategoriLoading}
+              hint={
+                !kategoriLoading && kategoriList.length === 0 ? (
+                  <>
+                    Belum ada kategori.{" "}
+                    <Link to="/manajemen/kategori/tambah" className="font-medium text-brand-600 hover:text-brand-700">
+                      Tambah kategori
+                    </Link>
+                  </>
+                ) : undefined
+              }
+            >
+              <option value={EMPTY_OPTION}>— Tidak ada —</option>
+              {kategoriList.map((k) => (
+                <option key={k.kode} value={k.kode}>
+                  {k.kode} — {k.nama}
+                </option>
+              ))}
+            </TokoSelect>
+            <TokoSelect
+              id="merek"
+              label="Merek"
+              value={merekKode}
+              onChange={(e) => setMerekKode(e.target.value)}
+              disabled={saving || merekLoading}
+              hint={
+                !merekLoading && merekList.length === 0 ? (
+                  <>
+                    Belum ada merek.{" "}
+                    <Link to="/manajemen/merek/tambah" className="font-medium text-brand-600 hover:text-brand-700">
+                      Tambah merek
+                    </Link>
+                  </>
+                ) : undefined
+              }
+            >
+              <option value={EMPTY_OPTION}>— Tidak ada —</option>
+              {merekList.map((m) => (
+                <option key={m.kode} value={m.kode}>
+                  {m.kode} — {m.nama}
+                </option>
+              ))}
+            </TokoSelect>
           </div>
 
           <fieldset>

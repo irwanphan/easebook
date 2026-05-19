@@ -1,5 +1,6 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 
+mod activation;
 mod db;
 mod master_commands;
 mod seed_akun_keuangan;
@@ -115,6 +116,10 @@ pub fn run() {
             master_commands::jurnal_umum_list,
             master_commands::jurnal_umum_insert_transaksi,
             master_commands::jurnal_umum_insert_manual,
+            activation::activation_get_device_code,
+            activation::activation_get_status,
+            activation::activation_save,
+            activation::activation_apply_offline_code,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

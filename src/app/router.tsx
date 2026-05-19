@@ -1,7 +1,9 @@
 import { createHashRouter, Outlet } from "react-router-dom";
 import { AppShell } from "@/app/layout/AppShell";
 import { AuthProvider } from "@/features/auth/AuthContext";
+import { RequireActivation } from "@/features/activation/RequireActivation";
 import { RequireAuth } from "@/features/auth/RequireAuth";
+import { AktivasiPage } from "@/pages/AktivasiPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { BarangJasaPage } from "@/pages/BarangJasaPage";
@@ -66,9 +68,13 @@ export const router = createHashRouter([
   {
     element: <AuthLayout />,
     children: [
-      { path: "login", element: <LoginPage /> },
+      { path: "aktivasi", element: <AktivasiPage /> },
       {
-        element: <RequireAuth />,
+        element: <RequireActivation />,
+        children: [
+          { path: "login", element: <LoginPage /> },
+          {
+            element: <RequireAuth />,
         children: [
           {
             path: "/",
@@ -126,6 +132,8 @@ export const router = createHashRouter([
       { path: "keuangan/jurnal-umum", element: <JurnalUmumPage /> },
       { path: "pengaturan", element: <PengaturanPage /> },
             ],
+          },
+        ],
           },
         ],
       },

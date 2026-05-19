@@ -30,6 +30,7 @@ pub fn run() {
             drop(conn);
             app.manage(DbState { path: db_path });
 
+            #[cfg(not(mobile))]
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.maximize();
             }

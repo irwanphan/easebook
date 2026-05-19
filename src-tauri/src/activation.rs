@@ -88,8 +88,37 @@ fn normalize_product_id(value: &str) -> String {
     value.trim().to_lowercase()
 }
 
-pub fn compute_device_code() -> Result<String, String> {
-    let machine_id = machine_uid::get().map_err(|e| format!("Gagal membaca ID mesin: {e}"))?;
+/// Fingerprint perangkat untuk kode aktivasi. Desktop memakai hardware ID;
+/// Android memakai ID persisten di app data (machine-uid tidak mendukung Android).
+fn machine_fingerprint(app: &AppHandle) -> Result<String, String> {
+    #[cfg(target_os = "android")]
+    {
+        let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = dir.join(".device_fingerprint");
+        if path.exists() {
+            return fs::read_to_string(&path)
+                .map(|s| s.trim().to_string())
+                .map_err(|e| e.to_string());
+        }
+        let id = format!(
+            "android-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        );
+        fs::write(&path, &id).map_err(|e| e.to_string())?;
+        return Ok(id);
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        machine_uid::get().map_err(|e| format!("Gagal membaca ID mesin: {e}"))
+    }
+}
+
+pub fn compute_device_code(app: &AppHandle) -> Result<String, String> {
+    let machine_id = machine_fingerprint(app)?;
     let mut hasher = Sha256::new();
     hasher.update(machine_id.as_bytes());
     hasher.update(b"easybook-v1");
@@ -288,8 +317,8 @@ pub fn activation_get_license_info(
 }
 
 #[tauri::command]
-pub fn activation_get_device_code() -> Result<String, String> {
-    compute_device_code()
+pub fn activation_get_device_code(app: AppHandle) -> Result<String, String> {
+    compute_device_code(&app)
 }
 
 #[tauri::command]
@@ -305,7 +334,7 @@ pub fn activation_save(
     method: String,
     activated_at: i64,
 ) -> Result<ActivationStatus, String> {
-    let local_device = compute_device_code()?;
+    let local_device = compute_device_code(&app)?;
     let normalized_device = normalize_device(&device_code);
     if normalized_device != local_device {
         return Err("Kode perangkat tidak cocok dengan perangkat ini.".into());
@@ -334,7 +363,7 @@ pub fn activation_apply_offline_code(
     invoice_number: String,
     activation_code: String,
 ) -> Result<ActivationStatus, String> {
-    let device_code = compute_device_code()?;
+    let device_code = compute_device_code(&app)?;
     verify_offline_code(
         &activation_code,
         APP_PRODUCT_ID,

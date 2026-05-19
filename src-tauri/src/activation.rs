@@ -1,18 +1,20 @@
-//! Device fingerprint & aktivasi lisensi (online state + verifikasi kode offline).
+//! Device fingerprint & aktivasi lisensi (multi-produk, online + offline).
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
+/// ID produk untuk build EasyBook ERP — harus sama dengan `EASYBOOK_APP_ID` di frontend.
+pub const APP_PRODUCT_ID: &str = "easybook-erp";
+
 /// Batas transaksi (pembelian + penjualan) sebelum aktivasi wajib.
 pub const TRIAL_TRANSACTION_LIMIT: i64 = 100;
 
-/// Public key Ed25519 (base64) — harus sama dengan ACTIVATION_PUBLIC_KEY di activebook.
-/// Ganti saat production; generate dengan `bun scripts/generate-keys.ts` di repo activebook.
 const ACTIVATION_PUBLIC_KEY_B64: &str = "RHYdpMbo9V5Xhf8opH6NrrWyRz3MfSGePMb3y0Pb0Y8=";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +31,7 @@ pub struct LicenseInfo {
 #[serde(rename_all = "camelCase")]
 pub struct ActivationStatus {
     pub activated: bool,
+    pub product_id: String,
     pub invoice_number: String,
     pub device_code: String,
     pub method: String,
@@ -36,9 +39,33 @@ pub struct ActivationStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct OfflinePayload {
+struct ActivationStore {
+    products: HashMap<String, ActivationStatus>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyActivationStatus {
+    activated: bool,
+    invoice_number: String,
+    device_code: String,
+    method: String,
+    activated_at: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct OfflinePayloadV1 {
     inv: String,
     dev: String,
+    iat: i64,
+    v: u8,
+}
+
+#[derive(Debug, Deserialize)]
+struct OfflinePayloadV2 {
+    inv: String,
+    dev: String,
+    app: String,
     iat: i64,
     v: u8,
 }
@@ -55,6 +82,10 @@ fn normalize_invoice(value: &str) -> String {
 
 fn normalize_device(value: &str) -> String {
     value.trim().to_uppercase().replace(' ', "")
+}
+
+fn normalize_product_id(value: &str) -> String {
+    value.trim().to_lowercase()
 }
 
 pub fn compute_device_code() -> Result<String, String> {
@@ -81,6 +112,7 @@ fn decode_base64_url(value: &str) -> Result<Vec<u8>, String> {
 
 pub fn verify_offline_code(
     code: &str,
+    expected_product_id: &str,
     invoice_raw: &str,
     device_raw: &str,
 ) -> Result<(), String> {
@@ -115,23 +147,88 @@ pub fn verify_offline_code(
         .verify(&payload_bytes, &signature)
         .map_err(|_| "Tanda tangan kode aktivasi tidak valid.".to_string())?;
 
-    let payload: OfflinePayload =
-        serde_json::from_slice(&payload_bytes).map_err(|_| "Payload kode tidak dapat dibaca.")?;
-
-    if payload.v != 1 {
-        return Err("Versi kode tidak didukung.".into());
-    }
-
     let inv = normalize_invoice(invoice_raw);
     let dev = normalize_device(device_raw);
-    if payload.inv != inv {
-        return Err("Kode tidak cocok dengan nomor invoice.".into());
-    }
-    if payload.dev != dev {
-        return Err("Kode tidak cocok dengan kode perangkat.".into());
+    let expected_app = normalize_product_id(expected_product_id);
+
+    let raw: serde_json::Value =
+        serde_json::from_slice(&payload_bytes).map_err(|_| "Payload kode tidak dapat dibaca.")?;
+    let version = raw.get("v").and_then(|v| v.as_u64()).unwrap_or(0);
+
+    if version == 2 {
+        let payload: OfflinePayloadV2 =
+            serde_json::from_value(raw).map_err(|_| "Payload v2 tidak valid.")?;
+        if normalize_product_id(&payload.app) != expected_app {
+            return Err("Kode aktivasi tidak untuk aplikasi ini.".into());
+        }
+        if payload.inv != inv {
+            return Err("Kode tidak cocok dengan nomor invoice.".into());
+        }
+        if payload.dev != dev {
+            return Err("Kode tidak cocok dengan kode perangkat.".into());
+        }
+        return Ok(());
     }
 
-    Ok(())
+    if version == 1 {
+        let payload: OfflinePayloadV1 =
+            serde_json::from_value(raw).map_err(|_| "Payload v1 tidak valid.")?;
+        if expected_app != APP_PRODUCT_ID {
+            return Err("Kode aktivasi lama hanya berlaku untuk EasyBook ERP.".into());
+        }
+        if payload.inv != inv {
+            return Err("Kode tidak cocok dengan nomor invoice.".into());
+        }
+        if payload.dev != dev {
+            return Err("Kode tidak cocok dengan kode perangkat.".into());
+        }
+        return Ok(());
+    }
+
+    Err("Versi kode tidak didukung.".into())
+}
+
+fn read_store(app: &AppHandle) -> Result<ActivationStore, String> {
+    let path = activation_file(app)?;
+    if !path.exists() {
+        return Ok(ActivationStore {
+            products: HashMap::new(),
+        });
+    }
+    let raw = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+
+    if let Ok(store) = serde_json::from_str::<ActivationStore>(&raw) {
+        return Ok(store);
+    }
+
+    if let Ok(legacy) = serde_json::from_str::<LegacyActivationStatus>(&raw) {
+        let mut products = HashMap::new();
+        products.insert(
+            APP_PRODUCT_ID.to_string(),
+            ActivationStatus {
+                activated: legacy.activated,
+                product_id: APP_PRODUCT_ID.to_string(),
+                invoice_number: legacy.invoice_number,
+                device_code: legacy.device_code,
+                method: legacy.method,
+                activated_at: legacy.activated_at,
+            },
+        );
+        return Ok(ActivationStore { products });
+    }
+
+    Err("File aktivasi tidak dapat dibaca.".into())
+}
+
+fn write_store(app: &AppHandle, store: &ActivationStore) -> Result<(), String> {
+    let path = activation_file(app)?;
+    let raw = serde_json::to_string_pretty(store).map_err(|e| e.to_string())?;
+    fs::write(path, raw).map_err(|e| e.to_string())
+}
+
+fn read_status(app: &AppHandle, product_id: &str) -> Result<Option<ActivationStatus>, String> {
+    let store = read_store(app)?;
+    Ok(store.products.get(product_id).cloned())
 }
 
 pub fn count_combined_transactions(conn: &Connection) -> Result<i64, String> {
@@ -145,7 +242,9 @@ pub fn count_combined_transactions(conn: &Connection) -> Result<i64, String> {
 }
 
 pub fn is_activated(app: &AppHandle) -> Result<bool, String> {
-    Ok(read_status(app)?.map(|s| s.activated).unwrap_or(false))
+    Ok(read_status(app, APP_PRODUCT_ID)?
+        .map(|s| s.activated)
+        .unwrap_or(false))
 }
 
 pub fn assert_can_create_transaction(app: &AppHandle, conn: &Connection) -> Result<(), String> {
@@ -179,22 +278,6 @@ pub fn build_license_info(app: &AppHandle, conn: &Connection) -> Result<LicenseI
     })
 }
 
-fn read_status(app: &AppHandle) -> Result<Option<ActivationStatus>, String> {
-    let path = activation_file(app)?;
-    if !path.exists() {
-        return Ok(None);
-    }
-    let raw = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    let status: ActivationStatus = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
-    Ok(Some(status))
-}
-
-fn write_status(app: &AppHandle, status: &ActivationStatus) -> Result<(), String> {
-    let path = activation_file(app)?;
-    let raw = serde_json::to_string_pretty(status).map_err(|e| e.to_string())?;
-    fs::write(path, raw).map_err(|e| e.to_string())
-}
-
 #[tauri::command]
 pub fn activation_get_license_info(
     app: AppHandle,
@@ -211,7 +294,7 @@ pub fn activation_get_device_code() -> Result<String, String> {
 
 #[tauri::command]
 pub fn activation_get_status(app: AppHandle) -> Result<Option<ActivationStatus>, String> {
-    read_status(&app)
+    read_status(&app, APP_PRODUCT_ID)
 }
 
 #[tauri::command]
@@ -230,12 +313,18 @@ pub fn activation_save(
 
     let status = ActivationStatus {
         activated: true,
+        product_id: APP_PRODUCT_ID.to_string(),
         invoice_number: normalize_invoice(&invoice_number),
         device_code: normalized_device,
         method,
         activated_at,
     };
-    write_status(&app, &status)?;
+
+    let mut store = read_store(&app)?;
+    store
+        .products
+        .insert(APP_PRODUCT_ID.to_string(), status.clone());
+    write_store(&app, &store)?;
     Ok(status)
 }
 
@@ -246,7 +335,12 @@ pub fn activation_apply_offline_code(
     activation_code: String,
 ) -> Result<ActivationStatus, String> {
     let device_code = compute_device_code()?;
-    verify_offline_code(&activation_code, &invoice_number, &device_code)?;
+    verify_offline_code(
+        &activation_code,
+        APP_PRODUCT_ID,
+        &invoice_number,
+        &device_code,
+    )?;
     activation_save(
         app,
         invoice_number,

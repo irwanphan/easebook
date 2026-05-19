@@ -4,3 +4,6 @@ export const ACTIVATION_API_URL =
 
 /** Batas transaksi pembelian + penjualan sebelum aktivasi wajib (sinkron dengan Rust). */
 export const TRIAL_TRANSACTION_LIMIT = 100;
+
+/** ID produk di middleware activebook — satu constant per aplikasi klien. */
+export const EASYBOOK_APP_ID = "easybook-erp";

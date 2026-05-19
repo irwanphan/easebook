@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { CheckCircle2, KeyRound, Wifi, WifiOff } from "lucide-react";
-import { ACTIVATION_API_URL } from "@/config/activation";
+import { ACTIVATION_API_URL, EASYBOOK_APP_ID } from "@/config/activation";
 import { Button } from "@/components/ui/Button";
 import { TabsBar } from "@/components/ui/TabsBar";
 import {
@@ -99,17 +99,18 @@ export function AktivasiSection({ license, onActivated }: Props) {
     }
   }
 
-  const requestUrl = `${ACTIVATION_API_URL.replace(/\/$/, "")}/request`;
+  const requestUrl = `${ACTIVATION_API_URL.replace(/\/$/, "")}/request?appId=${encodeURIComponent(EASYBOOK_APP_ID)}`;
   const activated = status?.activated ?? license?.activated ?? false;
 
   return (
     <div className="space-y-5">
       <div>
         <p className="text-sm text-zinc-600">
-          EasyBook dapat digunakan gratis hingga{" "}
-          <strong>{license?.trialLimit ?? 100} transaksi</strong> (pembelian + penjualan).
+          <span className="font-medium text-zinc-800">EasyBook ERP</span> dapat digunakan gratis
+          hingga <strong>{license?.trialLimit ?? 100} transaksi</strong> (pembelian + penjualan).
           Setelah itu, tambah faktur baru memerlukan aktivasi lisensi.
         </p>
+        <p className="mt-1 font-mono text-xs text-zinc-400">Produk: {EASYBOOK_APP_ID}</p>
         {license ? (
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <div className="rounded-xl bg-zinc-50 px-4 py-3">

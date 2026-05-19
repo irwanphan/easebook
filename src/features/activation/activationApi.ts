@@ -1,8 +1,9 @@
-import { ACTIVATION_API_URL } from "@/config/activation";
+import { ACTIVATION_API_URL, EASYBOOK_APP_ID } from "@/config/activation";
 import { invoke } from "@tauri-apps/api/core";
 
 export type ActivationStatus = {
   activated: boolean;
+  productId: string;
   invoiceNumber: string;
   deviceCode: string;
   method: string;
@@ -50,7 +51,11 @@ export async function activateOnline(
   const res = await fetch(`${ACTIVATION_API_URL}/api/activate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ invoiceNumber, deviceCode }),
+    body: JSON.stringify({
+      appId: EASYBOOK_APP_ID,
+      invoiceNumber,
+      deviceCode,
+    }),
   });
   const json = (await res.json()) as {
     ok?: boolean;
@@ -79,7 +84,11 @@ export async function activateOffline(
       await fetch(`${ACTIVATION_API_URL}/api/activate/offline/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invoiceNumber, deviceCode }),
+        body: JSON.stringify({
+          appId: EASYBOOK_APP_ID,
+          invoiceNumber,
+          deviceCode,
+        }),
       });
     } catch {
       /* sinkron histori opsional saat offline total */

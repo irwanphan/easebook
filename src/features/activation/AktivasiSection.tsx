@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { CheckCircle2, KeyRound, Wifi, WifiOff } from "lucide-react";
+import { CheckCircle2, KeyRound } from "lucide-react";
 import { ACTIVATION_API_URL, EASYBOOK_APP_ID } from "@/config/activation";
 import { Button } from "@/components/ui/Button";
 import { TabsBar } from "@/components/ui/TabsBar";
@@ -189,7 +189,7 @@ export function AktivasiSection({ license, onActivated }: Props) {
                 />
               </div>
               <Button type="submit" disabled={loading || !deviceCode}>
-                <Wifi className="h-4 w-4" aria-hidden />
+                <KeyRound className="h-4 w-4" aria-hidden />
                 {loading ? "Mengaktivasi…" : "Aktivasi online"}
               </Button>
             </form>
@@ -221,7 +221,7 @@ export function AktivasiSection({ license, onActivated }: Props) {
                 />
               </div>
               <Button type="submit" disabled={loading}>
-                <WifiOff className="h-4 w-4" aria-hidden />
+                <KeyRound className="h-4 w-4" aria-hidden />
                 {loading ? "Memverifikasi…" : "Aktivasi offline"}
               </Button>
               <p className="text-xs text-zinc-500">
@@ -247,11 +247,6 @@ export function AktivasiSection({ license, onActivated }: Props) {
           ) : null}
         </>
       )}
-
-      <p className="flex items-center gap-1.5 text-xs text-zinc-400">
-        <KeyRound className="h-3.5 w-3.5" aria-hidden />
-        Server aktivasi: {ACTIVATION_API_URL}
-      </p>
     </div>
   );
 }

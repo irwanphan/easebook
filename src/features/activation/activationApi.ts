@@ -9,6 +9,18 @@ export type ActivationStatus = {
   activatedAt: number;
 };
 
+export type LicenseInfo = {
+  transactionCount: number;
+  trialLimit: number;
+  activated: boolean;
+  blocked: boolean;
+  remaining: number;
+};
+
+export async function getLicenseInfo(): Promise<LicenseInfo> {
+  return invoke<LicenseInfo>("activation_get_license_info");
+}
+
 export async function getDeviceCode(): Promise<string> {
   return invoke<string>("activation_get_device_code");
 }

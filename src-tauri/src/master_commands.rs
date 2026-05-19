@@ -2173,7 +2173,14 @@ fn pembelian_tx_revert_barang_stok(
 }
 
 #[tauri::command]
-pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) -> Result<String, String> {
+pub fn pembelian_insert(
+    app: tauri::AppHandle,
+    state: State<DbState>,
+    payload: PembelianInsertPayload,
+) -> Result<String, String> {
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    crate::activation::assert_can_create_transaction(&app, &conn)?;
+
     let (tgl, jt, metode, diskon_faktur, pajak, total) = pembelian_validate_and_total(&payload)?;
     let pemasok_kode = payload.pemasok_kode.trim();
     let gudang_kode = payload.gudang_kode.trim();
@@ -2183,7 +2190,6 @@ pub fn pembelian_insert(state: State<DbState>, payload: PembelianInsertPayload) 
     let tanggal_str = tgl.format("%Y-%m-%d").to_string();
     let jatuh_str = jt.format("%Y-%m-%d").to_string();
 
-    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     tx.execute(
@@ -3168,7 +3174,14 @@ pub fn dashboard_penjualan_ringkasan(state: State<DbState>) -> Result<DashboardP
 }
 
 #[tauri::command]
-pub fn penjualan_insert(state: State<DbState>, payload: PenjualanInsertPayload) -> Result<String, String> {
+pub fn penjualan_insert(
+    app: tauri::AppHandle,
+    state: State<DbState>,
+    payload: PenjualanInsertPayload,
+) -> Result<String, String> {
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    crate::activation::assert_can_create_transaction(&app, &conn)?;
+
     let (tgl, jt, _sub, diskon_faktur, pajak, total) = penjualan_validate_and_total(&payload)?;
     let pelanggan_kode = payload.pelanggan_kode.trim();
     let gudang_kode = payload.gudang_kode.trim();
@@ -3180,7 +3193,6 @@ pub fn penjualan_insert(state: State<DbState>, payload: PenjualanInsertPayload) 
     let tanggal_str = tgl.format("%Y-%m-%d").to_string();
     let jatuh_str = jt.format("%Y-%m-%d").to_string();
 
-    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     tx.execute(

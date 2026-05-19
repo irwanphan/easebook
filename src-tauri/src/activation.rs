@@ -1,15 +1,29 @@
 //! Device fingerprint & aktivasi lisensi (online state + verifikasi kode offline).
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
+/// Batas transaksi (pembelian + penjualan) sebelum aktivasi wajib.
+pub const TRIAL_TRANSACTION_LIMIT: i64 = 100;
+
 /// Public key Ed25519 (base64) — harus sama dengan ACTIVATION_PUBLIC_KEY di activebook.
 /// Ganti saat production; generate dengan `bun scripts/generate-keys.ts` di repo activebook.
 const ACTIVATION_PUBLIC_KEY_B64: &str = "RHYdpMbo9V5Xhf8opH6NrrWyRz3MfSGePMb3y0Pb0Y8=";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LicenseInfo {
+    pub transaction_count: i64,
+    pub trial_limit: i64,
+    pub activated: bool,
+    pub blocked: bool,
+    pub remaining: i64,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -120,6 +134,51 @@ pub fn verify_offline_code(
     Ok(())
 }
 
+pub fn count_combined_transactions(conn: &Connection) -> Result<i64, String> {
+    let pembelian: i64 = conn
+        .query_row("SELECT COUNT(*) FROM pembelian", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    let penjualan: i64 = conn
+        .query_row("SELECT COUNT(*) FROM penjualan", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    Ok(pembelian + penjualan)
+}
+
+pub fn is_activated(app: &AppHandle) -> Result<bool, String> {
+    Ok(read_status(app)?.map(|s| s.activated).unwrap_or(false))
+}
+
+pub fn assert_can_create_transaction(app: &AppHandle, conn: &Connection) -> Result<(), String> {
+    if is_activated(app)? {
+        return Ok(());
+    }
+    let count = count_combined_transactions(conn)?;
+    if count >= TRIAL_TRANSACTION_LIMIT {
+        return Err(format!(
+            "Batas uji coba {TRIAL_TRANSACTION_LIMIT} transaksi (pembelian + penjualan) telah tercapai. Aktifkan lisensi di Pengaturan → Aktivasi."
+        ));
+    }
+    Ok(())
+}
+
+pub fn build_license_info(app: &AppHandle, conn: &Connection) -> Result<LicenseInfo, String> {
+    let transaction_count = count_combined_transactions(conn)?;
+    let activated = is_activated(app)?;
+    let remaining = if activated {
+        0
+    } else {
+        (TRIAL_TRANSACTION_LIMIT - transaction_count).max(0)
+    };
+    let blocked = !activated && transaction_count >= TRIAL_TRANSACTION_LIMIT;
+    Ok(LicenseInfo {
+        transaction_count,
+        trial_limit: TRIAL_TRANSACTION_LIMIT,
+        activated,
+        blocked,
+        remaining,
+    })
+}
+
 fn read_status(app: &AppHandle) -> Result<Option<ActivationStatus>, String> {
     let path = activation_file(app)?;
     if !path.exists() {
@@ -134,6 +193,15 @@ fn write_status(app: &AppHandle, status: &ActivationStatus) -> Result<(), String
     let path = activation_file(app)?;
     let raw = serde_json::to_string_pretty(status).map_err(|e| e.to_string())?;
     fs::write(path, raw).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn activation_get_license_info(
+    app: AppHandle,
+    state: tauri::State<crate::DbState>,
+) -> Result<LicenseInfo, String> {
+    let conn = crate::db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    build_license_info(&app, &conn)
 }
 
 #[tauri::command]

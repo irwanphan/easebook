@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { TabsBar } from "@/components/ui/TabsBar";
+import { AktivasiSection } from "@/features/activation/AktivasiSection";
+import { useLicenseGate } from "@/features/activation/useLicenseGate";
 import type { InformasiPerusahaan } from "@/features/pengaturan/informasiPerusahaanStorage";
 import {
   loadInformasiPerusahaan,
@@ -17,6 +20,7 @@ import {
 const PENGATURAN_TABS = [
   { id: "perusahaan", label: "Informasi perusahaan" },
   { id: "transaksi", label: "Transaksi" },
+  { id: "aktivasi", label: "Aktivasi" },
   { id: "operasional", label: "Operasional" },
 ] as const;
 
@@ -41,11 +45,22 @@ function isValidEmail(s: string): boolean {
 }
 
 export function PengaturanPage() {
-  const [activeTab, setActiveTab] = useState<string>(PENGATURAN_TABS[0].id);
+  const [searchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get("tab");
+  const initialTab =
+    tabFromUrl && PENGATURAN_TABS.some((t) => t.id === tabFromUrl) ? tabFromUrl : PENGATURAN_TABS[0].id;
+  const [activeTab, setActiveTab] = useState<string>(initialTab);
+  const { license, refresh: refreshLicense } = useLicenseGate();
   const [perusahaan, setPerusahaan] = useState<InformasiPerusahaan>(() => loadInformasiPerusahaan());
   const [transaksi, setTransaksi] = useState<PengaturanTransaksi>(() => loadPengaturanTransaksi());
   const [savedHint, setSavedHint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (tabFromUrl && PENGATURAN_TABS.some((t) => t.id === tabFromUrl)) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [tabFromUrl]);
 
   useEffect(() => {
     setSavedHint(null);
@@ -239,6 +254,10 @@ export function PengaturanPage() {
                 nomor dokumen, dll.).
               </p>
             </div>
+          ) : null}
+
+          {activeTab === "aktivasi" ? (
+            <AktivasiSection license={license} onActivated={() => void refreshLicense()} />
           ) : null}
         </div>
       </Card>

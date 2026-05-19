@@ -6,6 +6,8 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import type { PembelianListRow } from "@/data/pembelian";
+import { TransactionGateBanner } from "@/features/activation/TransactionGateBanner";
+import { useLicenseGate } from "@/features/activation/useLicenseGate";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
 function formatRupiah(n: number) {
@@ -31,6 +33,7 @@ function statusVariant(s: string) {
 
 export function PembelianPage() {
   const navigate = useNavigate();
+  const { license, loading: licenseLoading, canCreateTransaction } = useLicenseGate();
   const [rows, setRows] = useState<PembelianListRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -58,11 +61,17 @@ export function PembelianPage() {
         title="Pembelian"
         description="Faktur beli dari pemasok — tercatat di database lokal."
         actions={
-          <Button type="button" onClick={() => navigate("/pembelian/tambah")}>
+          <Button
+            type="button"
+            disabled={!canCreateTransaction}
+            onClick={() => navigate("/pembelian/tambah")}
+          >
             Faktur beli baru
           </Button>
         }
       />
+
+      <TransactionGateBanner license={license} loading={licenseLoading} />
 
       {loadError ? (
         <div

@@ -17,6 +17,7 @@ import {
 } from "@/data/barangJasa";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { TokoInput } from "@/components/ui/TokoInput";
 
 const inputClass =
   "rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
@@ -167,18 +168,18 @@ export function LaporanMutasiAntarGudangPage() {
         <div className="flex flex-wrap items-end gap-4">
           <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
             Tanggal mulai
-            <input
+            <TokoInput
+              id="lmag-dari"
               type="date"
-              className={inputClass}
               value={tanggalDari}
               onChange={(e) => setTanggalDari(e.target.value)}
             />
           </label>
           <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
             Tanggal akhir
-            <input
+            <TokoInput
+              id="lmag-sampai"
               type="date"
-              className={inputClass}
               value={tanggalSampai}
               onChange={(e) => setTanggalSampai(e.target.value)}
             />
@@ -234,12 +235,16 @@ export function LaporanMutasiAntarGudangPage() {
                         <div>{formatTanggal(row.tanggal)}</div>
                         <div className="text-xs text-zinc-500">{formatWaktu(row.createdAt)}</div>
                       </td>
-                      <td className="px-4 py-3 text-zinc-800">
-                        <span className="font-medium">{row.gudangAsalKode}</span>
-                        <span className="text-zinc-500"> — {row.gudangAsalNama}</span>
+                      <td className="px-4 py-3 text-zinc-800 flex items-center gap-1">
+                        <span className="flex flex-col border border-slate-300 rounded-md py-0.5 px-1.5">
+                          <span className="font-medium text-sm">{row.gudangAsalKode}</span>
+                          <span className="text-slate-700 text-xs">{row.gudangAsalNama}</span>
+                        </span>
                         <span className="mx-1 text-zinc-400">→</span>
-                        <span className="font-medium">{row.gudangTujuanKode}</span>
-                        <span className="text-zinc-500"> — {row.gudangTujuanNama}</span>
+                        <span className="flex flex-col border border-slate-300 rounded-md py-0.5 px-1.5">
+                          <span className="font-medium text-sm">{row.gudangTujuanKode}</span>
+                          <span className="text-slate-700 text-xs">{row.gudangTujuanNama}</span>
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-zinc-800">
                         {baris.length === 0 ? (

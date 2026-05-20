@@ -7,6 +7,15 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import type { GudangRow } from "@/data/gudang";
 import type { BarangSaldoGudangRow, MutasiAntarGudangPayload } from "@/data/mutasiAntarGudang";
+import {
+  findSatuanPilihan,
+  formatQtyMultiSatuan,
+  getDefaultSatuanPilihan,
+  getSatuanStokBarang,
+  qtyToSatuanTerkecil,
+} from "@/data/barangJasa";
+import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
+import { FakturLineSatuanSelect } from "@/features/barang-jasa/FakturLineSatuanSelect";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
 const inputClass =
@@ -24,16 +33,32 @@ function formatQty(n: number) {
   return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(n);
 }
 
+type QtyEntry = {
+  /** Qty dalam tier terpilih (bukan satuan terkecil). */
+  qty: number;
+  /** Tingkat satuan yang dipilih. */
+  tingkat: number;
+};
+
 export function MutasiAntarGudangPage() {
   const navigate = useNavigate();
+  const { items: barangItems } = useBarangJasa();
   const [gudangList, setGudangList] = useState<GudangRow[]>([]);
   const [gudangAsal, setGudangAsal] = useState("");
   const [gudangTujuan, setGudangTujuan] = useState("");
   const [tanggal, setTanggal] = useState(todayLocalISODate);
   const [catatan, setCatatan] = useState("");
   const [barangRows, setBarangRows] = useState<BarangSaldoGudangRow[]>([]);
-  const [qtyByKode, setQtyByKode] = useState<Record<string, number>>({});
+  const [qtyByKode, setQtyByKode] = useState<Record<string, QtyEntry>>({});
   const [cari, setCari] = useState("");
+
+  const barangByKode = useMemo(() => {
+    const m = new Map<string, (typeof barangItems)[number]>();
+    for (const b of barangItems) {
+      m.set(b.kode.toLowerCase(), b);
+    }
+    return m;
+  }, [barangItems]);
 
   const [gudangLoading, setGudangLoading] = useState(true);
   const [barangLoading, setBarangLoading] = useState(false);
@@ -99,21 +124,52 @@ export function MutasiAntarGudangPage() {
     );
   }, [barangRows, cari]);
 
+  /** Jumlah satuan terkecil per 1 unit pada tier terpilih. */
+  function faktorKeTerkecil(kode: string, tingkat: number): number {
+    const b = barangByKode.get(kode.toLowerCase());
+    if (!b) return 1;
+    const f = qtyToSatuanTerkecil(b, tingkat, 1);
+    return f > 0 ? f : 1;
+  }
+
+  function getEntry(kode: string): QtyEntry {
+    const ada = qtyByKode[kode];
+    if (ada) return ada;
+    const b = barangByKode.get(kode.toLowerCase());
+    const def = b ? getDefaultSatuanPilihan(b) : { tingkat: 1 };
+    return { qty: 0, tingkat: def.tingkat };
+  }
+
   const linesToSubmit = useMemo(() => {
     return barangRows
-      .map((b) => ({
-        barangKode: b.kode,
-        qty: Math.round(qtyByKode[b.kode] ?? 0),
-      }))
-      .filter((l) => l.qty > 0);
-  }, [barangRows, qtyByKode]);
+      .map((b) => {
+        const entry = qtyByKode[b.kode];
+        if (!entry || entry.qty <= 0) return null;
+        const factor = faktorKeTerkecil(b.kode, entry.tingkat);
+        const qtySmallest = Math.round(entry.qty) * factor;
+        return { barangKode: b.kode, qty: qtySmallest };
+      })
+      .filter((x): x is { barangKode: string; qty: number } => x !== null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [barangRows, qtyByKode, barangByKode]);
 
+  /** Total dalam satuan terkecil — agregat lintas barang (referensi saja). */
   const totalQty = useMemo(() => linesToSubmit.reduce((s, l) => s + l.qty, 0), [linesToSubmit]);
 
-  function setQty(kode: string, raw: string, maxSaldo: number) {
+  function setQty(kode: string, raw: string, maxSaldoSmallest: number, tingkat: number) {
     const n = raw === "" ? 0 : Math.max(0, Math.round(Number(raw)));
-    const capped = maxSaldo > 0 ? Math.min(n, maxSaldo) : n;
-    setQtyByKode((prev) => ({ ...prev, [kode]: capped }));
+    const factor = faktorKeTerkecil(kode, tingkat);
+    const maxInTier = factor > 0 ? Math.floor(maxSaldoSmallest / factor) : n;
+    const capped = maxSaldoSmallest > 0 ? Math.min(n, maxInTier) : n;
+    setQtyByKode((prev) => ({ ...prev, [kode]: { qty: capped, tingkat } }));
+  }
+
+  function setTingkat(kode: string, tingkat: number, maxSaldoSmallest: number) {
+    const current = qtyByKode[kode]?.qty ?? 0;
+    const factor = faktorKeTerkecil(kode, tingkat);
+    const maxInTier = factor > 0 ? Math.floor(maxSaldoSmallest / factor) : current;
+    const capped = maxSaldoSmallest > 0 ? Math.min(current, maxInTier) : current;
+    setQtyByKode((prev) => ({ ...prev, [kode]: { qty: capped, tingkat } }));
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -282,7 +338,7 @@ export function MutasiAntarGudangPage() {
                     ? "Memuat stok di gudang asal…"
                     : barangRows.length === 0
                       ? "Tidak ada stok barang di gudang asal."
-                      : `${barangRows.length} barang tersedia · ${linesToSubmit.length} baris dipilih (${formatQty(totalQty)} unit)`
+                      : `${barangRows.length} barang tersedia · ${linesToSubmit.length} baris dipilih (${formatQty(totalQty)} unit terkecil agregat)`
                   : "Pilih gudang asal terlebih dahulu."}
               </p>
             </div>
@@ -303,31 +359,32 @@ export function MutasiAntarGudangPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-sm">
+            <table className="w-full min-w-[820px] text-left text-sm">
               <thead>
                 <tr className="border-b border-zinc-100 bg-zinc-50/90 text-xs font-semibold uppercase tracking-wide text-zinc-500">
                   <th className="px-5 py-3">Kode</th>
                   <th className="px-5 py-3">Nama</th>
-                  <th className="px-5 py-3 text-right">Stok di asal</th>
-                  <th className="px-5 py-3 text-right">Qty pindah</th>
+                  <th className="px-5 py-3">Stok di asal</th>
+                  <th className="w-36 px-3 py-3">Satuan pindah</th>
+                  <th className="w-32 px-5 py-3 text-right">Qty pindah</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {!gudangAsal ? (
                   <tr>
-                    <td colSpan={4} className="px-5 py-10 text-center text-sm text-zinc-500">
+                    <td colSpan={5} className="px-5 py-10 text-center text-sm text-zinc-500">
                       Pilih gudang asal.
                     </td>
                   </tr>
                 ) : barangLoading ? (
                   <tr>
-                    <td colSpan={4} className="px-5 py-10 text-center text-sm text-zinc-500">
+                    <td colSpan={5} className="px-5 py-10 text-center text-sm text-zinc-500">
                       Memuat…
                     </td>
                   </tr>
                 ) : barangFiltered.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-5 py-10 text-center text-sm text-zinc-500">
+                    <td colSpan={5} className="px-5 py-10 text-center text-sm text-zinc-500">
                       {barangRows.length === 0
                         ? "Stok kosong di gudang asal."
                         : "Tidak ada barang sesuai pencarian."}
@@ -335,28 +392,71 @@ export function MutasiAntarGudangPage() {
                   </tr>
                 ) : (
                   barangFiltered.map((row) => {
-                    const qty = qtyByKode[row.kode] ?? 0;
-                    const over = qty > row.saldo;
+                    const barang = barangByKode.get(row.kode.toLowerCase());
+                    const satuanStok = barang ? getSatuanStokBarang(barang) : row.satuan || "—";
+                    const barangForFormat = barang ?? {
+                      satuan: row.satuan,
+                      satuanTingkat: undefined,
+                    };
+                    const entry = getEntry(row.kode);
+                    const factor = faktorKeTerkecil(row.kode, entry.tingkat);
+                    const maxInTier = factor > 0 ? Math.floor(row.saldo / factor) : row.saldo;
+                    const satuanNamaPilihan =
+                      barang && findSatuanPilihan(barang, entry.tingkat)?.nama
+                        ? findSatuanPilihan(barang, entry.tingkat)!.nama
+                        : satuanStok;
+                    const qtySmallest = entry.qty * factor;
+                    const over = qtySmallest > row.saldo;
                     return (
-                      <tr key={row.kode} className="bg-white">
+                      <tr key={row.kode} className="bg-white align-top">
                         <td className="px-5 py-3 font-mono text-xs font-semibold text-brand-700">{row.kode}</td>
                         <td className="px-5 py-3 font-medium text-zinc-900">
                           {row.nama}
-                          <span className="ml-1.5 text-xs font-normal text-zinc-400">{row.satuan}</span>
+                          <span className="ml-1.5 text-xs font-normal text-zinc-400">{satuanStok}</span>
                         </td>
-                        <td className="px-5 py-3 text-right tabular-nums text-zinc-600">{formatQty(row.saldo)}</td>
+                        <td className="px-5 py-3 text-zinc-700">
+                          <span className="block font-medium">
+                            {formatQtyMultiSatuan(row.saldo, barangForFormat)}
+                          </span>
+                          {factor > 1 ? (
+                            <span className="block text-xs font-normal text-zinc-400">
+                              = {formatQty(row.saldo)} {satuanStok}
+                            </span>
+                          ) : null}
+                        </td>
                         <td className="px-5 py-3 text-right">
                           <input
                             type="number"
                             min={0}
-                            max={row.saldo}
+                            max={maxInTier}
                             step={1}
-                            value={qty === 0 ? "" : qty}
-                            onChange={(e) => setQty(row.kode, e.target.value, row.saldo)}
+                            value={entry.qty === 0 ? "" : entry.qty}
+                            onChange={(e) =>
+                              setQty(row.kode, e.target.value, row.saldo, entry.tingkat)
+                            }
                             className={`${inputClass} !mt-0 w-24 text-right tabular-nums ${over ? "border-rose-400" : ""}`}
                             disabled={formDisabled}
                             placeholder="0"
                             aria-label={`Qty pindah ${row.kode}`}
+                          />
+                          {entry.qty > 0 && factor > 1 ? (
+                            <p className="mt-1 text-xs text-zinc-500">
+                              {entry.qty} {satuanNamaPilihan} = {formatQty(qtySmallest)} {satuanStok}
+                            </p>
+                          ) : null}
+                          {entry.qty > 0 ? (
+                            <p className="mt-0.5 text-[11px] text-zinc-400">
+                              sisa setelah pindah: {formatQty(Math.max(0, row.saldo - qtySmallest))} {satuanStok}
+                            </p>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-3">
+                          <FakturLineSatuanSelect
+                            id={`mag-satuan-${row.kode}`}
+                            barang={barang}
+                            tingkat={entry.tingkat}
+                            onChange={(tingkat) => setTingkat(row.kode, tingkat, row.saldo)}
+                            disabled={formDisabled || !barang}
                           />
                         </td>
                       </tr>

@@ -239,6 +239,61 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     migrate_pelunasan_hutang_tables(conn)?;
     migrate_pengguna_tables(conn)?;
     migrate_barang_jasa_satuan(conn)?;
+    migrate_transfer_kas_tables(conn)?;
+    migrate_activity_log_tables(conn)?;
+    Ok(())
+}
+
+/// Transfer antar rekening kas / bank.
+fn migrate_transfer_kas_tables(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS transfer_kas (
+            nomor TEXT PRIMARY KEY NOT NULL,
+            tanggal TEXT NOT NULL,
+            akun_sumber_kode TEXT NOT NULL REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            akun_tujuan_kode TEXT NOT NULL REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            nominal_kirim INTEGER NOT NULL,
+            nominal_terima INTEGER NOT NULL,
+            biaya_transfer INTEGER NOT NULL DEFAULT 0,
+            akun_biaya_kode TEXT REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            catatan TEXT NOT NULL DEFAULT '',
+            jurnal_id INTEGER REFERENCES jurnal_umum(id) ON DELETE SET NULL ON UPDATE CASCADE,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_transfer_kas_tanggal ON transfer_kas(tanggal);
+        CREATE INDEX IF NOT EXISTS idx_transfer_kas_sumber ON transfer_kas(akun_sumber_kode);
+        CREATE INDEX IF NOT EXISTS idx_transfer_kas_tujuan ON transfer_kas(akun_tujuan_kode);
+        ",
+    )?;
+    Ok(())
+}
+
+/// Audit log append-only — sekali tulis, tidak boleh di-update/hapus dari aplikasi.
+fn migrate_activity_log_tables(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS activity_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            waktu INTEGER NOT NULL,
+            aktor_username TEXT NOT NULL DEFAULT '',
+            aktor_nama TEXT NOT NULL DEFAULT '',
+            aksi TEXT NOT NULL,
+            entitas TEXT NOT NULL,
+            entitas_id TEXT NOT NULL DEFAULT '',
+            ringkasan TEXT NOT NULL DEFAULT '',
+            nilai_sebelum TEXT,
+            nilai_sesudah TEXT,
+            metadata TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_activity_log_waktu ON activity_log(waktu);
+        CREATE INDEX IF NOT EXISTS idx_activity_log_entitas ON activity_log(entitas, entitas_id);
+        CREATE INDEX IF NOT EXISTS idx_activity_log_aktor ON activity_log(aktor_username);
+        ",
+    )?;
     Ok(())
 }
 

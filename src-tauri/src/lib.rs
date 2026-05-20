@@ -117,6 +117,8 @@ pub fn run() {
             master_commands::jurnal_umum_list,
             master_commands::jurnal_umum_insert_transaksi,
             master_commands::jurnal_umum_insert_manual,
+            master_commands::transfer_kas_list,
+            master_commands::transfer_kas_insert,
             activation::activation_get_license_info,
             activation::activation_get_device_code,
             activation::activation_get_status,

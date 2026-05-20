@@ -1,0 +1,95 @@
+import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { Button } from "@/components/ui/Button";
+import {
+  KasTransaksiDetailView,
+  type KasTransaksiDetailVariant,
+} from "@/features/keuangan/KasTransaksiDetailView";
+import type { PenerimaanDetail } from "@/data/penerimaan";
+import { tauriErrorMessage } from "@/lib/tauriError";
+
+const PENERIMAAN_VARIANT: KasTransaksiDetailVariant = {
+  kasLabel: "Diterima ke kas",
+  akunBarisLabel: "Akun pendapatan",
+  baristTitle: "Rincian pendapatan",
+  arahJurnal: "Debit kas (total) · Kredit akun pendapatan per baris.",
+};
+
+const DAFTAR_HREF = "/keuangan/penerimaan";
+
+export function PenerimaanDetailPage() {
+  const { nomor: nomorParam } = useParams();
+  const navigate = useNavigate();
+  const nomor = nomorParam ? decodeURIComponent(nomorParam) : "";
+
+  const [detail, setDetail] = useState<PenerimaanDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!nomor.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const d = await invoke<PenerimaanDetail>("penerimaan_detail", { nomor: nomor.trim() });
+      setDetail(d);
+    } catch (e) {
+      setError(tauriErrorMessage(e));
+      setDetail(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [nomor]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (!nomor.trim()) {
+    return (
+      <div className="mx-auto flex max-w-2xl flex-col gap-6">
+        <PageHeader title="Penerimaan tidak valid" description="Nomor penerimaan tidak ada di URL." />
+        <Button type="button" variant="ghost" className="self-start" onClick={() => navigate(DAFTAR_HREF)}>
+          Kembali ke daftar
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto flex max-w-5xl flex-col gap-6">
+      <div>
+        <Link
+          to={DAFTAR_HREF}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          Kembali ke daftar penerimaan
+        </Link>
+        <PageHeader
+          title="Detail penerimaan"
+          description={detail ? `No. bukti ${detail.nomor}` : "Memuat data penerimaan…"}
+        />
+      </div>
+
+      {error ? (
+        <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          {error}
+        </div>
+      ) : null}
+
+      {loading ? <p className="text-sm text-zinc-500">Memuat…</p> : null}
+
+      {!loading && !detail && !error ? (
+        <p className="text-sm text-zinc-500">Data penerimaan tidak tersedia.</p>
+      ) : null}
+
+      {detail && !loading ? (
+        <KasTransaksiDetailView detail={detail} variant={PENERIMAAN_VARIANT} />
+      ) : null}
+    </div>
+  );
+}

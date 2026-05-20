@@ -20,3 +20,23 @@ export type PenerimaanInsertPayload = {
   catatan: string;
   lines: PenerimaanLineInput[];
 };
+
+export type PenerimaanDetailLine = {
+  id: number;
+  akunKode: string;
+  akunNama: string;
+  jumlah: number;
+  catatan: string;
+};
+
+export type PenerimaanDetail = {
+  nomor: string;
+  tanggal: string;
+  akunKasKode: string;
+  akunKasNama: string;
+  total: number;
+  catatan: string;
+  createdAt: number;
+  updatedAt: number;
+  lines: PenerimaanDetailLine[];
+};

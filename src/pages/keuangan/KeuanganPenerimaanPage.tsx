@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { Eye } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -154,18 +155,19 @@ export function KeuanganPenerimaanPage() {
                 <th className="px-5 py-3 text-right">Baris</th>
                 <th className="px-5 py-3 text-right">Total</th>
                 <th className="px-5 py-3">Catatan</th>
+                <th className="px-5 py-3 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-sm text-zinc-500">
+                  <td colSpan={7} className="px-5 py-10 text-center text-sm text-zinc-500">
                     Memuat penerimaan…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center text-sm text-zinc-500">
+                  <td colSpan={7} className="px-5 py-12 text-center text-sm text-zinc-500">
                     Belum ada penerimaan. Klik Tambah penerimaan untuk mencatat transaksi.
                   </td>
                 </tr>
@@ -184,6 +186,16 @@ export function KeuanganPenerimaanPage() {
                     <td className="px-5 py-3 text-right font-semibold text-zinc-900">{formatRupiah(row.total)}</td>
                     <td className="max-w-[220px] truncate px-5 py-3 text-zinc-600" title={row.catatan || undefined}>
                       {row.catatan || "—"}
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <Link
+                        to={`/keuangan/penerimaan/detail/${encodeURIComponent(row.nomor)}`}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
+                        aria-label={`Lihat detail penerimaan ${row.nomor}`}
+                      >
+                        <Eye className="h-3.5 w-3.5" aria-hidden />
+                        Detail
+                      </Link>
                     </td>
                   </tr>
                 ))

@@ -4801,6 +4801,92 @@ pub fn pengeluaran_list(
     })
 }
 
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PengeluaranDetailLine {
+    pub id: i64,
+    pub akun_kode: String,
+    pub akun_nama: String,
+    pub jumlah: i64,
+    pub catatan: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PengeluaranDetail {
+    pub nomor: String,
+    pub tanggal: String,
+    pub akun_kas_kode: String,
+    pub akun_kas_nama: String,
+    pub total: i64,
+    pub catatan: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub lines: Vec<PengeluaranDetailLine>,
+}
+
+#[tauri::command]
+pub fn pengeluaran_detail(state: State<DbState>, nomor: String) -> Result<PengeluaranDetail, String> {
+    let key = nomor.trim();
+    if key.is_empty() {
+        return Err("Nomor pengeluaran wajib diisi.".into());
+    }
+
+    let conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+
+    let header: PengeluaranDetail = conn
+        .query_row(
+            "SELECT p.nomor, p.tanggal, p.akun_kas_kode, COALESCE(k.nama, ''),
+                    p.total, p.catatan, p.created_at, p.updated_at
+             FROM pengeluaran p
+             LEFT JOIN akun_keuangan k ON lower(k.kode) = lower(p.akun_kas_kode)
+             WHERE p.nomor = ?",
+            params![key],
+            |r| {
+                Ok(PengeluaranDetail {
+                    nomor: r.get(0)?,
+                    tanggal: r.get(1)?,
+                    akun_kas_kode: r.get(2)?,
+                    akun_kas_nama: r.get(3)?,
+                    total: r.get(4)?,
+                    catatan: r.get(5)?,
+                    created_at: r.get(6)?,
+                    updated_at: r.get(7)?,
+                    lines: Vec::new(),
+                })
+            },
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => format!("Pengeluaran '{key}' tidak ditemukan."),
+            _ => e.to_string(),
+        })?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT pl.id, pl.akun_kode, COALESCE(a.nama, ''), pl.jumlah, pl.catatan
+             FROM pengeluaran_line pl
+             LEFT JOIN akun_keuangan a ON lower(a.kode) = lower(pl.akun_kode)
+             WHERE pl.nomor = ?
+             ORDER BY pl.id ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let lines = stmt
+        .query_map(params![key], |r| {
+            Ok(PengeluaranDetailLine {
+                id: r.get(0)?,
+                akun_kode: r.get(1)?,
+                akun_nama: r.get(2)?,
+                jumlah: r.get(3)?,
+                catatan: r.get(4)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(PengeluaranDetail { lines, ..header })
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PengeluaranLineInput {
@@ -5011,6 +5097,92 @@ pub fn penerimaan_list(
         })?;
         rows.collect()
     })
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PenerimaanDetailLine {
+    pub id: i64,
+    pub akun_kode: String,
+    pub akun_nama: String,
+    pub jumlah: i64,
+    pub catatan: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PenerimaanDetail {
+    pub nomor: String,
+    pub tanggal: String,
+    pub akun_kas_kode: String,
+    pub akun_kas_nama: String,
+    pub total: i64,
+    pub catatan: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub lines: Vec<PenerimaanDetailLine>,
+}
+
+#[tauri::command]
+pub fn penerimaan_detail(state: State<DbState>, nomor: String) -> Result<PenerimaanDetail, String> {
+    let key = nomor.trim();
+    if key.is_empty() {
+        return Err("Nomor penerimaan wajib diisi.".into());
+    }
+
+    let conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+
+    let header: PenerimaanDetail = conn
+        .query_row(
+            "SELECT p.nomor, p.tanggal, p.akun_kas_kode, COALESCE(k.nama, ''),
+                    p.total, p.catatan, p.created_at, p.updated_at
+             FROM penerimaan p
+             LEFT JOIN akun_keuangan k ON lower(k.kode) = lower(p.akun_kas_kode)
+             WHERE p.nomor = ?",
+            params![key],
+            |r| {
+                Ok(PenerimaanDetail {
+                    nomor: r.get(0)?,
+                    tanggal: r.get(1)?,
+                    akun_kas_kode: r.get(2)?,
+                    akun_kas_nama: r.get(3)?,
+                    total: r.get(4)?,
+                    catatan: r.get(5)?,
+                    created_at: r.get(6)?,
+                    updated_at: r.get(7)?,
+                    lines: Vec::new(),
+                })
+            },
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => format!("Penerimaan '{key}' tidak ditemukan."),
+            _ => e.to_string(),
+        })?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT pl.id, pl.akun_kode, COALESCE(a.nama, ''), pl.jumlah, pl.catatan
+             FROM penerimaan_line pl
+             LEFT JOIN akun_keuangan a ON lower(a.kode) = lower(pl.akun_kode)
+             WHERE pl.nomor = ?
+             ORDER BY pl.id ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let lines = stmt
+        .query_map(params![key], |r| {
+            Ok(PenerimaanDetailLine {
+                id: r.get(0)?,
+                akun_kode: r.get(1)?,
+                akun_nama: r.get(2)?,
+                jumlah: r.get(3)?,
+                catatan: r.get(4)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(PenerimaanDetail { lines, ..header })
 }
 
 #[derive(Debug, Deserialize)]

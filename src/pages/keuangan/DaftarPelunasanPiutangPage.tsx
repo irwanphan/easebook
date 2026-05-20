@@ -8,9 +8,7 @@ import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import type { PelunasanPiutangRiwayatRow } from "@/data/pelunasanPiutang";
 import { useAuth } from "@/features/auth/AuthContext";
 import { tauriErrorMessage } from "@/lib/tauriError";
-
-const inputClass =
-  "rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
+import { TokoInput } from "@/components/ui/TokoInput";
 
 function toIsoDate(d: Date) {
   const y = d.getFullYear();
@@ -151,24 +149,22 @@ export function DaftarPelunasanPiutangPage() {
               <label htmlFor="pl-dari" className="block text-sm font-medium text-zinc-700">
                 Tanggal mulai
               </label>
-              <input
+              <TokoInput
                 id="pl-dari"
                 type="date"
                 value={tanggalDari}
                 onChange={(e) => setTanggalDari(e.target.value)}
-                className={`${inputClass} mt-1`}
               />
             </div>
             <div>
               <label htmlFor="pl-sampai" className="block text-sm font-medium text-zinc-700">
                 Tanggal akhir
               </label>
-              <input
+              <TokoInput
                 id="pl-sampai"
                 type="date"
                 value={tanggalSampai}
                 onChange={(e) => setTanggalSampai(e.target.value)}
-                className={`${inputClass} mt-1`}
               />
             </div>
           </div>

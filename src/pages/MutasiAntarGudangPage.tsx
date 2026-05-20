@@ -17,6 +17,7 @@ import {
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { FakturLineSatuanSelect } from "@/features/barang-jasa/FakturLineSatuanSelect";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
 
 const inputClass =
   "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
@@ -246,17 +247,16 @@ export function MutasiAntarGudangPage() {
       ) : null}
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-6 w-full">
-        <Card>
+        <Card className="space-y-4">
           <div className="flex gap-4 w-full">
             <div className="w-full">
               <label htmlFor="mag-asal" className="block text-sm font-medium text-zinc-700">
                 Gudang asal
               </label>
-              <select
+              <TokoSelect
                 id="mag-asal"
                 value={gudangAsal}
                 onChange={(e) => setGudangAsal(e.target.value)}
-                className={inputClass}
                 disabled={formDisabled}
                 required
               >
@@ -266,7 +266,7 @@ export function MutasiAntarGudangPage() {
                     {g.kode} — {g.nama}
                   </option>
                 ))}
-              </select>
+              </TokoSelect>
             </div>
             <Button type="button" variant="secondary" className="h-8 grow-0 flex self-end" onClick={() => {
               const temp = gudangAsal;
@@ -279,11 +279,10 @@ export function MutasiAntarGudangPage() {
               <label htmlFor="mag-tujuan" className="block text-sm font-medium text-zinc-700">
                 Gudang tujuan
               </label>
-              <select
+              <TokoSelect
                 id="mag-tujuan"
                 value={gudangTujuan}
                 onChange={(e) => setGudangTujuan(e.target.value)}
-                className={inputClass}
                 disabled={formDisabled}
                 required
               >
@@ -293,7 +292,7 @@ export function MutasiAntarGudangPage() {
                     {g.kode} — {g.nama}
                   </option>
                 ))}
-              </select>
+              </TokoSelect>
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -301,12 +300,11 @@ export function MutasiAntarGudangPage() {
               <label htmlFor="mag-tgl" className="block text-sm font-medium text-zinc-700">
                 Tanggal mutasi
               </label>
-              <input
+              <TokoInput
                 id="mag-tgl"
                 type="date"
                 value={tanggal}
                 onChange={(e) => setTanggal(e.target.value)}
-                className={inputClass}
                 disabled={formDisabled}
                 required
               />
@@ -315,12 +313,11 @@ export function MutasiAntarGudangPage() {
               <label htmlFor="mag-catatan" className="block text-sm font-medium text-zinc-700">
                 Catatan mutasi
               </label>
-              <input
+              <TokoInput
                 id="mag-catatan"
                 type="text"
                 value={catatan}
                 onChange={(e) => setCatatan(e.target.value)}
-                className={inputClass}
                 disabled={formDisabled}
                 placeholder="opsional"
               />
@@ -329,7 +326,7 @@ export function MutasiAntarGudangPage() {
         </Card>
 
         <Card className="overflow-hidden p-0">
-          <div className="flex flex-col gap-3 border-b border-zinc-100 p-6 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex flex-col gap-3 border-b border-zinc-100 mb-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 className="text-sm font-semibold text-zinc-900">Barang dipindahkan</h2>
               <p className="mt-1 text-sm text-zinc-500">
@@ -343,7 +340,7 @@ export function MutasiAntarGudangPage() {
               </p>
             </div>
             <div className="w-full sm:max-w-xs">
-              <label htmlFor="mag-cari" className="block text-sm font-medium text-zinc-700">
+              <label htmlFor="mag-cari" className="block text-xs font-medium text-zinc-700">
                 Cari barang
               </label>
               <input

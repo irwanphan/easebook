@@ -6705,62 +6705,21 @@ fn validate_akun_biaya(tx: &Transaction<'_>, kode: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-pub fn transfer_kas_list(
-    state: State<DbState>,
-    tanggal_dari: String,
-    tanggal_sampai: String,
-) -> Result<Vec<TransferKasListRow>, String> {
-    let dari = tanggal_dari.trim();
-    let sampai = tanggal_sampai.trim();
-    let d1 = NaiveDate::parse_from_str(dari, "%Y-%m-%d")
-        .map_err(|_| "Tanggal mulai tidak valid (YYYY-MM-DD).".to_string())?;
-    let d2 = NaiveDate::parse_from_str(sampai, "%Y-%m-%d")
-        .map_err(|_| "Tanggal akhir tidak valid (YYYY-MM-DD).".to_string())?;
-    if d2 < d1 {
-        return Err("Tanggal akhir tidak boleh sebelum tanggal mulai.".into());
-    }
-
-    with_conn(&state, |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT t.nomor, t.tanggal,
-                    t.akun_sumber_kode, COALESCE(s.nama, ''),
-                    t.akun_tujuan_kode, COALESCE(d.nama, ''),
-                    t.nominal_kirim, t.nominal_terima, t.biaya_transfer,
-                    t.akun_biaya_kode, b.nama,
-                    t.catatan
-             FROM transfer_kas t
-             LEFT JOIN akun_keuangan s ON lower(s.kode) = lower(t.akun_sumber_kode)
-             LEFT JOIN akun_keuangan d ON lower(d.kode) = lower(t.akun_tujuan_kode)
-             LEFT JOIN akun_keuangan b ON lower(b.kode) = lower(t.akun_biaya_kode)
-             WHERE t.tanggal >= ? AND t.tanggal <= ?
-             ORDER BY t.tanggal DESC, t.nomor DESC",
-        )?;
-        let rows = stmt.query_map(params![dari, sampai], |r| {
-            Ok(TransferKasListRow {
-                nomor: r.get(0)?,
-                tanggal: r.get(1)?,
-                akun_sumber_kode: r.get(2)?,
-                akun_sumber_nama: r.get(3)?,
-                akun_tujuan_kode: r.get(4)?,
-                akun_tujuan_nama: r.get(5)?,
-                nominal_kirim: r.get(6)?,
-                nominal_terima: r.get(7)?,
-                biaya_transfer: r.get(8)?,
-                akun_biaya_kode: r.get(9)?,
-                akun_biaya_nama: r.get(10)?,
-                catatan: r.get(11)?,
-            })
-        })?;
-        rows.collect()
-    })
+/// Hasil normalisasi & validasi payload transfer kas (dipakai insert & update).
+struct TransferKasNormalized {
+    tanggal: String,
+    sumber: String,
+    tujuan: String,
+    nominal_kirim: i64,
+    nominal_terima: i64,
+    biaya: i64,
+    akun_biaya: Option<String>,
+    catatan: String,
+    actor_username: String,
+    actor_nama: String,
 }
 
-#[tauri::command]
-pub fn transfer_kas_insert(
-    state: State<DbState>,
-    payload: TransferKasInsertPayload,
-) -> Result<String, String> {
+fn transfer_kas_validate(payload: &TransferKasInsertPayload) -> Result<TransferKasNormalized, String> {
     let tanggal = payload.tanggal.trim().to_string();
     let sumber = payload.akun_sumber_kode.trim().to_uppercase();
     let tujuan = payload.akun_tujuan_kode.trim().to_uppercase();
@@ -6819,15 +6778,262 @@ pub fn transfer_kas_insert(
         return Err("Sesi pengguna tidak terbaca — silakan login ulang.".into());
     }
 
+    Ok(TransferKasNormalized {
+        tanggal,
+        sumber,
+        tujuan,
+        nominal_kirim,
+        nominal_terima,
+        biaya,
+        akun_biaya,
+        catatan,
+        actor_username,
+        actor_nama,
+    })
+}
+
+/// Posting jurnal transfer kas — dipakai untuk insert maupun jurnal baru saat update.
+#[allow(clippy::too_many_arguments)]
+fn transfer_kas_tx_post_jurnal(
+    tx: &Transaction<'_>,
+    tanggal: &str,
+    nomor: &str,
+    sumber: &str,
+    tujuan: &str,
+    nominal_kirim: i64,
+    nominal_terima: i64,
+    biaya: i64,
+    akun_biaya: Option<&str>,
+    catatan: &str,
+    ts: i64,
+) -> Result<i64, String> {
+    let catatan_jurnal = if catatan.is_empty() {
+        format!("Transfer {} → {} ({})", sumber, tujuan, nomor)
+    } else {
+        format!("Transfer {} → {} — {}", sumber, tujuan, catatan)
+    };
+    tx.execute(
+        "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
+         VALUES (?, 'TRANSFER', ?, ?, ?, ?)",
+        params![tanggal, nomor, &catatan_jurnal, ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    let jurnal_id = tx.last_insert_rowid();
+
+    let mut lines: Vec<(String, i64, i64)> = Vec::with_capacity(3);
+    lines.push((tujuan.to_string(), nominal_terima, 0));
+    if biaya > 0 {
+        if let Some(b) = akun_biaya {
+            lines.push((b.to_string(), biaya, 0));
+        }
+    }
+    lines.push((sumber.to_string(), 0, nominal_kirim));
+
+    for (akun_kode, debit, kredit) in &lines {
+        tx.execute(
+            "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+             VALUES (?, ?, ?, ?, '')",
+            params![jurnal_id, akun_kode, debit, kredit],
+        )
+        .map_err(|e| e.to_string())?;
+        akun_jurnal_apply_saldo_delta(tx, akun_kode, *debit, *kredit, ts)?;
+    }
+
+    Ok(jurnal_id)
+}
+
+/// Bangun jurnal pembalik untuk satu jurnal lama: D↔K dibalik, saldo akun ikut dibalikkan.
+/// Jurnal lama tidak dihapus (audit trail tetap).
+fn transfer_kas_tx_reverse_old_jurnal(
+    tx: &Transaction<'_>,
+    old_jurnal_id: i64,
+    tanggal: &str,
+    nomor: &str,
+    ts: i64,
+) -> Result<i64, String> {
+    let mut old_lines: Vec<(String, i64, i64)> = Vec::new();
+    {
+        let mut stmt = tx
+            .prepare(
+                "SELECT akun_kode, debit, kredit FROM jurnal_umum_line WHERE jurnal_id = ? ORDER BY id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![old_jurnal_id], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+        for r in rows {
+            old_lines.push(r.map_err(|e| e.to_string())?);
+        }
+    }
+    if old_lines.is_empty() {
+        return Err("Jurnal asal tidak punya baris — tidak bisa dibalik.".into());
+    }
+
+    let catatan = format!("Pembalik transfer {} (jurnal asal #{old_jurnal_id})", nomor);
+    tx.execute(
+        "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
+         VALUES (?, 'TRANSFER_REVERSAL', ?, ?, ?, ?)",
+        params![tanggal, nomor, &catatan, ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    let rev_id = tx.last_insert_rowid();
+
+    for (akun_kode, debit, kredit) in &old_lines {
+        let new_debit = *kredit;
+        let new_kredit = *debit;
+        tx.execute(
+            "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+             VALUES (?, ?, ?, ?, '')",
+            params![rev_id, akun_kode, new_debit, new_kredit],
+        )
+        .map_err(|e| e.to_string())?;
+        akun_jurnal_apply_saldo_delta(tx, akun_kode, new_debit, new_kredit, ts)?;
+    }
+
+    Ok(rev_id)
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferKasDetail {
+    pub nomor: String,
+    pub tanggal: String,
+    pub akun_sumber_kode: String,
+    pub akun_sumber_nama: String,
+    pub akun_tujuan_kode: String,
+    pub akun_tujuan_nama: String,
+    pub nominal_kirim: i64,
+    pub nominal_terima: i64,
+    pub biaya_transfer: i64,
+    pub akun_biaya_kode: Option<String>,
+    pub akun_biaya_nama: Option<String>,
+    pub catatan: String,
+    pub jurnal_id: Option<i64>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[tauri::command]
+pub fn transfer_kas_detail(state: State<DbState>, nomor: String) -> Result<TransferKasDetail, String> {
+    let n = nomor.trim();
+    if n.is_empty() {
+        return Err("Nomor transfer wajib diisi.".into());
+    }
+    let conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let detail = conn
+        .query_row(
+            "SELECT t.nomor, t.tanggal,
+                    t.akun_sumber_kode, COALESCE(s.nama, ''),
+                    t.akun_tujuan_kode, COALESCE(d.nama, ''),
+                    t.nominal_kirim, t.nominal_terima, t.biaya_transfer,
+                    t.akun_biaya_kode, b.nama,
+                    t.catatan, t.jurnal_id, t.created_at, t.updated_at
+             FROM transfer_kas t
+             LEFT JOIN akun_keuangan s ON lower(s.kode) = lower(t.akun_sumber_kode)
+             LEFT JOIN akun_keuangan d ON lower(d.kode) = lower(t.akun_tujuan_kode)
+             LEFT JOIN akun_keuangan b ON lower(b.kode) = lower(t.akun_biaya_kode)
+             WHERE t.nomor = ?",
+            params![n],
+            |r| {
+                Ok(TransferKasDetail {
+                    nomor: r.get(0)?,
+                    tanggal: r.get(1)?,
+                    akun_sumber_kode: r.get(2)?,
+                    akun_sumber_nama: r.get(3)?,
+                    akun_tujuan_kode: r.get(4)?,
+                    akun_tujuan_nama: r.get(5)?,
+                    nominal_kirim: r.get(6)?,
+                    nominal_terima: r.get(7)?,
+                    biaya_transfer: r.get(8)?,
+                    akun_biaya_kode: r.get(9)?,
+                    akun_biaya_nama: r.get(10)?,
+                    catatan: r.get(11)?,
+                    jurnal_id: r.get(12)?,
+                    created_at: r.get(13)?,
+                    updated_at: r.get(14)?,
+                })
+            },
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => "Transfer tidak ditemukan.".into(),
+            _ => e.to_string(),
+        })?;
+    Ok(detail)
+}
+
+#[tauri::command]
+pub fn transfer_kas_list(
+    state: State<DbState>,
+    tanggal_dari: String,
+    tanggal_sampai: String,
+) -> Result<Vec<TransferKasListRow>, String> {
+    let dari = tanggal_dari.trim();
+    let sampai = tanggal_sampai.trim();
+    let d1 = NaiveDate::parse_from_str(dari, "%Y-%m-%d")
+        .map_err(|_| "Tanggal mulai tidak valid (YYYY-MM-DD).".to_string())?;
+    let d2 = NaiveDate::parse_from_str(sampai, "%Y-%m-%d")
+        .map_err(|_| "Tanggal akhir tidak valid (YYYY-MM-DD).".to_string())?;
+    if d2 < d1 {
+        return Err("Tanggal akhir tidak boleh sebelum tanggal mulai.".into());
+    }
+
+    with_conn(&state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT t.nomor, t.tanggal,
+                    t.akun_sumber_kode, COALESCE(s.nama, ''),
+                    t.akun_tujuan_kode, COALESCE(d.nama, ''),
+                    t.nominal_kirim, t.nominal_terima, t.biaya_transfer,
+                    t.akun_biaya_kode, b.nama,
+                    t.catatan
+             FROM transfer_kas t
+             LEFT JOIN akun_keuangan s ON lower(s.kode) = lower(t.akun_sumber_kode)
+             LEFT JOIN akun_keuangan d ON lower(d.kode) = lower(t.akun_tujuan_kode)
+             LEFT JOIN akun_keuangan b ON lower(b.kode) = lower(t.akun_biaya_kode)
+             WHERE t.tanggal >= ? AND t.tanggal <= ?
+             ORDER BY t.tanggal DESC, t.nomor DESC",
+        )?;
+        let rows = stmt.query_map(params![dari, sampai], |r| {
+            Ok(TransferKasListRow {
+                nomor: r.get(0)?,
+                tanggal: r.get(1)?,
+                akun_sumber_kode: r.get(2)?,
+                akun_sumber_nama: r.get(3)?,
+                akun_tujuan_kode: r.get(4)?,
+                akun_tujuan_nama: r.get(5)?,
+                nominal_kirim: r.get(6)?,
+                nominal_terima: r.get(7)?,
+                biaya_transfer: r.get(8)?,
+                akun_biaya_kode: r.get(9)?,
+                akun_biaya_nama: r.get(10)?,
+                catatan: r.get(11)?,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+#[tauri::command]
+pub fn transfer_kas_insert(
+    state: State<DbState>,
+    payload: TransferKasInsertPayload,
+) -> Result<String, String> {
+    let n = transfer_kas_validate(&payload)?;
+
     let nomor = format!("TRF-{}", Utc::now().timestamp_millis());
     let ts = now_ts();
 
     let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-    validate_akun_kas(&tx, &sumber)?;
-    validate_akun_kas(&tx, &tujuan)?;
-    if let Some(b) = akun_biaya.as_deref() {
+    validate_akun_kas(&tx, &n.sumber)?;
+    validate_akun_kas(&tx, &n.tujuan)?;
+    if let Some(b) = n.akun_biaya.as_deref() {
         validate_akun_biaya(&tx, b)?;
     }
 
@@ -6839,51 +7045,33 @@ pub fn transfer_kas_insert(
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
         params![
             &nomor,
-            &tanggal,
-            &sumber,
-            &tujuan,
-            nominal_kirim,
-            nominal_terima,
-            biaya,
-            akun_biaya.as_deref(),
-            &catatan,
+            &n.tanggal,
+            &n.sumber,
+            &n.tujuan,
+            n.nominal_kirim,
+            n.nominal_terima,
+            n.biaya,
+            n.akun_biaya.as_deref(),
+            &n.catatan,
             ts,
             ts,
         ],
     )
     .map_err(|e| e.to_string())?;
 
-    let catatan_jurnal = if catatan.is_empty() {
-        format!("Transfer {} → {} ({})", sumber, tujuan, nomor)
-    } else {
-        format!("Transfer {} → {} — {}", sumber, tujuan, catatan)
-    };
-    tx.execute(
-        "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
-         VALUES (?, 'TRANSFER', ?, ?, ?, ?)",
-        params![&tanggal, &nomor, &catatan_jurnal, ts, ts],
-    )
-    .map_err(|e| e.to_string())?;
-    let jurnal_id = tx.last_insert_rowid();
-
-    let mut lines: Vec<(String, i64, i64)> = Vec::with_capacity(3);
-    lines.push((tujuan.clone(), nominal_terima, 0));
-    if biaya > 0 {
-        if let Some(b) = akun_biaya.as_deref() {
-            lines.push((b.to_string(), biaya, 0));
-        }
-    }
-    lines.push((sumber.clone(), 0, nominal_kirim));
-
-    for (akun_kode, debit, kredit) in &lines {
-        tx.execute(
-            "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
-             VALUES (?, ?, ?, ?, '')",
-            params![jurnal_id, akun_kode, debit, kredit],
-        )
-        .map_err(|e| e.to_string())?;
-        akun_jurnal_apply_saldo_delta(&tx, akun_kode, *debit, *kredit, ts)?;
-    }
+    let jurnal_id = transfer_kas_tx_post_jurnal(
+        &tx,
+        &n.tanggal,
+        &nomor,
+        &n.sumber,
+        &n.tujuan,
+        n.nominal_kirim,
+        n.nominal_terima,
+        n.biaya,
+        n.akun_biaya.as_deref(),
+        &n.catatan,
+        ts,
+    )?;
 
     tx.execute(
         "UPDATE transfer_kas SET jurnal_id = ?, updated_at = ? WHERE nomor = ?",
@@ -6893,26 +7081,26 @@ pub fn transfer_kas_insert(
 
     let snapshot_sesudah = serde_json::json!({
         "nomor": nomor,
-        "tanggal": tanggal,
-        "akunSumberKode": sumber,
-        "akunTujuanKode": tujuan,
-        "nominalKirim": nominal_kirim,
-        "nominalTerima": nominal_terima,
-        "biayaTransfer": biaya,
-        "akunBiayaKode": akun_biaya,
-        "catatan": catatan,
+        "tanggal": n.tanggal,
+        "akunSumberKode": n.sumber,
+        "akunTujuanKode": n.tujuan,
+        "nominalKirim": n.nominal_kirim,
+        "nominalTerima": n.nominal_terima,
+        "biayaTransfer": n.biaya,
+        "akunBiayaKode": n.akun_biaya,
+        "catatan": n.catatan,
         "jurnalId": jurnal_id,
     })
     .to_string();
     let ringkasan = format!(
         "Transfer kas {} dari {} ke {} senilai {} (biaya {})",
-        nomor, sumber, tujuan, nominal_kirim, biaya
+        nomor, n.sumber, n.tujuan, n.nominal_kirim, n.biaya
     );
     activity_log_record_tx(
         &tx,
         ts,
-        &actor_username,
-        &actor_nama,
+        &n.actor_username,
+        &n.actor_nama,
         "CREATE",
         "TRANSFER_KAS",
         &nomor,
@@ -6924,4 +7112,166 @@ pub fn transfer_kas_insert(
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(nomor)
+}
+
+#[tauri::command]
+pub fn transfer_kas_update(
+    state: State<DbState>,
+    nomor: String,
+    payload: TransferKasInsertPayload,
+) -> Result<(), String> {
+    let nomor_trim = nomor.trim().to_string();
+    if nomor_trim.is_empty() {
+        return Err("Nomor transfer tidak valid.".into());
+    }
+    let n = transfer_kas_validate(&payload)?;
+
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let old: (
+        String,
+        String,
+        String,
+        i64,
+        i64,
+        i64,
+        Option<String>,
+        String,
+        Option<i64>,
+    ) = tx
+        .query_row(
+            "SELECT tanggal, akun_sumber_kode, akun_tujuan_kode,
+                    nominal_kirim, nominal_terima, biaya_transfer,
+                    akun_biaya_kode, catatan, jurnal_id
+             FROM transfer_kas WHERE nomor = ?",
+            params![&nomor_trim],
+            |r| {
+                Ok((
+                    r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?,
+                    r.get(7)?, r.get(8)?,
+                ))
+            },
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => "Transfer tidak ditemukan.".into(),
+            _ => e.to_string(),
+        })?;
+
+    let (
+        old_tanggal,
+        old_sumber,
+        old_tujuan,
+        old_nominal_kirim,
+        old_nominal_terima,
+        old_biaya,
+        old_akun_biaya,
+        old_catatan,
+        old_jurnal_id_opt,
+    ) = old;
+    let old_jurnal_id = old_jurnal_id_opt
+        .ok_or_else(|| "Transfer ini tidak terhubung dengan jurnal asal — tidak bisa diedit.".to_string())?;
+
+    validate_akun_kas(&tx, &n.sumber)?;
+    validate_akun_kas(&tx, &n.tujuan)?;
+    if let Some(b) = n.akun_biaya.as_deref() {
+        validate_akun_biaya(&tx, b)?;
+    }
+
+    // 1. Jurnal pembalik untuk jurnal asal.
+    let reversal_jurnal_id =
+        transfer_kas_tx_reverse_old_jurnal(&tx, old_jurnal_id, &n.tanggal, &nomor_trim, ts)?;
+
+    // 2. Jurnal baru dengan nilai terbaru.
+    let new_jurnal_id = transfer_kas_tx_post_jurnal(
+        &tx,
+        &n.tanggal,
+        &nomor_trim,
+        &n.sumber,
+        &n.tujuan,
+        n.nominal_kirim,
+        n.nominal_terima,
+        n.biaya,
+        n.akun_biaya.as_deref(),
+        &n.catatan,
+        ts,
+    )?;
+
+    // 3. Update header transfer_kas — pakai jurnal_id terbaru.
+    tx.execute(
+        "UPDATE transfer_kas
+         SET tanggal = ?, akun_sumber_kode = ?, akun_tujuan_kode = ?,
+             nominal_kirim = ?, nominal_terima = ?, biaya_transfer = ?,
+             akun_biaya_kode = ?, catatan = ?, jurnal_id = ?, updated_at = ?
+         WHERE nomor = ?",
+        params![
+            &n.tanggal,
+            &n.sumber,
+            &n.tujuan,
+            n.nominal_kirim,
+            n.nominal_terima,
+            n.biaya,
+            n.akun_biaya.as_deref(),
+            &n.catatan,
+            new_jurnal_id,
+            ts,
+            &nomor_trim,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // 4. Audit log: aksi=UPDATE, snapshot lama vs baru.
+    let snapshot_sebelum = serde_json::json!({
+        "nomor": nomor_trim,
+        "tanggal": old_tanggal,
+        "akunSumberKode": old_sumber,
+        "akunTujuanKode": old_tujuan,
+        "nominalKirim": old_nominal_kirim,
+        "nominalTerima": old_nominal_terima,
+        "biayaTransfer": old_biaya,
+        "akunBiayaKode": old_akun_biaya,
+        "catatan": old_catatan,
+        "jurnalId": old_jurnal_id,
+    })
+    .to_string();
+    let snapshot_sesudah = serde_json::json!({
+        "nomor": nomor_trim,
+        "tanggal": n.tanggal,
+        "akunSumberKode": n.sumber,
+        "akunTujuanKode": n.tujuan,
+        "nominalKirim": n.nominal_kirim,
+        "nominalTerima": n.nominal_terima,
+        "biayaTransfer": n.biaya,
+        "akunBiayaKode": n.akun_biaya,
+        "catatan": n.catatan,
+        "jurnalId": new_jurnal_id,
+    })
+    .to_string();
+    let metadata = serde_json::json!({
+        "jurnalAsalId": old_jurnal_id,
+        "jurnalPembalikId": reversal_jurnal_id,
+        "jurnalBaruId": new_jurnal_id,
+    })
+    .to_string();
+    let ringkasan = format!(
+        "Edit transfer kas {} (jurnal asal #{old_jurnal_id}, pembalik #{reversal_jurnal_id}, baru #{new_jurnal_id})",
+        nomor_trim
+    );
+    activity_log_record_tx(
+        &tx,
+        ts,
+        &n.actor_username,
+        &n.actor_nama,
+        "UPDATE",
+        "TRANSFER_KAS",
+        &nomor_trim,
+        &ringkasan,
+        Some(snapshot_sebelum.as_str()),
+        Some(snapshot_sesudah.as_str()),
+        Some(metadata.as_str()),
+    )?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
 }

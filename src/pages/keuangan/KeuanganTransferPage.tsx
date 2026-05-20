@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, Plus } from "lucide-react";
+import { Link } from "react-router-dom";
+import { ArrowRight, Pencil, Plus } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -189,18 +190,19 @@ export function KeuanganTransferPage() {
                 <th className="px-5 py-3 text-right">Biaya</th>
                 <th className="px-5 py-3">Akun biaya</th>
                 <th className="px-5 py-3">Catatan</th>
+                <th className="w-24 px-5 py-3 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-10 text-center text-sm text-zinc-500">
+                  <td colSpan={9} className="px-5 py-10 text-center text-sm text-zinc-500">
                     Memuat transfer…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-12 text-center text-sm text-zinc-500">
+                  <td colSpan={9} className="px-5 py-12 text-center text-sm text-zinc-500">
                     Belum ada transfer pada periode ini. Klik <strong>Buat transfer</strong>.
                   </td>
                 </tr>
@@ -252,6 +254,16 @@ export function KeuanganTransferPage() {
                       title={row.catatan || undefined}
                     >
                       {row.catatan || "—"}
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <Link
+                        to={`/keuangan/transfer/ubah/${encodeURIComponent(row.nomor)}`}
+                        className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-brand-700 transition hover:bg-brand-50"
+                        aria-label={`Ubah transfer ${row.nomor}`}
+                      >
+                        <Pencil className="h-3.5 w-3.5" aria-hidden />
+                        Ubah
+                      </Link>
                     </td>
                   </tr>
                 ))

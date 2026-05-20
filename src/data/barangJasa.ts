@@ -381,3 +381,51 @@ export function formatQtyDenganSatuan(
   const angka = mode === "masuk" ? `+${qty}` : mode === "keluar" ? `-${qty}` : String(qty);
   return `${angka} ${satuan}`;
 }
+
+/**
+ * Pecah qty (dalam satuan terkecil) menjadi breakdown bertingkat.
+ * Contoh: qty=25 dengan tier Dus(qtyIsi=2) · Pak(qtyIsi=6) · Pcs → "2 Dus 1 Pcs".
+ * Tier dengan qtyIsi tidak valid (null/≤1) diabaikan supaya tidak menghasilkan
+ * pengulangan satuan yang membingungkan.
+ */
+export function formatQtyMultiSatuan(
+  qty: number,
+  barang: Pick<BarangJasaRow, "satuan" | "satuanTingkat">,
+): string {
+  const tiers = barang.satuanTingkat;
+  const fallbackSatuan = getSatuanStokBarang(barang);
+  if (!tiers || tiers.length === 0) {
+    return `${qty} ${fallbackSatuan}`;
+  }
+
+  const sorted = [...tiers].sort((a, b) => a.tingkat - b.tingkat);
+  const n = sorted.length;
+
+  /** Faktor[i] = jumlah satuan terkecil per 1 unit sorted[i]. */
+  const factors = new Array<number>(n).fill(1);
+  for (let i = n - 2; i >= 0; i--) {
+    const isi = sorted[i]!.qtyIsi;
+    const mul = isi != null && isi > 0 ? isi : 1;
+    factors[i] = factors[i + 1]! * mul;
+  }
+
+  let remaining = qty;
+  const parts: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const f = factors[i]!;
+    if (i < n - 1 && f === factors[i + 1]) continue;
+    const cnt = Math.trunc(remaining / f);
+    remaining -= cnt * f;
+    const nama = sorted[i]!.nama?.trim() || fallbackSatuan;
+    if (cnt > 0) {
+      parts.push(`${cnt} ${nama}`);
+    }
+  }
+
+  if (parts.length === 0) {
+    const last = sorted[n - 1]!;
+    return `0 ${last.nama?.trim() || fallbackSatuan}`;
+  }
+
+  return parts.join(" ");
+}

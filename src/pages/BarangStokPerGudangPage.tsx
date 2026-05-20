@@ -6,6 +6,12 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import type { StokPerGudangMatrix } from "@/data/stokPerGudang";
+import {
+  formatQtyMultiSatuan,
+  getSatuanStokBarang,
+  getSatuanStokMeta,
+} from "@/data/barangJasa";
+import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
 const inputClass =
@@ -16,10 +22,19 @@ function formatQty(n: number) {
 }
 
 export function BarangStokPerGudangPage() {
+  const { items: barangItems } = useBarangJasa();
   const [matrix, setMatrix] = useState<StokPerGudangMatrix | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cari, setCari] = useState("");
+
+  const barangByKode = useMemo(() => {
+    const m = new Map<string, (typeof barangItems)[number]>();
+    for (const b of barangItems) {
+      m.set(b.kode.toLowerCase(), b);
+    }
+    return m;
+  }, [barangItems]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -63,7 +78,7 @@ export function BarangStokPerGudangPage() {
         </Link>
         <PageHeader
           title="Stok barang per gudang"
-          description="Satu baris per barang; kolom dinamis mengikuti gudang yang terdaftar. Angka stok dihitung dari mutasi masuk/keluar per gudang."
+          description="Satu baris per barang; kolom dinamis mengikuti gudang yang terdaftar. Angka stok dihitung dari mutasi masuk/keluar per gudang, dalam satuan terkecil tiap barang."
           actions={
             <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>
               {loading ? "Memuat…" : "Refresh"}
@@ -112,9 +127,9 @@ export function BarangStokPerGudangPage() {
                 <th className="sticky left-[100px] z-20 min-w-[180px] bg-zinc-50/95 px-5 py-3 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.08)]">
                   Nama
                 </th>
-                <th className="min-w-[72px] px-5 py-3 text-right">Total stok</th>
+                <th className="min-w-[140px] px-5 py-3 text-right">Total stok</th>
                 {gudang.map((g) => (
-                  <th key={g.kode} className="min-w-[112px] px-4 py-3 text-right" title={g.nama}>
+                  <th key={g.kode} className="min-w-[140px] px-4 py-3 text-right" title={g.nama}>
                     <span className="block truncate font-mono text-[10px] font-normal normal-case text-zinc-400">
                       {g.kode}
                     </span>
@@ -145,30 +160,73 @@ export function BarangStokPerGudangPage() {
                   </td>
                 </tr>
               ) : (
-                barangFiltered.map((row) => (
-                  <tr key={row.kode} className="group bg-white hover:bg-zinc-50/50">
-                    <td className="sticky left-0 z-10 bg-white px-5 py-3 font-mono text-xs font-semibold text-brand-700 group-hover:bg-zinc-50/50">
-                      {row.kode}
-                    </td>
-                    <td className="sticky left-[100px] z-10 max-w-[220px] truncate bg-white px-5 py-3 font-medium text-zinc-900 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.06)] group-hover:bg-zinc-50/50">
-                      {row.nama}
-                      <span className="ml-1.5 text-xs font-normal text-zinc-400">{row.satuan}</span>
-                    </td>
-                    <td className="px-5 py-3 text-right font-semibold tabular-nums text-zinc-900">
-                      {formatQty(row.totalStok)}
-                    </td>
-                    {row.stokPerGudang.map((qty, idx) => (
-                      <td
-                        key={`${row.kode}-${gudang[idx]?.kode ?? idx}`}
-                        className={`px-4 py-3 text-right tabular-nums ${
-                          qty > 0 ? "text-zinc-800" : "text-zinc-300"
-                        }`}
-                      >
-                        {formatQty(qty)}
+                barangFiltered.map((row) => {
+                  const barang = barangByKode.get(row.kode.toLowerCase());
+                  const satuanStok = barang ? getSatuanStokBarang(barang) : row.satuan || "—";
+                  const meta = barang
+                    ? getSatuanStokMeta(barang)
+                    : { satuanStok, konversiRingkasan: null as string | null };
+                  const satuanTooltip = meta.konversiRingkasan
+                    ? `Satuan stok: ${satuanStok} · Hirarki: ${meta.konversiRingkasan}`
+                    : `Satuan stok: ${satuanStok}`;
+                  const barangForFormat = barang ?? {
+                    satuan: row.satuan,
+                    satuanTingkat: undefined,
+                  };
+                  return (
+                    <tr key={row.kode} className="group bg-white hover:bg-zinc-50/50">
+                      <td className="sticky left-0 z-10 bg-white px-5 py-3 font-mono text-xs font-semibold text-brand-700 group-hover:bg-zinc-50/50">
+                        {row.kode}
                       </td>
-                    ))}
-                  </tr>
-                ))
+                      <td className="sticky left-[100px] z-10 max-w-[260px] bg-white px-5 py-3 font-medium text-zinc-900 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.06)] group-hover:bg-zinc-50/50">
+                        <span className="block truncate" title={row.nama}>
+                          {row.nama}
+                        </span>
+                        <span
+                          className="mt-0.5 block truncate text-xs font-normal text-zinc-500"
+                          title={satuanTooltip}
+                        >
+                          Satuan: <span className="font-medium text-zinc-700">{satuanStok}</span>
+                          {meta.konversiRingkasan ? (
+                            <span className="ml-1 text-zinc-400">· {meta.konversiRingkasan}</span>
+                          ) : null}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-right font-semibold tabular-nums text-zinc-900">
+                        <span className="block">{formatQtyMultiSatuan(row.totalStok, barangForFormat)}</span>
+                        {meta.konversiRingkasan ? (
+                          <span className="block text-xs font-normal text-zinc-400">
+                            = {formatQty(row.totalStok)} {satuanStok}
+                          </span>
+                        ) : null}
+                      </td>
+                      {row.stokPerGudang.map((qty, idx) => (
+                        <td
+                          key={`${row.kode}-${gudang[idx]?.kode ?? idx}`}
+                          className={`px-4 py-3 text-right tabular-nums ${
+                            qty > 0 ? "text-zinc-800" : "text-zinc-300"
+                          }`}
+                          title={qty > 0 ? `${formatQty(qty)} ${satuanStok}` : undefined}
+                        >
+                          {qty > 0 ? (
+                            <>
+                              <span className="block font-medium text-zinc-800">
+                                {formatQtyMultiSatuan(qty, barangForFormat)}
+                              </span>
+                              {meta.konversiRingkasan ? (
+                                <span className="block text-[11px] font-normal text-zinc-400">
+                                  {formatQty(qty)} {satuanStok}
+                                </span>
+                              ) : null}
+                            </>
+                          ) : (
+                            <span>0</span>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -181,7 +239,8 @@ export function BarangStokPerGudangPage() {
           <Link to="/manajemen/gudang" className="font-medium text-brand-600 hover:text-brand-700">
             Master gudang
           </Link>
-          . Stok per gudang dijumlah dari mutasi pembelian (masuk) dan penjualan (keluar).
+          . Stok per gudang dijumlah dari mutasi pembelian (masuk) dan penjualan (keluar) — sudah dikonversi ke
+          satuan terkecil yang tertera di kolom Nama tiap baris.
         </p>
       ) : null}
     </div>

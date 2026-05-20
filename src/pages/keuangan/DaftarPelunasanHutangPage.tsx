@@ -239,18 +239,8 @@ export function DaftarPelunasanHutangPage() {
                         </Button>
                         <Button
                           type="button"
-                          variant="secondary"
+                          variant="danger"
                           className="!px-3 !py-1.5 text-xs"
-                          onClick={() =>
-                            navigate(`/keuangan/pelunasan-hutang/ubah/${encodeURIComponent(row.nomor)}`)
-                          }
-                        >
-                          Ubah
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="!px-3 !py-1.5 text-xs text-rose-700 hover:bg-rose-50 hover:text-rose-800"
                           onClick={() => setHapusTarget(row)}
                         >
                           Hapus

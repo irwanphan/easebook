@@ -63,3 +63,17 @@ export type PelunasanPiutangDetail = {
   jurnalId: number | null;
   faktur: PelunasanPiutangFakturRow[];
 };
+
+/**
+ * Payload untuk `pelunasan_piutang_update`. Faktur tetap (tidak bisa diubah dari
+ * halaman edit) — yang bisa diubah hanya tanggal, kas penerimaan, dan catatan.
+ * Backend akan membuat jurnal pembalik untuk jurnal lama, lalu memasang jurnal
+ * baru dengan nilai terbaru sehingga audit trail tetap lengkap.
+ */
+export type PelunasanPiutangUpdatePayload = {
+  tanggal: string;
+  kasKode: string;
+  catatan: string;
+  actorUsername?: string;
+  actorNama?: string;
+};

@@ -3954,6 +3954,142 @@ pub fn pelunasan_piutang_riwayat_detail(
     Ok(PelunasanPiutangDetail { faktur, ..header })
 }
 
+/// Buka faktur penjualan yang sebelumnya dilunasi: bersihkan kas + kembalikan status ke 'Dipesan'.
+fn pelunasan_piutang_tx_unsettle_faktur(
+    tx: &Transaction<'_>,
+    nomor_faktur: &str,
+    ts: i64,
+) -> Result<(), String> {
+    tx.execute(
+        "UPDATE penjualan
+         SET akun_kas_kode = NULL,
+             status = 'Dipesan',
+             updated_at = ?
+         WHERE nomor = ?",
+        params![ts, nomor_faktur],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pelunasan_piutang_delete(
+    state: State<DbState>,
+    nomor: String,
+    actor_username: String,
+    actor_nama: String,
+) -> Result<(), String> {
+    let key = nomor.trim().to_string();
+    if key.is_empty() {
+        return Err("Nomor pelunasan wajib diisi.".into());
+    }
+    let actor_username = actor_username.trim().to_string();
+    let actor_nama = actor_nama.trim().to_string();
+    if actor_username.is_empty() {
+        return Err("Sesi pengguna tidak terbaca — silakan login ulang.".into());
+    }
+
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let (
+        tanggal_pelunasan,
+        pelanggan_kode,
+        kas_kode,
+        total,
+        catatan,
+        old_jurnal_id_opt,
+    ): (String, String, String, i64, String, Option<i64>) = tx
+        .query_row(
+            "SELECT tanggal, pelanggan_kode, akun_kas_kode, total, catatan, jurnal_id
+             FROM pelunasan_piutang WHERE nomor = ?",
+            params![&key],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => format!("Pelunasan '{key}' tidak ditemukan."),
+            _ => e.to_string(),
+        })?;
+    let old_jurnal_id = old_jurnal_id_opt
+        .ok_or_else(|| "Pelunasan ini tidak terhubung dengan jurnal asal — tidak bisa dihapus.".to_string())?;
+
+    let mut faktur_list: Vec<(String, i64)> = Vec::new();
+    {
+        let mut stmt = tx
+            .prepare("SELECT faktur_nomor, jumlah FROM pelunasan_piutang_faktur WHERE pelunasan_nomor = ?")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![&key], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            faktur_list.push(row.map_err(|e| e.to_string())?);
+        }
+    }
+
+    // Jurnal pembalik dicatat di tanggal hari ini (saat koreksi dilakukan), bukan tanggal pelunasan asli.
+    // Tujuan: muncul di periode aktif user, tidak mengubah laporan periode lampau secara retroaktif.
+    let tanggal_pembalik = Local::now().date_naive().format("%Y-%m-%d").to_string();
+    let catatan_pembalik = format!(
+        "Pembalik pelunasan piutang {key} tgl {tanggal_pelunasan} (jurnal asal #{old_jurnal_id})"
+    );
+    let reversal_jurnal_id = jurnal_tx_reverse_full(
+        &tx,
+        old_jurnal_id,
+        &tanggal_pembalik,
+        "PELUNASAN_PIUTANG_REVERSAL",
+        &key,
+        &catatan_pembalik,
+        ts,
+    )?;
+
+    for (faktur_nomor, _jumlah) in &faktur_list {
+        pelunasan_piutang_tx_unsettle_faktur(&tx, faktur_nomor, ts)?;
+    }
+
+    tx.execute("DELETE FROM pelunasan_piutang WHERE nomor = ?", params![&key])
+        .map_err(|e| e.to_string())?;
+
+    let faktur_dibuka: Vec<&str> = faktur_list.iter().map(|(n, _)| n.as_str()).collect();
+    let snapshot_sebelum = serde_json::json!({
+        "nomor": key,
+        "tanggal": tanggal_pelunasan,
+        "pelangganKode": pelanggan_kode,
+        "akunKasKode": kas_kode,
+        "total": total,
+        "catatan": catatan,
+        "jurnalId": old_jurnal_id,
+        "faktur": faktur_list.iter().map(|(n, j)| serde_json::json!({"nomor": n, "jumlah": j})).collect::<Vec<_>>(),
+    })
+    .to_string();
+    let metadata = serde_json::json!({
+        "jurnalAsalId": old_jurnal_id,
+        "jurnalPembalikId": reversal_jurnal_id,
+        "fakturDibukaKembali": faktur_dibuka,
+    })
+    .to_string();
+    let ringkasan = format!(
+        "Hapus pelunasan piutang {key} — pelanggan {pelanggan_kode}, total {total} (jurnal pembalik #{reversal_jurnal_id}, {} faktur dibuka kembali)",
+        faktur_list.len()
+    );
+    activity_log_record_tx(
+        &tx,
+        ts,
+        &actor_username,
+        &actor_nama,
+        "DELETE",
+        "PELUNASAN_PIUTANG",
+        &key,
+        &ringkasan,
+        Some(snapshot_sebelum.as_str()),
+        None,
+        Some(metadata.as_str()),
+    )?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct HutangBelumLunasRow {
@@ -4475,6 +4611,142 @@ pub fn pelunasan_hutang_riwayat_detail(
         .map_err(|e| e.to_string())?;
 
     Ok(PelunasanHutangDetail { faktur, ..header })
+}
+
+/// Buka faktur pembelian yang sebelumnya dilunasi: bersihkan kas + kembalikan status ke 'Dipesan'.
+fn pelunasan_hutang_tx_unsettle_faktur(
+    tx: &Transaction<'_>,
+    nomor_faktur: &str,
+    ts: i64,
+) -> Result<(), String> {
+    tx.execute(
+        "UPDATE pembelian
+         SET akun_kas_kode = NULL,
+             status = 'Dipesan',
+             updated_at = ?
+         WHERE nomor = ?",
+        params![ts, nomor_faktur],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pelunasan_hutang_delete(
+    state: State<DbState>,
+    nomor: String,
+    actor_username: String,
+    actor_nama: String,
+) -> Result<(), String> {
+    let key = nomor.trim().to_string();
+    if key.is_empty() {
+        return Err("Nomor pelunasan wajib diisi.".into());
+    }
+    let actor_username = actor_username.trim().to_string();
+    let actor_nama = actor_nama.trim().to_string();
+    if actor_username.is_empty() {
+        return Err("Sesi pengguna tidak terbaca — silakan login ulang.".into());
+    }
+
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let (
+        tanggal_pelunasan,
+        pemasok_kode,
+        kas_kode,
+        total,
+        catatan,
+        old_jurnal_id_opt,
+    ): (String, String, String, i64, String, Option<i64>) = tx
+        .query_row(
+            "SELECT tanggal, pemasok_kode, akun_kas_kode, total, catatan, jurnal_id
+             FROM pelunasan_hutang WHERE nomor = ?",
+            params![&key],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => format!("Pelunasan '{key}' tidak ditemukan."),
+            _ => e.to_string(),
+        })?;
+    let old_jurnal_id = old_jurnal_id_opt
+        .ok_or_else(|| "Pelunasan ini tidak terhubung dengan jurnal asal — tidak bisa dihapus.".to_string())?;
+
+    let mut faktur_list: Vec<(String, i64)> = Vec::new();
+    {
+        let mut stmt = tx
+            .prepare("SELECT faktur_nomor, jumlah FROM pelunasan_hutang_faktur WHERE pelunasan_nomor = ?")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![&key], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            faktur_list.push(row.map_err(|e| e.to_string())?);
+        }
+    }
+
+    // Jurnal pembalik dicatat di tanggal hari ini (saat koreksi dilakukan), bukan tanggal pelunasan asli.
+    // Tujuan: muncul di periode aktif user, tidak mengubah laporan periode lampau secara retroaktif.
+    let tanggal_pembalik = Local::now().date_naive().format("%Y-%m-%d").to_string();
+    let catatan_pembalik = format!(
+        "Pembalik pelunasan hutang {key} tgl {tanggal_pelunasan} (jurnal asal #{old_jurnal_id})"
+    );
+    let reversal_jurnal_id = jurnal_tx_reverse_full(
+        &tx,
+        old_jurnal_id,
+        &tanggal_pembalik,
+        "PELUNASAN_HUTANG_REVERSAL",
+        &key,
+        &catatan_pembalik,
+        ts,
+    )?;
+
+    for (faktur_nomor, _jumlah) in &faktur_list {
+        pelunasan_hutang_tx_unsettle_faktur(&tx, faktur_nomor, ts)?;
+    }
+
+    tx.execute("DELETE FROM pelunasan_hutang WHERE nomor = ?", params![&key])
+        .map_err(|e| e.to_string())?;
+
+    let faktur_dibuka: Vec<&str> = faktur_list.iter().map(|(n, _)| n.as_str()).collect();
+    let snapshot_sebelum = serde_json::json!({
+        "nomor": key,
+        "tanggal": tanggal_pelunasan,
+        "pemasokKode": pemasok_kode,
+        "akunKasKode": kas_kode,
+        "total": total,
+        "catatan": catatan,
+        "jurnalId": old_jurnal_id,
+        "faktur": faktur_list.iter().map(|(n, j)| serde_json::json!({"nomor": n, "jumlah": j})).collect::<Vec<_>>(),
+    })
+    .to_string();
+    let metadata = serde_json::json!({
+        "jurnalAsalId": old_jurnal_id,
+        "jurnalPembalikId": reversal_jurnal_id,
+        "fakturDibukaKembali": faktur_dibuka,
+    })
+    .to_string();
+    let ringkasan = format!(
+        "Hapus pelunasan hutang {key} — pemasok {pemasok_kode}, total {total} (jurnal pembalik #{reversal_jurnal_id}, {} faktur dibuka kembali)",
+        faktur_list.len()
+    );
+    activity_log_record_tx(
+        &tx,
+        ts,
+        &actor_username,
+        &actor_nama,
+        "DELETE",
+        "PELUNASAN_HUTANG",
+        &key,
+        &ringkasan,
+        Some(snapshot_sebelum.as_str()),
+        None,
+        Some(metadata.as_str()),
+    )?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -6842,13 +7114,17 @@ fn transfer_kas_tx_post_jurnal(
     Ok(jurnal_id)
 }
 
-/// Bangun jurnal pembalik untuk satu jurnal lama: D↔K dibalik, saldo akun ikut dibalikkan.
-/// Jurnal lama tidak dihapus (audit trail tetap).
-fn transfer_kas_tx_reverse_old_jurnal(
+/// Bangun jurnal pembalik untuk satu jurnal lama (D↔K dibalik). Saldo akun ikut dibalikkan.
+/// Jurnal lama TIDAK dihapus — jejak audit tetap.
+///
+/// Dipakai oleh transfer kas, pelunasan piutang/hutang, dst.
+fn jurnal_tx_reverse_full(
     tx: &Transaction<'_>,
     old_jurnal_id: i64,
     tanggal: &str,
-    nomor: &str,
+    jenis_pembalik: &str,
+    referensi: &str,
+    catatan: &str,
     ts: i64,
 ) -> Result<i64, String> {
     let mut old_lines: Vec<(String, i64, i64)> = Vec::new();
@@ -6875,11 +7151,10 @@ fn transfer_kas_tx_reverse_old_jurnal(
         return Err("Jurnal asal tidak punya baris — tidak bisa dibalik.".into());
     }
 
-    let catatan = format!("Pembalik transfer {} (jurnal asal #{old_jurnal_id})", nomor);
     tx.execute(
         "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
-         VALUES (?, 'TRANSFER_REVERSAL', ?, ?, ?, ?)",
-        params![tanggal, nomor, &catatan, ts, ts],
+         VALUES (?, ?, ?, ?, ?, ?)",
+        params![tanggal, jenis_pembalik, referensi, catatan, ts, ts],
     )
     .map_err(|e| e.to_string())?;
     let rev_id = tx.last_insert_rowid();
@@ -6897,6 +7172,18 @@ fn transfer_kas_tx_reverse_old_jurnal(
     }
 
     Ok(rev_id)
+}
+
+/// Alias spesifik untuk transfer kas (jenis & catatan baku).
+fn transfer_kas_tx_reverse_old_jurnal(
+    tx: &Transaction<'_>,
+    old_jurnal_id: i64,
+    tanggal: &str,
+    nomor: &str,
+    ts: i64,
+) -> Result<i64, String> {
+    let catatan = format!("Pembalik transfer {} (jurnal asal #{old_jurnal_id})", nomor);
+    jurnal_tx_reverse_full(tx, old_jurnal_id, tanggal, "TRANSFER_REVERSAL", nomor, &catatan, ts)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

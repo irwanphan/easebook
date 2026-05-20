@@ -45,6 +45,9 @@ const JENIS_LABELS: Record<string, string> = {
   PENJUALAN_TUNAI: "Penjualan tunai (kas masuk)",
   PELUNASAN_PIUTANG: "Pelunasan piutang (kas masuk)",
   PELUNASAN_HUTANG: "Pelunasan hutang (kas keluar)",
+  PELUNASAN_PIUTANG_REVERSAL: "Pembalik pelunasan piutang",
+  PELUNASAN_HUTANG_REVERSAL: "Pembalik pelunasan hutang",
+  TRANSFER_REVERSAL: "Pembalik transfer kas",
   PENERIMAAN: "Penerimaan (pendapatan / kas masuk)",
   PENERIMAAN_LAINNYA: "Penerimaan lain (kas masuk)",
   PENGELUARAN: "Pengeluaran (biaya / kas keluar)",
@@ -54,6 +57,7 @@ const JENIS_LABELS: Record<string, string> = {
 };
 
 function jenisBadgeVariant(jenis: string) {
+  if (jenis.endsWith("_REVERSAL")) return "delayed" as const;
   if (jenis === "MANUAL") return "neutral" as const;
   if (jenis === "PEMBELIAN" || jenis === "PEMBELIAN_TUNAI") return "neutral" as const;
   if (jenis === "PENJUALAN" || jenis === "PENJUALAN_TUNAI") return "success" as const;

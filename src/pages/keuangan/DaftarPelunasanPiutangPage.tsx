@@ -4,7 +4,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import type { PelunasanPiutangRiwayatRow } from "@/data/pelunasanPiutang";
+import { useAuth } from "@/features/auth/AuthContext";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
 const inputClass =
@@ -55,11 +57,14 @@ function formatWaktuDicatat(ts: number) {
 
 export function DaftarPelunasanPiutangPage() {
   const navigate = useNavigate();
+  const { session } = useAuth();
   const [tanggalDari, setTanggalDari] = useState(defaultTanggalDariBulanIni);
   const [tanggalSampai, setTanggalSampai] = useState(defaultTanggalSampaiBulanIni);
   const [rows, setRows] = useState<PelunasanPiutangRiwayatRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hapusTarget, setHapusTarget] = useState<PelunasanPiutangRiwayatRow | null>(null);
+  const [menghapus, setMenghapus] = useState(false);
 
   const rentangInvalid = useMemo(() => {
     if (!tanggalDari || !tanggalSampai) return true;
@@ -94,6 +99,29 @@ export function DaftarPelunasanPiutangPage() {
   useEffect(() => {
     void fetchRows();
   }, [fetchRows]);
+
+  async function handleHapus() {
+    if (!hapusTarget) return;
+    if (!session?.username) {
+      setError("Sesi pengguna tidak terbaca — silakan login ulang.");
+      return;
+    }
+    setMenghapus(true);
+    setError(null);
+    try {
+      await invoke("pelunasan_piutang_delete", {
+        nomor: hapusTarget.nomor,
+        actorUsername: session.username,
+        actorNama: session.namaLengkap ?? "",
+      });
+      setHapusTarget(null);
+      await fetchRows();
+    } catch (e) {
+      setError(tauriErrorMessage(e));
+    } finally {
+      setMenghapus(false);
+    }
+  }
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -201,17 +229,37 @@ export function DaftarPelunasanPiutangPage() {
                     </td>
                     <td className="px-5 py-3 text-right text-zinc-600">{row.jumlahFaktur}</td>
                     <td className="px-5 py-3 text-right font-semibold text-zinc-900">{formatRupiah(row.total)}</td>
-                    <td className="px-5 py-3 text-right">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        className="!px-3 !py-1.5 text-xs"
-                        onClick={() =>
-                          navigate(`/keuangan/pelunasan-piutang/daftar/${encodeURIComponent(row.nomor)}`)
-                        }
-                      >
-                        Detail
-                      </Button>
+                    <td className="px-5 py-3">
+                      <div className="flex flex-wrap justify-end gap-1.5">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="!px-3 !py-1.5 text-xs"
+                          onClick={() =>
+                            navigate(`/keuangan/pelunasan-piutang/daftar/${encodeURIComponent(row.nomor)}`)
+                          }
+                        >
+                          Detail
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="!px-3 !py-1.5 text-xs"
+                          onClick={() =>
+                            navigate(`/keuangan/pelunasan-piutang/ubah/${encodeURIComponent(row.nomor)}`)
+                          }
+                        >
+                          Ubah
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="!px-3 !py-1.5 text-xs text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                          onClick={() => setHapusTarget(row)}
+                        >
+                          Hapus
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -220,6 +268,26 @@ export function DaftarPelunasanPiutangPage() {
           </table>
         </div>
       </Card>
+
+      <ConfirmModal
+        open={hapusTarget !== null}
+        title="Hapus pelunasan piutang ini?"
+        message={
+          hapusTarget
+            ? `Pelunasan ${hapusTarget.nomor} dari ${hapusTarget.pelangganNama} (${formatRupiah(hapusTarget.total)}) akan dihapus. ` +
+              `Sistem otomatis membuat jurnal pembalik untuk jurnal asal, sehingga saldo akun kembali seperti sebelum pelunasan. ` +
+              `${hapusTarget.jumlahFaktur} faktur penjualan terkait akan dibuka kembali sebagai piutang belum lunas. ` +
+              `Jurnal asal dan baris audit log tetap tersimpan sebagai jejak.`
+            : ""
+        }
+        confirmLabel="Ya, hapus pelunasan"
+        variant="danger"
+        loading={menghapus}
+        onConfirm={() => void handleHapus()}
+        onCancel={() => {
+          if (!menghapus) setHapusTarget(null);
+        }}
+      />
     </div>
   );
 }

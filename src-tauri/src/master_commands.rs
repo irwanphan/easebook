@@ -5361,6 +5361,7 @@ pub struct MutasiAntarGudangRiwayatRow {
     pub jumlah_barang: i64,
     pub total_qty: i64,
     pub created_at: i64,
+    pub baris: Vec<MutasiAntarGudangBarisRow>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -5431,27 +5432,64 @@ pub fn mutasi_antar_gudang_riwayat_list(
              GROUP BY m.referensi
              ORDER BY MIN(m.waktu) DESC, m.referensi DESC",
         )?;
-        let rows = stmt.query_map(params![dari, sampai], |r| {
-            let catatan_penuh: String = r.get(3)?;
-            let catatan = catatan_penuh
-                .split(" — ")
-                .nth(1)
-                .map(|s| s.trim().to_string())
-                .unwrap_or_default();
-            Ok(MutasiAntarGudangRiwayatRow {
-                referensi: r.get(0)?,
-                tanggal: r.get(1)?,
-                created_at: r.get(2)?,
-                catatan,
-                jumlah_barang: r.get(4)?,
-                total_qty: r.get(5)?,
-                gudang_asal_kode: r.get(6)?,
-                gudang_asal_nama: r.get(7)?,
-                gudang_tujuan_kode: r.get(8)?,
-                gudang_tujuan_nama: r.get(9)?,
-            })
+        let mut rows: Vec<MutasiAntarGudangRiwayatRow> = stmt
+            .query_map(params![dari, sampai], |r| {
+                let catatan_penuh: String = r.get(3)?;
+                let catatan = catatan_penuh
+                    .split(" — ")
+                    .nth(1)
+                    .map(|s| s.trim().to_string())
+                    .unwrap_or_default();
+                Ok(MutasiAntarGudangRiwayatRow {
+                    referensi: r.get(0)?,
+                    tanggal: r.get(1)?,
+                    created_at: r.get(2)?,
+                    catatan,
+                    jumlah_barang: r.get(4)?,
+                    total_qty: r.get(5)?,
+                    gudang_asal_kode: r.get(6)?,
+                    gudang_asal_nama: r.get(7)?,
+                    gudang_tujuan_kode: r.get(8)?,
+                    gudang_tujuan_nama: r.get(9)?,
+                    baris: Vec::new(),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut stmt_baris = conn.prepare(
+            "SELECT m.referensi, m.barang_kode, b.nama, b.satuan, m.qty_keluar
+             FROM stok_mutasi m
+             INNER JOIN barang_jasa b ON lower(b.kode) = lower(m.barang_kode)
+             WHERE upper(trim(m.jenis)) = 'MUTASI_GUDANG'
+               AND m.qty_keluar > 0
+               AND m.tanggal_transaksi >= ? AND m.tanggal_transaksi <= ?
+             ORDER BY m.referensi, m.barang_kode COLLATE NOCASE",
+        )?;
+        let baris_iter = stmt_baris.query_map(params![dari, sampai], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                MutasiAntarGudangBarisRow {
+                    barang_kode: r.get(1)?,
+                    barang_nama: r.get(2)?,
+                    satuan: r.get(3)?,
+                    qty: r.get(4)?,
+                },
+            ))
         })?;
-        rows.collect()
+
+        let mut baris_by_ref: HashMap<String, Vec<MutasiAntarGudangBarisRow>> = HashMap::new();
+        for item in baris_iter {
+            let (referensi, baris) = item?;
+            baris_by_ref.entry(referensi).or_default().push(baris);
+        }
+
+        for row in rows.iter_mut() {
+            if let Some(list) = baris_by_ref.remove(&row.referensi) {
+                row.baris = list;
+            }
+        }
+
+        Ok(rows)
     })
 }
 

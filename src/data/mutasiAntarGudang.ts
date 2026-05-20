@@ -18,6 +18,13 @@ export type MutasiAntarGudangPayload = {
   lines: MutasiAntarGudangLinePayload[];
 };
 
+export type MutasiAntarGudangBarisRow = {
+  barangKode: string;
+  barangNama: string;
+  satuan: string;
+  qty: number;
+};
+
 export type MutasiAntarGudangRiwayatRow = {
   referensi: string;
   tanggal: string;
@@ -29,13 +36,7 @@ export type MutasiAntarGudangRiwayatRow = {
   jumlahBarang: number;
   totalQty: number;
   createdAt: number;
-};
-
-export type MutasiAntarGudangBarisRow = {
-  barangKode: string;
-  barangNama: string;
-  satuan: string;
-  qty: number;
+  baris: MutasiAntarGudangBarisRow[];
 };
 
 export type MutasiAntarGudangDetail = {

@@ -19,9 +19,6 @@ import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { tauriErrorMessage } from "@/lib/tauriError";
 import { TokoInput } from "@/components/ui/TokoInput";
 
-const inputClass =
-  "rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
-
 function toIsoDate(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -289,7 +286,7 @@ export function LaporanMutasiAntarGudangPage() {
                       <td className="px-4 py-3 text-right">
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="secondary"
                           className="px-2 py-1 text-xs"
                           onClick={() => void openDetail(row.referensi)}
                         >

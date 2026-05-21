@@ -4,10 +4,12 @@ import { ArrowLeft } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/Button";
+import { PrintButton } from "@/components/ui/PrintButton";
 import {
   KasTransaksiDetailView,
   type KasTransaksiDetailVariant,
 } from "@/features/keuangan/KasTransaksiDetailView";
+import { buildKasTransaksiPrintHtml } from "@/features/keuangan/kasTransaksiPrintTemplate";
 import type { PenerimaanDetail } from "@/data/penerimaan";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
@@ -61,18 +63,29 @@ export function PenerimaanDetailPage() {
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
-      <div>
-        <Link
-          to={DAFTAR_HREF}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          Kembali ke daftar penerimaan
-        </Link>
-        <PageHeader
-          title="Detail penerimaan"
-          description={detail ? `No. bukti ${detail.nomor}` : "Memuat data penerimaan…"}
-        />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <Link
+            to={DAFTAR_HREF}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 print:hidden"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            Kembali ke daftar penerimaan
+          </Link>
+          <PageHeader
+            title="Detail penerimaan"
+            description={detail ? `No. bukti ${detail.nomor}` : "Memuat data penerimaan…"}
+          />
+        </div>
+        {detail ? (
+          <PrintButton
+            mode="browser"
+            label="Cetak"
+            filenameHint={`penerimaan-${detail.nomor}`}
+            htmlBuilder={() => buildKasTransaksiPrintHtml(detail, PENERIMAAN_VARIANT, "Bukti penerimaan")}
+            onError={(msg) => setError(msg)}
+          />
+        ) : null}
       </div>
 
       {error ? (

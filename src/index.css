@@ -29,3 +29,44 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
+
+/* --- Print styles ---
+   Default: tampilkan semua, tapi kelas Tailwind `print:hidden` akan menyembunyikan
+   elemen non-konten (sidebar, breadcrumb, tombol aksi).
+   Berikut tweak global supaya halaman terlihat bersih saat dicetak. */
+@media print {
+  html,
+  body,
+  #root {
+    height: auto;
+    background: #ffffff !important;
+  }
+
+  /* Hilangkan latar abu-abu shell + scroll container supaya konten utama
+     mengalir natural di kertas. */
+  main {
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Pastikan warna ikon/border tetap tercetak sesuai layar. */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hindari pemecahan tabel di tengah baris. */
+  table {
+    page-break-inside: auto;
+  }
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tfoot {
+    display: table-footer-group;
+  }
+}

@@ -46,7 +46,7 @@ export function SidebarNav({ items }: SidebarNavProps) {
 
   return (
     <aside
-      className={`relative flex h-full min-h-0 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 py-5 transition-[width] duration-200 ease-out ${
+      className={`relative flex h-full min-h-0 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 py-5 transition-[width] duration-200 ease-out print:hidden ${
         expanded ? "w-56 px-3" : "w-[72px] items-center px-0"
       }`}
       aria-label="Navigasi aplikasi"

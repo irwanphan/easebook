@@ -15,10 +15,10 @@ function AppShellInner() {
   const navItems = filterNav(primaryNavEntries);
 
   return (
-    <div className="flex min-h-0 flex-1 bg-zinc-100">
+    <div className="flex min-h-0 flex-1 bg-zinc-100 print:bg-white">
       <SidebarNav items={navItems} />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <main className="min-h-0 flex-1 overflow-y-auto p-6 lg:p-8">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden print:overflow-visible">
+        <main className="min-h-0 flex-1 overflow-y-auto p-6 lg:p-8 print:overflow-visible print:p-0">
           <PageAccessGuard>
             <Outlet />
           </PageAccessGuard>

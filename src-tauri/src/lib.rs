@@ -3,6 +3,7 @@
 mod activation;
 mod db;
 mod master_commands;
+mod print_commands;
 mod seed_akun_keuangan;
 
 use std::path::PathBuf;
@@ -130,6 +131,7 @@ pub fn run() {
             activation::activation_get_status,
             activation::activation_save,
             activation::activation_apply_offline_code,
+            print_commands::print_open_html,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -134,9 +134,24 @@ export function paperSizeCss(p: PaperSize): string {
 
 /**
  * Nilai untuk properti CSS `@page { size: ... }` tanpa wrapper.
- * Mis. `"210mm 297mm"` atau `"58mm auto"`.
+ *
+ * Untuk preset standar (A4, Letter) kita kembalikan nama resmi
+ * (`"A4"`, `"letter"`) karena Chrome menangani named sizes lebih akurat
+ * — secara internal Chrome memetakan ke dimensi printer-friendly tanpa
+ * butuh user mengubah Scale di dialog Print. Kalau pakai eksplisit `mm`,
+ * Chrome kadang men-treat dokumen sebagai "custom size" dan mengaktifkan
+ * auto-scaling yang sticky di preferensi user.
+ *
+ * Untuk preset non-standar (½ continuous, nota thermal, custom):
+ * pakai dimensi eksplisit dalam mm.
+ *
+ * Mis. `"A4"`, `"letter"`, `"58mm auto"`, atau `"241.3mm 139.7mm"`.
  */
 export function paperSizeValue(p: PaperSize): string {
+  if (p.kind === "preset") {
+    if (p.preset === "A4") return "A4";
+    if (p.preset === "LETTER") return "letter";
+  }
   const { widthMm, heightMm } = paperSizeToDimensions(p);
   return heightMm === "auto"
     ? `${formatCssMm(widthMm)} auto`

@@ -7,10 +7,24 @@ import {
   isPaperPaged,
   isReceiptPaper,
   paperSizeCss,
-  paperSizeToDimensions,
   paperSizeValue,
   type PaperSize,
 } from "@/lib/paperSize";
+
+// Polyfill paged.js — di-inline ke setiap dokumen print paged.
+// Memberi support penuh @page margin boxes + counter(page)/counter(pages)
+// yang tidak reliabel di Chrome native (issue 24913). Browser tinggal cetak
+// hasil paginated paged.js, jadi page numbering & header berulang konsisten.
+//
+// Ukuran ~500KB minified. Acceptable overhead per print job di desktop app.
+//
+// File di-vendor di `src/lib/vendor/` karena paket pagedjs punya `exports`
+// field restricted yang tidak expose `dist/paged.polyfill.min.js` ke
+// bundler. Kalau pagedjs di-update, copy ulang dari
+// `node_modules/pagedjs/dist/paged.polyfill.min.js`.
+//
+// `?raw` adalah Vite feature: file di-inline sebagai string saat build.
+import pagedjsPolyfill from "@/lib/vendor/paged.polyfill.min.js?raw";
 
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -53,210 +67,124 @@ function formatWaktuSekarang() {
 }
 
 /**
- * CSS + HTML untuk header/footer berulang per halaman pada kertas paged
- * (A4, Letter, ½ continuous).
- *
- * Strategi: `<thead>` wrapping table (untuk header) + `position: fixed`
- * (untuk footer).
- *
- * KENAPA TIDAK `@page` margin boxes:
- * Chromium issue 24913 — margin box sering di-drop diam-diam.
- *
- * KENAPA HEADER PAKAI `<thead>` REPEAT, BUKAN `position: fixed`:
- * - `position: fixed top: 0` muncul di SETIAP halaman di posisi yang sama,
- *   TAPI konten di halaman 2+ tetap mengalir dari atas page area → tertimpa
- *   oleh fixed header (background putih cuma "menutupi" konten, secara
- *   visual masih terpotong).
- * - `<thead>` (dengan `display: table-header-group`) DI-REPEAT browser di
- *   setiap halaman, dan konten setelahnya mengalir di BAWAH thead pada
- *   tiap halaman — tidak ada overlap. Ini behavior table HTML standar yang
- *   well-supported di semua browser.
- *
- * KENAPA FOOTER MASIH `position: fixed` (bukan `<tfoot>`):
- * - `<tfoot>` di Chrome cuma muncul di akhir tabel (halaman terakhir),
- *   tidak repeat seperti `<thead>`. Untuk footer berulang di setiap halaman
- *   harus pakai cara lain.
- * - `position: fixed bottom: 0` cukup reliable untuk footer karena konten
- *   biasanya tidak meluap sampai paling bawah (ada padding-bottom di
- *   `.page-content`). Background putih jaga visual tetap clean.
- *
- * Page numbering (`Halaman X dari Y`):
- * Tetap tidak bisa via mekanisme di atas. User bisa centang "Print headers
- * and footers" di dialog print Chrome — Chrome akan tambah page number
- * natif.
+ * Escape teks untuk dimasukkan ke dalam CSS string literal (mis. `content: "..."`).
+ * Hanya escape karakter yang merusak quote — control char dianggap tidak ada
+ * di input kita (nomor bukti, judul, tanggal terformat).
  */
-function buildPagedHeaderFooterCss(paperSize: PaperSize): string {
+function escapeCssString(s: string): string {
+  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+/**
+ * CSS untuk paged docs (A4, Letter, ½ continuous) dengan paged.js aktif.
+ *
+ * @page margin boxes yang dipakai:
+ * - @top-left      → "{judul dokumen}"               (mis. "Bukti pengeluaran kas")
+ * - @top-right     → "No. {nomor} · {tanggal}"
+ * - @bottom-left   → "Dicetak dari EasyBook · {waktu}"
+ * - @bottom-right  → "Halaman X dari Y"
+ *
+ * Semua ini bekerja konsisten karena paged.js me-render pagination di JS-side,
+ * BUKAN bergantung pada native Chrome paged-media engine.
+ */
+function buildPagedCss(
+  paperSize: PaperSize,
+  judulDokumen: string,
+  detail: KasTransaksiDetailData,
+): string {
   const sizeValue = paperSizeValue(paperSize);
+  const judul = escapeCssString(judulDokumen);
+  const refNomor = escapeCssString(`No. ${detail.nomor} · ${formatTanggal(detail.tanggal)}`);
+  const refDicetak = escapeCssString(`Dicetak dari EasyBook · ${formatWaktuSekarang()}`);
 
   return `
     @page {
       size: ${sizeValue};
-      /* Setting "Margins" di dialog print Chrome yang pegang kendali utama.
-         @bottom-right hanya bonus — kalau Chrome merender margin box, user
-         dapat "Hal X / Y" otomatis di pojok kanan bawah. Kalau tidak
-         (Chrome bug 24913), .print-page-total di .print-footer (di-update JS)
-         tetap menampilkan total halaman. */
-      @bottom-right {
-        content: "Hal " counter(page) " / " counter(pages);
+      /* Margin kiri/kanan 12mm — kompromi antara "tighter look" (request user)
+         dan "headroom untuk Chrome scale offset". User Chrome yang punya
+         Scale ≠ 100 (sticky preference) akan tetap dapat hasil yang fit di
+         A4 sampai sekitar Scale 110%. Top/bottom 14mm cukup untuk margin
+         boxes (judul header & nomor halaman). */
+      margin: 14mm 12mm 12mm 12mm;
+
+      @top-left {
+        content: "${judul}";
+        font-size: 9pt;
+        font-weight: 600;
+        color: #3f3f46;
+        vertical-align: bottom;
+        padding-bottom: 4mm;
+      }
+      @top-right {
+        content: "${refNomor}";
+        font-size: 9pt;
+        color: #71717a;
+        vertical-align: bottom;
+        padding-bottom: 4mm;
+      }
+      @bottom-left {
+        content: "${refDicetak}";
         font-size: 8pt;
         color: #a1a1aa;
+        vertical-align: top;
+        padding-top: 3mm;
+      }
+      @bottom-right {
+        content: "Halaman " counter(page) " dari " counter(pages);
+        font-size: 8pt;
+        color: #a1a1aa;
+        vertical-align: top;
+        padding-top: 3mm;
       }
     }
 
-    /* Outer table — di screen tetap visible (preview), di print thead-nya
-       di-repeat per halaman oleh browser. */
-    .page-table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    /* Reset border global (dari wrapPrintableDocument) di sel-sel outer. */
-    .page-table > thead > tr > td,
-    .page-table > tbody > tr > td {
-      padding: 0;
-      border: none;
-      background: transparent;
-    }
+    /* Page break behavior — PENTING untuk paged.js:
+       - table/tbody: izinkan break antar halaman supaya konten mengisi
+         page 1 dulu sebelum overflow ke page 2. Base CSS dari
+         wrapPrintableDocument hanya set 'tr { page-break-inside: avoid }'
+         yang justru bikin paged.js push seluruh table ke page berikutnya
+         kalau dia anggap tidak muat utuh.
+       - tr: tetap avoid (jangan pecah di tengah baris).
+       - h2 (heading): page-break-after: avoid supaya stick dengan tabel
+         berikutnya (kalau tidak muat keduanya, paged.js akan pindah
+         keduanya ke page baru — bukan h2 sendirian dengan tabel di page lain).
+       - .grid: auto supaya tidak treat container sebagai monolitik. */
+    table, tbody { page-break-inside: auto; break-inside: auto; }
+    tr { page-break-inside: avoid; break-inside: avoid; }
+    h2 { page-break-after: avoid; break-after: avoid; }
+    .grid { page-break-inside: auto; break-inside: auto; }
 
-    .print-header {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 8mm;
-      padding: 4mm 14mm 4mm;
-      font-size: 9pt;
-      color: #3f3f46;
+    /* Saat preview (sebelum print), paged.js render hasil paginated di body.
+       Beri sedikit padding & background biar visible sebagai "preview pages". */
+    body {
+      background: #f4f4f5;
+    }
+    .pagedjs_pages {
+      margin: 0 auto;
+    }
+    .pagedjs_page {
       background: #ffffff;
-      border-bottom: 0.4pt solid #d4d4d8;
-    }
-    .print-header-judul {
-      font-weight: 600;
-      font-size: 10pt;
-    }
-    .print-header-ref {
-      color: #71717a;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      margin-bottom: 8mm;
     }
 
-    .print-footer {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 8mm;
-      padding: 3mm 14mm 4mm;
-      font-size: 8pt;
-      color: #71717a;
-      background: #ffffff;
-      border-top: 0.4pt solid #e4e4e7;
-    }
-
-    /* Footer auto dari wrapPrintableDocument redundan saat .print-footer aktif. */
-    .footer { display: none; }
-
+    /* Saat print, hilangkan background preview. */
     @media print {
-      body { padding: 0; margin: 0; }
-      .actions { display: none; }
-
-      /* Aktifkan thead repeat per halaman. */
-      .page-table thead { display: table-header-group; }
-
-      /* PENTING: izinkan tbody row outer table untuk dipecah antar halaman.
-         Base CSS dari wrapPrintableDocument set 'tr { page-break-inside: avoid; }'
-         yang akan memaksa seluruh konten ke 1 halaman — kalau tidak muat,
-         Chrome akan men-skip halaman 1 dan pindahkan semua ke halaman 2.
-         Untuk outer tbody row, kita izinkan break supaya konten mengisi dari
-         halaman 1 secara natural. */
-      .page-table > tbody > tr,
-      .page-table > tbody > tr > td {
-        page-break-inside: auto;
-      }
-
-      /* Footer ditempel di bawah tiap halaman saat print. */
-      .print-footer {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        z-index: 9999;
-      }
-
-      /* Konten utama: padding kiri/kanan + bottom (kasih jarak ke fixed
-         footer). Tidak butuh padding-top karena thead sudah tepat di atasnya. */
-      .page-content {
-        padding: 6mm 14mm 16mm;
+      body { background: #ffffff; }
+      .pagedjs_page {
+        box-shadow: none;
+        margin: 0;
       }
     }
-  `;
-}
-
-/** Render <header class="print-header"> untuk paged layout. */
-function buildPrintHeaderHtml(detail: KasTransaksiDetailData, judulDokumen: string): string {
-  return `
-    <header class="print-header">
-      <span class="print-header-judul">${escapeHtml(judulDokumen)}</span>
-      <span class="print-header-ref">No. ${escapeHtml(detail.nomor)} · ${escapeHtml(
-        formatTanggal(detail.tanggal),
-      )}</span>
-    </header>
-  `;
-}
-
-/** Render <footer class="print-footer"> untuk paged layout. */
-function buildPrintFooterHtml(): string {
-  return `
-    <footer class="print-footer">
-      <span>Dicetak dari EasyBook · ${escapeHtml(formatWaktuSekarang())}</span>
-      <span>Total <span class="print-page-total">—</span> halaman</span>
-    </footer>
-  `;
-}
-
-/**
- * Bangun `<script>` yang menghitung perkiraan total halaman cetak lalu
- * meng-update teks di `.print-page-total`.
- *
- * Algoritma:
- * - Ambil tinggi body (`scrollHeight`) saat dokumen ter-layout.
- * - Bagi dengan tinggi konten per halaman (paperHeight - asumsi margin Chrome ~20mm).
- * - Round up jadi total halaman.
- *
- * Akurasi: bergantung pada setting Margins di Chrome. Default kira-kira pas;
- * "None" akan over-estimate dikit; "Custom" bisa lebih jauh. Tetap lebih
- * informatif daripada tidak ada angka sama sekali.
- *
- * Di-jalankan saat `load` dan `beforeprint` supaya angka up-to-date sebelum
- * dialog cetak terbuka.
- */
-function buildPagedScript(paperSize: PaperSize): string {
-  const { heightMm } = paperSizeToDimensions(paperSize);
-  if (heightMm === "auto") return "";
-
-  return `
-    <script>
-      (function () {
-        var pageHeightMm = ${heightMm};
-        var pxPerMm = 96 / 25.4;
-        var marginAllowanceMm = 20; // perkiraan margin Chrome default (top+bottom)
-        function update() {
-          var totalHeightPx = document.body.scrollHeight;
-          var perPagePx = (pageHeightMm - marginAllowanceMm) * pxPerMm;
-          var total = Math.max(1, Math.ceil(totalHeightPx / perPagePx));
-          var nodes = document.getElementsByClassName('print-page-total');
-          for (var i = 0; i < nodes.length; i++) nodes[i].textContent = String(total);
-        }
-        if (document.readyState === 'complete') update();
-        else window.addEventListener('load', update);
-        window.addEventListener('beforeprint', update);
-      })();
-    </script>
   `;
 }
 
 /**
  * Bangun HTML dokumen print-ready untuk transaksi kas (penerimaan/pengeluaran).
  * Layout otomatis menyesuaikan ukuran kertas:
- * - Kertas normal (A4, Letter, ½ continuous): invoice-style 2 kolom
- * - Kertas sempit (nota thermal 58/80mm): receipt-style 1 kolom kompak
- *
- * Tidak bergantung Tailwind — pakai CSS inline dari `wrapPrintableDocument`.
+ * - Kertas paged (A4, Letter, ½ continuous): invoice 2 kolom + paged.js untuk
+ *   header/footer berulang + page numbering.
+ * - Kertas thermal (58/80mm): receipt 1 kolom kompak, flow natural tanpa paged.js.
  */
 export function buildKasTransaksiPrintHtml(
   detail: KasTransaksiDetailData,
@@ -266,23 +194,23 @@ export function buildKasTransaksiPrintHtml(
 ): string {
   const receipt = paperSize ? isReceiptPaper(paperSize) : false;
   const paged = paperSize ? isPaperPaged(paperSize) : true;
-  // Margin boxes @page hanya cocok untuk kertas paged & non-thermal.
-  // Thermal/continuous tidak punya konsep "halaman" jadi pakai footer di-body.
-  const useMarginBoxes = paged && !receipt;
+  // paged.js dipakai untuk paged non-thermal. Thermal/continuous tidak punya
+  // konsep halaman & cetakan biasanya 1-page, jadi pakai flow biasa.
+  const usePagedJs = paged && !receipt;
 
   const body = receipt
     ? buildReceiptBody(detail, variant, judulDokumen)
-    : buildInvoiceBody(detail, variant, judulDokumen, useMarginBoxes);
+    : buildInvoiceBody(detail, variant, judulDokumen, !usePagedJs);
 
-  // Untuk paged non-thermal: ada wrap table thead-repeat + position:fixed footer
-  // (CSS dari buildPagedHeaderFooterCss). Untuk thermal/continuous: cukup
-  // paperSizeCss (footer mengalir natural di body).
   let extraCss = "";
-  let bodyHtml = body;
+  let inlineScripts: string[] | undefined;
+  let printOn: "load" | "pagedjs-after-rendered" = "load";
+
   if (paperSize) {
-    if (useMarginBoxes) {
-      extraCss = buildPagedHeaderFooterCss(paperSize);
-      bodyHtml = `${body}${buildPagedScript(paperSize)}`;
+    if (usePagedJs) {
+      extraCss = buildPagedCss(paperSize, judulDokumen, detail);
+      inlineScripts = [pagedjsPolyfill];
+      printOn = "pagedjs-after-rendered";
     } else {
       extraCss = paperSizeCss(paperSize);
     }
@@ -290,30 +218,27 @@ export function buildKasTransaksiPrintHtml(
 
   return wrapPrintableDocument({
     title: `${judulDokumen} ${detail.nomor}`,
-    bodyHtml,
+    bodyHtml: body,
     extraCss,
     compact: receipt,
+    inlineScripts,
+    printOn,
   });
 }
 
 /**
  * Layout invoice (2 kolom) untuk kertas A4 / Letter / continuous.
  *
- * Kalau `useMarginBoxes=true`:
- * - Konten dibungkus `<table class="page-table">` dengan `<thead>` yang
- *   berisi `.print-header`. Browser akan repeat `<thead>` di setiap halaman
- *   saat tabel melewati page break — konten halaman 2+ mengalir natural di
- *   bawah thead, tidak ada overlap.
- * - Setelah tabel, tempel `<footer class="print-footer">` yang via CSS
- *   `@media print` di-set `position: fixed; bottom: 0`.
- * - Header inline di body dihilangkan supaya tidak dobel dengan
- *   `.print-header` di thead.
+ * - `showInlineHeader=true` saat paged.js NOT aktif (mis. fallback / thermal):
+ *   header inline di body (judul + nomor + tanggal di paling atas).
+ * - `showInlineHeader=false` saat paged.js aktif: header dipindah ke
+ *   @page margin boxes (lihat `buildPagedCss`). Body cukup berisi konten inti.
  */
 function buildInvoiceBody(
   detail: KasTransaksiDetailData,
   variant: KasTransaksiDetailVariant,
   judulDokumen: string,
-  useMarginBoxes: boolean,
+  showInlineHeader: boolean,
 ): string {
   const baris = detail.lines
     .map(
@@ -329,34 +254,25 @@ function buildInvoiceBody(
     )
     .join("");
 
-  const inlineHeader = useMarginBoxes
-    ? ""
-    : `
+  const inlineHeader = showInlineHeader
+    ? `
     <div class="header">
       <h1 style="margin: 0;">${escapeHtml(judulDokumen)}</h1>
       <p class="muted" style="margin: 0;">No. bukti <span class="mono">${escapeHtml(detail.nomor)}</span> · ${escapeHtml(
         formatTanggal(detail.tanggal),
       )}</p>
     </div>
-    `;
+    `
+    : "";
 
-  const inner = `
+  return `
+    ${inlineHeader}
     <div class="grid">
       <div>
         <div class="label">${escapeHtml(variant.kasLabel)}</div>
         <div class="value">${escapeHtml(detail.akunKasNama || detail.akunKasKode)}</div>
         <div class="mono muted">${escapeHtml(detail.akunKasKode)}</div>
       </div>
-      <!-- <div>
-        <div class="label">Total</div>
-        <div class="value total">${escapeHtml(formatRupiah(detail.total))}</div>
-        <div class="muted">${detail.lines.length} baris akun</div>
-      </div>
-      <div>
-        <div class="label">Tanggal transaksi</div>
-        <div class="value">${escapeHtml(formatTanggal(detail.tanggal))}</div>
-      </div> -->
-      
       <div>
         <div class="label">Dicatat pada</div>
         <div class="value">${escapeHtml(formatWaktu(detail.createdAt))}</div>
@@ -366,10 +282,6 @@ function buildInvoiceBody(
             : ""
         }
       </div>
-      <!-- <div style="grid-column: span 2;">
-        <div class="label">Pengaruh jurnal</div>
-        <div class="value">${escapeHtml(variant.arahJurnal)}</div>
-      </div> -->
       ${
         detail.catatan.trim()
           ? `<div style="grid-column: span 2;">
@@ -403,33 +315,6 @@ function buildInvoiceBody(
           : ""
       }
     </table>
-  `;
-
-  if (useMarginBoxes) {
-    // Header dibungkus <thead> outer table (browser repeat di tiap halaman).
-    // Footer tetap position:fixed bottom:0 (lihat buildPagedHeaderFooterCss).
-    return `
-      <table class="page-table">
-        <thead>
-          <tr><td>
-            ${buildPrintHeaderHtml(detail, judulDokumen)}
-          </td></tr>
-        </thead>
-        <tbody>
-          <tr><td>
-            <div class="page-content">
-              ${inner}
-            </div>
-          </td></tr>
-        </tbody>
-      </table>
-      ${buildPrintFooterHtml()}
-    `;
-  }
-
-  return `
-    ${inlineHeader}
-    ${inner}
   `;
 }
 

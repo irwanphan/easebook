@@ -82,7 +82,9 @@ export function PenerimaanDetailPage() {
             mode="browser"
             label="Cetak"
             filenameHint={`penerimaan-${detail.nomor}`}
-            htmlBuilder={() => buildKasTransaksiPrintHtml(detail, PENERIMAAN_VARIANT, "Bukti penerimaan")}
+            htmlBuilder={({ paperSize }) =>
+              buildKasTransaksiPrintHtml(detail, PENERIMAAN_VARIANT, "Bukti penerimaan", paperSize)
+            }
             onError={(msg) => setError(msg)}
           />
         ) : null}

@@ -3,6 +3,11 @@ import type {
   KasTransaksiDetailVariant,
 } from "@/features/keuangan/KasTransaksiDetailView";
 import { escapeHtml, wrapPrintableDocument } from "@/lib/print";
+import {
+  isReceiptPaper,
+  paperSizeCss,
+  type PaperSize,
+} from "@/lib/paperSize";
 
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -36,10 +41,33 @@ function formatWaktu(ts: number) {
 
 /**
  * Bangun HTML dokumen print-ready untuk transaksi kas (penerimaan/pengeluaran).
- * Layout invoice-style: header dokumen + ringkasan + tabel rincian + footer.
+ * Layout otomatis menyesuaikan ukuran kertas:
+ * - Kertas normal (A4, Letter, ½ continuous): invoice-style 2 kolom
+ * - Kertas sempit (nota thermal 58/80mm): receipt-style 1 kolom kompak
+ *
  * Tidak bergantung Tailwind — pakai CSS inline dari `wrapPrintableDocument`.
  */
 export function buildKasTransaksiPrintHtml(
+  detail: KasTransaksiDetailData,
+  variant: KasTransaksiDetailVariant,
+  judulDokumen: string,
+  paperSize?: PaperSize,
+): string {
+  const receipt = paperSize ? isReceiptPaper(paperSize) : false;
+  const body = receipt
+    ? buildReceiptBody(detail, variant, judulDokumen)
+    : buildInvoiceBody(detail, variant, judulDokumen);
+
+  return wrapPrintableDocument({
+    title: `${judulDokumen} ${detail.nomor}`,
+    bodyHtml: body,
+    extraCss: paperSize ? paperSizeCss(paperSize) : "",
+    compact: receipt,
+  });
+}
+
+/** Layout invoice (2 kolom) untuk kertas A4 / Letter / continuous. */
+function buildInvoiceBody(
   detail: KasTransaksiDetailData,
   variant: KasTransaksiDetailVariant,
   judulDokumen: string,
@@ -58,7 +86,7 @@ export function buildKasTransaksiPrintHtml(
     )
     .join("");
 
-  const body = `
+  return `
     <div class="header">
       <h1>${escapeHtml(judulDokumen)}</h1>
       <p class="muted">No. bukti <span class="mono">${escapeHtml(detail.nomor)}</span> · ${escapeHtml(
@@ -128,9 +156,71 @@ export function buildKasTransaksiPrintHtml(
       }
     </table>
   `;
+}
 
-  return wrapPrintableDocument({
-    title: `${judulDokumen} ${detail.nomor}`,
-    bodyHtml: body,
-  });
+/** Layout receipt 1 kolom untuk thermal printer 58/80mm. */
+function buildReceiptBody(
+  detail: KasTransaksiDetailData,
+  variant: KasTransaksiDetailVariant,
+  judulDokumen: string,
+): string {
+  const baris = detail.lines
+    .map(
+      (line) => `
+      <tr>
+        <td>
+          <div><strong>${escapeHtml(line.akunNama || line.akunKode)}</strong></div>
+          ${
+            line.catatan
+              ? `<div class="muted" style="font-size: 10px;">${escapeHtml(line.catatan)}</div>`
+              : ""
+          }
+        </td>
+        <td class="num">${escapeHtml(formatRupiah(line.jumlah))}</td>
+      </tr>`,
+    )
+    .join("");
+
+  return `
+    <div style="text-align: center; border-bottom: 1px dashed #18181b; padding-bottom: 4px; margin-bottom: 6px;">
+      <strong style="font-size: 13px;">${escapeHtml(judulDokumen)}</strong>
+      <div class="mono">${escapeHtml(detail.nomor)}</div>
+      <div class="muted" style="font-size: 10px;">${escapeHtml(formatTanggal(detail.tanggal))}</div>
+    </div>
+
+    <div style="margin-bottom: 6px;">
+      <div><span class="muted">${escapeHtml(variant.kasLabel)}:</span></div>
+      <div><strong>${escapeHtml(detail.akunKasNama || detail.akunKasKode)}</strong></div>
+      <div class="mono muted" style="font-size: 10px;">${escapeHtml(detail.akunKasKode)}</div>
+    </div>
+
+    <table style="font-size: 11px;">
+      <thead>
+        <tr>
+          <th style="padding: 4px 2px;">${escapeHtml(variant.akunBarisLabel)}</th>
+          <th class="num" style="padding: 4px 2px;">Jumlah</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${baris || `<tr><td colspan="2" style="text-align:center;">—</td></tr>`}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td style="padding: 4px 2px;" class="num"><strong>Total</strong></td>
+          <td style="padding: 4px 2px;" class="num"><strong>${escapeHtml(formatRupiah(detail.total))}</strong></td>
+        </tr>
+      </tfoot>
+    </table>
+
+    ${
+      detail.catatan.trim()
+        ? `<div style="margin-top: 6px; border-top: 1px dashed #d4d4d8; padding-top: 4px; font-size: 11px; white-space: pre-wrap;">
+            <span class="muted">Catatan: </span>${escapeHtml(detail.catatan)}
+          </div>`
+        : ""
+    }
+    <div style="margin-top: 8px; text-align: center; font-size: 10px;" class="muted">
+      Dicetak ${escapeHtml(formatWaktu(Date.now() / 1000))}
+    </div>
+  `;
 }

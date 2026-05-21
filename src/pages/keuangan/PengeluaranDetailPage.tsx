@@ -82,7 +82,9 @@ export function PengeluaranDetailPage() {
             mode="browser"
             label="Cetak"
             filenameHint={`pengeluaran-${detail.nomor}`}
-            htmlBuilder={() => buildKasTransaksiPrintHtml(detail, PENGELUARAN_VARIANT, "Bukti pengeluaran")}
+            htmlBuilder={({ paperSize }) =>
+              buildKasTransaksiPrintHtml(detail, PENGELUARAN_VARIANT, "Bukti pengeluaran", paperSize)
+            }
             onError={(msg) => setError(msg)}
           />
         ) : null}

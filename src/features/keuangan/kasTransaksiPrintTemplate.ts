@@ -101,15 +101,6 @@ function buildInvoiceBody(
         <div class="mono muted">${escapeHtml(detail.akunKasKode)}</div>
       </div>
       <div>
-        <div class="label">Total</div>
-        <div class="value total">${escapeHtml(formatRupiah(detail.total))}</div>
-        <div class="muted">${detail.lines.length} baris akun</div>
-      </div>
-      <div>
-        <div class="label">Tanggal transaksi</div>
-        <div class="value">${escapeHtml(formatTanggal(detail.tanggal))}</div>
-      </div>
-      <div>
         <div class="label">Dicatat pada</div>
         <div class="value">${escapeHtml(formatWaktu(detail.createdAt))}</div>
         ${
@@ -117,10 +108,6 @@ function buildInvoiceBody(
             ? `<div class="muted">Diperbarui ${escapeHtml(formatWaktu(detail.updatedAt))}</div>`
             : ""
         }
-      </div>
-      <div style="grid-column: span 2;">
-        <div class="label">Pengaruh jurnal</div>
-        <div class="value">${escapeHtml(variant.arahJurnal)}</div>
       </div>
       ${
         detail.catatan.trim()

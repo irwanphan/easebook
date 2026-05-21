@@ -67,6 +67,12 @@ export function KasTransaksiDetailView({ detail, variant }: KasTransaksiDetailVi
   return (
     <>
       <Card>
+        {/*
+         * Catatan: class `print:*` di view ini TIDAK mempengaruhi output cetak,
+         * karena tombol Cetak membuka HTML standalone (`kasTransaksiPrintTemplate.ts`)
+         * di browser default — bukan mencetak komponen React ini.
+         * Untuk mengubah hasil cetak, edit `buildKasTransaksiPrintHtml`.
+         */}
         <div className="grid gap-6 sm:grid-cols-2">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">No. bukti</p>

@@ -25,9 +25,19 @@ export async function printHtmlInBrowser(html: string, filenameHint: string): Pr
  *
  * `bodyHtml` adalah konten inti (sudah dalam markup HTML aman).
  * `title` muncul di tab browser dan nama default "Save as PDF".
+ * `extraCss` (opsional) ditambahkan setelah CSS bawaan — biasanya dipakai untuk
+ *   menambahkan rule `@page { size: ...; }` agar ukuran kertas pas dengan pilihan user.
+ * `compact` (opsional) memperkecil padding/font untuk kertas thermal/nota.
  */
-export function wrapPrintableDocument(opts: { title: string; bodyHtml: string }): string {
-  const { title, bodyHtml } = opts;
+export function wrapPrintableDocument(opts: {
+  title: string;
+  bodyHtml: string;
+  extraCss?: string;
+  compact?: boolean;
+}): string {
+  const { title, bodyHtml, extraCss = "", compact = false } = opts;
+  const bodyPadding = compact ? "6px 8px" : "24px 32px";
+  const baseFontSize = compact ? "11px" : "13px";
   return `<!doctype html>
 <html lang="id">
 <head>
@@ -39,12 +49,12 @@ export function wrapPrintableDocument(opts: { title: string; bodyHtml: string })
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    padding: 24px 32px;
+    padding: ${bodyPadding};
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
       Arial, "Noto Sans", sans-serif;
     color: #18181b;
     background: #ffffff;
-    font-size: 13px;
+    font-size: ${baseFontSize};
     line-height: 1.5;
   }
   h1 { font-size: 20px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.01em; }
@@ -75,6 +85,8 @@ export function wrapPrintableDocument(opts: { title: string; bodyHtml: string })
     thead { display: table-header-group; }
     tfoot { display: table-footer-group; }
   }
+  /* Ukuran kertas custom dari pemanggil (mis. @page { size: 58mm auto; }). */
+  ${extraCss}
 </style>
 </head>
 <body>

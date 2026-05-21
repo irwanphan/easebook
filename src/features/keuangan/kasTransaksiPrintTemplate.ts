@@ -76,7 +76,7 @@ function buildInvoiceBody(
     .map(
       (line) => `
       <tr>
-        <td>
+        <td style="border: 1px solid #d4d4d8;">
           <div><strong>${escapeHtml(line.akunNama || line.akunKode)}</strong></div>
           <div class="mono muted">${escapeHtml(line.akunKode)}</div>
         </td>
@@ -88,8 +88,8 @@ function buildInvoiceBody(
 
   return `
     <div class="header">
-      <h1>${escapeHtml(judulDokumen)}</h1>
-      <p class="muted">No. bukti <span class="mono">${escapeHtml(detail.nomor)}</span> · ${escapeHtml(
+      <h1 style="margin: 0;">${escapeHtml(judulDokumen)}</h1>
+      <p class="muted" style="margin: 0;">No. bukti <span class="mono">${escapeHtml(detail.nomor)}</span> · ${escapeHtml(
         formatTanggal(detail.tanggal),
       )}</p>
     </div>
@@ -100,6 +100,16 @@ function buildInvoiceBody(
         <div class="value">${escapeHtml(detail.akunKasNama || detail.akunKasKode)}</div>
         <div class="mono muted">${escapeHtml(detail.akunKasKode)}</div>
       </div>
+      <!-- <div>
+        <div class="label">Total</div>
+        <div class="value total">${escapeHtml(formatRupiah(detail.total))}</div>
+        <div class="muted">${detail.lines.length} baris akun</div>
+      </div>
+      <div>
+        <div class="label">Tanggal transaksi</div>
+        <div class="value">${escapeHtml(formatTanggal(detail.tanggal))}</div>
+      </div> -->
+      
       <div>
         <div class="label">Dicatat pada</div>
         <div class="value">${escapeHtml(formatWaktu(detail.createdAt))}</div>
@@ -109,6 +119,10 @@ function buildInvoiceBody(
             : ""
         }
       </div>
+      <!-- <div style="grid-column: span 2;">
+        <div class="label">Pengaruh jurnal</div>
+        <div class="value">${escapeHtml(variant.arahJurnal)}</div>
+      </div> -->
       ${
         detail.catatan.trim()
           ? `<div style="grid-column: span 2;">
@@ -120,7 +134,7 @@ function buildInvoiceBody(
     </div>
 
     <h2>${escapeHtml(variant.baristTitle)}</h2>
-    <table>
+    <table style="border: 1px solid #d4d4d8;">
       <thead>
         <tr>
           <th>${escapeHtml(variant.akunBarisLabel)}</th>
@@ -206,8 +220,7 @@ function buildReceiptBody(
           </div>`
         : ""
     }
-    <div style="margin-top: 8px; text-align: center; font-size: 10px;" class="muted">
-      Dicetak ${escapeHtml(formatWaktu(Date.now() / 1000))}
-    </div>
   `;
+  // Footer "Dicetak dari EasyBook · DATE" otomatis ditambahkan oleh
+  // wrapPrintableDocument dan akan stick ke bawah halaman (margin-top: auto).
 }

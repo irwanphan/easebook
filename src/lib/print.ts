@@ -28,6 +28,17 @@ export async function printHtmlInBrowser(html: string, filenameHint: string): Pr
  * `extraCss` (opsional) ditambahkan setelah CSS bawaan — biasanya dipakai untuk
  *   menambahkan rule `@page { size: ...; }` agar ukuran kertas pas dengan pilihan user.
  * `compact` (opsional) memperkecil padding/font untuk kertas thermal/nota.
+ *
+ * Layout footer: elemen ber-class `.footer` mengalir natural setelah konten
+ * (margin-top: 24px + border atas). Untuk dokumen pendek, footer berada di
+ * akhir konten dengan whitespace di bawah — itu wajar untuk invoice/receipt.
+ *
+ * CATATAN: pendekatan `min-height: 100vh` + flex `margin-top: auto` TIDAK dipakai
+ * karena `vh` di konteks print Chrome dihitung tidak konsisten dan dapat
+ * menggandakan tinggi body ke beberapa halaman kosong. CSS standar tidak punya
+ * cara cross-browser untuk benar-benar menempelkan footer ke bawah halaman
+ * terakhir saat multi-halaman (`@page :last { @bottom-center { ... } }` hanya
+ * partial di Chrome).
  */
 export function wrapPrintableDocument(opts: {
   title: string;
@@ -36,8 +47,8 @@ export function wrapPrintableDocument(opts: {
   compact?: boolean;
 }): string {
   const { title, bodyHtml, extraCss = "", compact = false } = opts;
-  const bodyPadding = compact ? "6px 8px" : "24px 32px";
-  const baseFontSize = compact ? "11px" : "13px";
+  const bodyPadding = compact ? "0 0" : "8px 12px";
+  const baseFontSize = compact ? "10px" : "12px";
   return `<!doctype html>
 <html lang="id">
 <head>
@@ -57,21 +68,21 @@ export function wrapPrintableDocument(opts: {
     font-size: ${baseFontSize};
     line-height: 1.5;
   }
-  h1 { font-size: 20px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.01em; }
-  h2 { font-size: 14px; margin: 24px 0 8px; font-weight: 600; }
+  h1 { font-size: 18px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.01em; }
+  h2 { font-size: 12px; margin: 12px 0 4px; font-weight: 600; }
   .muted { color: #71717a; font-size: 12px; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
-  .header { border-bottom: 1px solid #e4e4e7; padding-bottom: 12px; margin-bottom: 16px; }
+  .header { border-bottom: 1px solid #e4e4e7; padding-bottom: 4px; margin-bottom: 4px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; }
   .label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #71717a; }
   .value { margin-top: 2px; }
   .total { font-size: 18px; font-weight: 700; }
   table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-  th, td { padding: 8px 10px; border-bottom: 1px solid #e4e4e7; text-align: left; vertical-align: top; }
+  th, td { padding: 2px 4px; border-bottom: 1px solid #e4e4e7; text-align: left; vertical-align: top; }
   th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #52525b; background: #fafafa; }
   td.num, th.num { text-align: right; }
   tfoot td { border-top: 2px solid #18181b; border-bottom: none; font-weight: 700; background: #fafafa; }
-  .footer { margin-top: 24px; padding-top: 12px; border-top: 1px dashed #d4d4d8; font-size: 11px; color: #71717a; }
+  .footer { margin-top: 24px; padding-top: 8px; border-top: 1px dashed #d4d4d8; font-size: 11px; color: #71717a; }
   .actions { margin-bottom: 16px; }
   .actions button {
     appearance: none; border: 1px solid #d4d4d8; background: #fafafa; color: #18181b;

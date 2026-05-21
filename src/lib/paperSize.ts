@@ -91,6 +91,18 @@ export function isReceiptPaper(p: PaperSize): boolean {
   return paperSizeToDimensions(p).widthMm < 100;
 }
 
+/**
+ * Apakah kertas punya tinggi tetap (paged) — A4, Letter, ½ continuous, dll.
+ * `false` untuk kertas continuous/thermal dengan tinggi auto.
+ *
+ * Dipakai untuk memutuskan apakah header/footer `@page` margin boxes (page
+ * numbering, header berulang) bisa dipakai. Continuous roll tidak punya
+ * konsep "halaman" jadi margin boxes tidak relevan.
+ */
+export function isPaperPaged(p: PaperSize): boolean {
+  return paperSizeToDimensions(p).heightMm !== "auto";
+}
+
 /** Format dimensi jadi string ramah Indonesia (mis. "210 × 297 mm"). */
 export function formatPaperDimensionsLabel(p: PaperSize): string {
   const { widthMm, heightMm } = paperSizeToDimensions(p);
@@ -108,18 +120,27 @@ function formatMm(n: number): string {
  * Bangun blok CSS `@page` + margin yang sesuai dengan ukuran.
  * - Margin kecil (3mm) untuk kertas sempit / continuous
  * - Margin normal (10mm) untuk A4/Letter/half-continuous
+ *
+ * Untuk paged dengan @page margin boxes (header/footer berulang),
+ * pakai `paperSizeValue()` lalu bangun @page rule sendiri agar
+ * size + margin + margin boxes berada dalam satu @page block
+ * (Chrome kadang gagal merge dua @page block terpisah).
  */
 export function paperSizeCss(p: PaperSize): string {
-  const { widthMm, heightMm } = paperSizeToDimensions(p);
   const receipt = isReceiptPaper(p);
   const margin = receipt ? "3mm 2mm" : "10mm";
+  return `@page { size: ${paperSizeValue(p)}; margin: ${margin}; }`;
+}
 
-  const sizeRule =
-    heightMm === "auto"
-      ? `${formatCssMm(widthMm)} auto`
-      : `${formatCssMm(widthMm)} ${formatCssMm(heightMm)}`;
-
-  return `@page { size: ${sizeRule}; margin: ${margin}; }`;
+/**
+ * Nilai untuk properti CSS `@page { size: ... }` tanpa wrapper.
+ * Mis. `"210mm 297mm"` atau `"58mm auto"`.
+ */
+export function paperSizeValue(p: PaperSize): string {
+  const { widthMm, heightMm } = paperSizeToDimensions(p);
+  return heightMm === "auto"
+    ? `${formatCssMm(widthMm)} auto`
+    : `${formatCssMm(widthMm)} ${formatCssMm(heightMm)}`;
 }
 
 function formatCssMm(n: number): string {

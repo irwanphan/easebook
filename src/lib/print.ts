@@ -25,20 +25,19 @@ export async function printHtmlInBrowser(html: string, filenameHint: string): Pr
  *
  * `bodyHtml` adalah konten inti (sudah dalam markup HTML aman).
  * `title` muncul di tab browser dan nama default "Save as PDF".
- * `extraCss` (opsional) ditambahkan setelah CSS bawaan — biasanya dipakai untuk
- *   menambahkan rule `@page { size: ...; }` agar ukuran kertas pas dengan pilihan user.
+ * `extraCss` (opsional) ditambahkan setelah CSS bawaan — biasanya dipakai untuk:
+ *   - `@page { size: ...; margin: ...; }` (ukuran kertas dari user)
+ *   - `@page { @top-left { content: ... } @bottom-right { content: ... } }`
+ *     untuk header/footer berulang + page numbering pada kertas paged.
  * `compact` (opsional) memperkecil padding/font untuk kertas thermal/nota.
  *
- * Layout footer: elemen ber-class `.footer` mengalir natural setelah konten
- * (margin-top: 24px + border atas). Untuk dokumen pendek, footer berada di
- * akhir konten dengan whitespace di bawah — itu wajar untuk invoice/receipt.
- *
- * CATATAN: pendekatan `min-height: 100vh` + flex `margin-top: auto` TIDAK dipakai
- * karena `vh` di konteks print Chrome dihitung tidak konsisten dan dapat
- * menggandakan tinggi body ke beberapa halaman kosong. CSS standar tidak punya
- * cara cross-browser untuk benar-benar menempelkan footer ke bawah halaman
- * terakhir saat multi-halaman (`@page :last { @bottom-center { ... } }` hanya
- * partial di Chrome).
+ * Layout footer:
+ * - Mode paged (A4, Letter, dll) — template biasanya pakai `@page` margin boxes
+ *   di `extraCss` (header + "Halaman X dari Y" + "Dicetak dari EasyBook").
+ *   Footer di-body ditandai `.footer` dan dapat di-`display:none` via @media print
+ *   dari `extraCss` supaya tidak duplikat.
+ * - Mode continuous/thermal — `.footer` di-body tetap tampil (mengalir natural
+ *   setelah konten) karena thermal roll tidak punya konsep halaman.
  */
 export function wrapPrintableDocument(opts: {
   title: string;

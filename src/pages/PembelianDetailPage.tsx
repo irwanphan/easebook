@@ -6,9 +6,33 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { PrintButton } from "@/components/ui/PrintButton";
+import {
+  buildFakturPrintHtml,
+  type FakturPrintConfig,
+} from "@/features/keuangan/templates/fakturPrintTemplate";
+import type { SignatureColumn } from "@/features/keuangan/printSignature";
 import type { PembelianDetail } from "@/data/pembelian";
 import { labelMetodePembayaran } from "@/data/pembelian";
 import { tauriErrorMessage } from "@/lib/tauriError";
+
+// Faktur pembelian: dokumen serah-terima barang dari pemasok ke gudang kita.
+// Kiri = staff kita yang menerima barang. Kanan = pihak yang menyetujui
+// (atasan / kepala gudang) — bisa juga di-overwrite oleh pemasok kalau
+// faktur dipakai untuk konfirmasi balik.
+const PEMBELIAN_SIGNATURES: SignatureColumn[] = [
+  { label: "Diterima Oleh" },
+  { label: "Mengetahui" },
+];
+
+const PEMBELIAN_PRINT_CONFIG: FakturPrintConfig = {
+  judulDokumen: "Faktur pembelian",
+  pihakLabel: "Pemasok",
+  pembayaranLabel: "Dibayar dengan",
+  pembayaranKreditFallback: "Hutang dagang",
+  showMetodePembayaran: true,
+  signatures: PEMBELIAN_SIGNATURES,
+};
 
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -87,10 +111,50 @@ export function PembelianDetailPage() {
           description={detail ? `Nomor ${detail.nomor}` : "Memuat data faktur…"}
           actions={
             detail ? (
-              <Button type="button" className="gap-2" onClick={() => navigate(ubahHref)}>
-                <Pencil className="h-4 w-4" aria-hidden />
-                Ubah faktur
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="secondary" className="gap-2" onClick={() => navigate(ubahHref)}>
+                  <Pencil className="h-4 w-4" aria-hidden />
+                  Ubah faktur
+                </Button>
+                <PrintButton
+                  mode="browser"
+                  label="Cetak"
+                  filenameHint={`faktur-pembelian-${detail.nomor}`}
+                  htmlBuilder={({ paperSize }) =>
+                    buildFakturPrintHtml(
+                      {
+                        nomor: detail.nomor,
+                        tanggalFaktur: detail.tanggalFaktur,
+                        jatuhTempo: detail.jatuhTempo,
+                        status: detail.status,
+                        pihakKode: detail.pemasokKode,
+                        pihakNama: detail.pemasokNama,
+                        gudangKode: detail.gudangKode,
+                        gudangNama: detail.gudangNama,
+                        metodePembayaranLabel: labelMetodePembayaran(detail.metodePembayaran),
+                        akunKasKode: detail.akunKasKode,
+                        akunKasNama: detail.akunKasNama,
+                        subtotalBarang: detail.subtotalBarang ?? 0,
+                        diskonFaktur: detail.diskonFaktur ?? 0,
+                        pajak: detail.pajak ?? 0,
+                        total: detail.total,
+                        lines: (detail.lines ?? []).map((row) => ({
+                          barangKode: row.barangKode,
+                          barangNama: row.barangNama,
+                          qty: row.qty,
+                          satuanNama: row.satuanNama ?? "",
+                          hargaSatuan: row.hargaSatuan,
+                          diskon: row.diskon ?? 0,
+                          subtotal: row.subtotal,
+                        })),
+                      },
+                      PEMBELIAN_PRINT_CONFIG,
+                      paperSize,
+                    )
+                  }
+                  onError={(msg) => setError(msg)}
+                />
+              </div>
             ) : null
           }
         />

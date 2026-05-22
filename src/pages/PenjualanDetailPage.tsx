@@ -6,8 +6,32 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { PrintButton } from "@/components/ui/PrintButton";
+import {
+  buildFakturPrintHtml,
+  type FakturPrintConfig,
+} from "@/features/keuangan/templates/fakturPrintTemplate";
+import type { SignatureColumn } from "@/features/keuangan/printSignature";
 import type { PenjualanDetail } from "@/data/penjualan";
 import { tauriErrorMessage } from "@/lib/tauriError";
+
+// Faktur penjualan: dokumen serah-terima barang dari kita ke pelanggan.
+// Kiri = sales / kasir kita ("Hormat Kami"). Kanan = pelanggan yang
+// menerima barang.
+const PENJUALAN_SIGNATURES: SignatureColumn[] = [
+  { label: "Hormat Kami" },
+  { label: "Penerima" },
+];
+
+const PENJUALAN_PRINT_CONFIG: FakturPrintConfig = {
+  judulDokumen: "Faktur penjualan",
+  pihakLabel: "Pelanggan",
+  pembayaranLabel: "Diterima melalui",
+  pembayaranKreditFallback: "Piutang (belum diterima)",
+  showLineCatatan: true,
+  showSalesman: true,
+  signatures: PENJUALAN_SIGNATURES,
+};
 
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -86,10 +110,52 @@ export function PenjualanDetailPage() {
           description={detail ? `Nomor ${detail.nomor}` : "Memuat data faktur…"}
           actions={
             detail ? (
-              <Button type="button" className="gap-2" onClick={() => navigate(ubahHref)}>
-                <Pencil className="h-4 w-4" aria-hidden />
-                Ubah faktur
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="secondary" className="gap-2" onClick={() => navigate(ubahHref)}>
+                  <Pencil className="h-4 w-4" aria-hidden />
+                  Ubah faktur
+                </Button>
+                <PrintButton
+                  mode="browser"
+                  label="Cetak"
+                  filenameHint={`faktur-penjualan-${detail.nomor}`}
+                  htmlBuilder={({ paperSize }) =>
+                    buildFakturPrintHtml(
+                      {
+                        nomor: detail.nomor,
+                        tanggalFaktur: detail.tanggalFaktur,
+                        jatuhTempo: detail.jatuhTempo,
+                        status: detail.status,
+                        pihakKode: detail.pelangganKode,
+                        pihakNama: detail.pelangganNama,
+                        gudangKode: detail.gudangKode,
+                        gudangNama: detail.gudangNama,
+                        salesman: detail.salesman || undefined,
+                        catatan: detail.catatanFaktur || undefined,
+                        akunKasKode: detail.akunKasKode,
+                        akunKasNama: detail.akunKasNama,
+                        subtotalBarang: detail.subtotalBarang ?? 0,
+                        diskonFaktur: detail.diskonFaktur ?? 0,
+                        pajak: detail.pajak ?? 0,
+                        total: detail.total,
+                        lines: (detail.lines ?? []).map((row) => ({
+                          barangKode: row.barangKode,
+                          barangNama: row.barangNama,
+                          qty: row.qty,
+                          satuanNama: row.satuanNama ?? "",
+                          hargaSatuan: row.hargaSatuan,
+                          diskon: row.diskon ?? 0,
+                          subtotal: row.subtotal,
+                          catatan: row.catatan || undefined,
+                        })),
+                      },
+                      PENJUALAN_PRINT_CONFIG,
+                      paperSize,
+                    )
+                  }
+                  onError={(msg) => setError(msg)}
+                />
+              </div>
             ) : null
           }
         />

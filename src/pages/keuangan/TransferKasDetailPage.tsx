@@ -236,7 +236,7 @@ export function TransferKasDetailPage() {
               />
             </div>
 
-            <div className="border-b border-zinc-100 px-6 py-4">
+            <div className="border-b border-zinc-100 pt-6 pb-3">
               <h2 className="text-sm font-semibold text-zinc-900">Ringkasan nominal</h2>
               <p className="mt-0.5 text-xs text-zinc-500">
                 Selisih kirim &amp; terima dibebankan ke akun biaya admin / bank.
@@ -247,34 +247,36 @@ export function TransferKasDetailPage() {
                 label="Nominal dikirim dari kas asal"
                 value={formatRupiah(detail.nominalKirim)}
               />
-              {detail.biayaTransfer > 0 ? (
-                <SummaryRow
-                  label="Biaya transfer (admin / bank)"
-                  value={`− ${formatRupiah(detail.biayaTransfer)}`}
-                  subtle
-                />
-              ) : null}
+              <div>
+                {detail.biayaTransfer > 0 ? (
+                  <SummaryRow
+                    label="Biaya transfer (admin / bank)"
+                    value={`− ${formatRupiah(detail.biayaTransfer)}`}
+                    subtle
+                  />
+                ) : null}
+                {detail.biayaTransfer > 0 ? (
+                  <div className="-mt-2 pb-2 text-xs text-zinc-600">
+                    Akun biaya:{" "}
+                    {detail.akunBiayaKode ? (
+                      <>
+                        <span className="font-mono text-zinc-700">{detail.akunBiayaKode}</span>
+                        {detail.akunBiayaNama ? (
+                          <span className="ml-1.5 text-zinc-700">— {detail.akunBiayaNama}</span>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className="italic text-zinc-500">tidak diset</span>
+                    )}
+                  </div>
+                ) : null}
+              </div>
               <SummaryRow
                 label="Nominal diterima di kas tujuan"
                 value={formatRupiah(detail.nominalTerima)}
                 emphasize
               />
             </dl>
-            {detail.biayaTransfer > 0 ? (
-              <div className="border-t border-zinc-100 bg-zinc-50/60 px-6 py-3 text-xs text-zinc-600">
-                Akun biaya:{" "}
-                {detail.akunBiayaKode ? (
-                  <>
-                    <span className="font-mono text-zinc-700">{detail.akunBiayaKode}</span>
-                    {detail.akunBiayaNama ? (
-                      <span className="ml-1.5 text-zinc-700">— {detail.akunBiayaNama}</span>
-                    ) : null}
-                  </>
-                ) : (
-                  <span className="italic text-zinc-500">tidak diset</span>
-                )}
-              </div>
-            ) : null}
           </Card>
 
           {detail.jurnalId != null ? (

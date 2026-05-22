@@ -41,7 +41,11 @@ export function buildSignatureBlockHtml(columns: SignatureColumn[]): string {
         <div class="signature-label">${escapeHtml(col.label)}</div>
         <div class="signature-space" aria-hidden="true"></div>
         <div class="signature-line" aria-hidden="true"></div>
-        <div class="signature-name">(&nbsp;${"&nbsp;".repeat(28)}&nbsp;)</div>
+        <div class="signature-name">
+          <span class="signature-paren">(</span>
+          <span class="signature-fill" aria-hidden="true"></span>
+          <span class="signature-paren">)</span>
+        </div>
       </td>`,
     )
     .join("");
@@ -87,7 +91,7 @@ export const SIGNATURE_BLOCK_CSS = `
     background: transparent;
   }
   .signature-block .signature-label {
-    font-size: 11pt;
+    font-size: 10pt;
     font-weight: 600;
     color: #18181b;
     margin-bottom: 2mm;
@@ -101,10 +105,18 @@ export const SIGNATURE_BLOCK_CSS = `
     border-top: 0.6pt solid #18181b;
     margin: 0 6mm;
   }
+  /* Wrapper "( ........ )" — dibuat selebar garis di atasnya dengan
+     'margin: 0 6mm' yang sama, lalu flex layout supaya '(' & ')' menempel
+     di tepi kiri/kanan persis di ujung garis. Tengahnya '.signature-fill'
+     dengan flex:1 mengisi sisanya — ruang kosong untuk menulis nama. */
   .signature-block .signature-name {
-    margin-top: 2mm;
+    display: flex;
+    align-items: baseline;
+    margin: 2mm 6mm 0;
     font-size: 10pt;
     color: #71717a;
-    letter-spacing: 0.04em;
+  }
+  .signature-block .signature-fill {
+    flex: 1;
   }
 `;

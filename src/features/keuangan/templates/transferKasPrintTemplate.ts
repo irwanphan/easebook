@@ -137,11 +137,16 @@ export function buildTransferKasPrintHtml(
  *   bawah baris "Biaya transfer".
  */
 const TRANSFER_EXTRA_CSS = `
+  .flex {
+    display: flex;
+    align-items: center;
+    gap: 6mm;
+  }
   .detail-card {
-    border: 1px solid #e4e4e7;
-    border-radius: 3mm;
-    padding: 5mm 6mm;
-    margin: 4mm 0;
+    border-top: 1px solid #e4e4e7;
+    border-bottom: 1px solid #e4e4e7;
+    padding: 2mm 0;
+    margin: 2mm 0;
   }
   .detail-card .section-header h2 {
     margin: 0;
@@ -157,23 +162,40 @@ const TRANSFER_EXTRA_CSS = `
     color: #71717a;
   }
   .detail-card .section-header {
-    padding-bottom: 3mm;
+    padding-bottom: 1mm;
   }
-  /* Section header berikutnya: garis tipis pemisah di atas. */
-  .detail-card .summary-list .section-header,
-  .detail-card .kas-row + .section-header {
+  /* Section header berikutnya: garis tipis pemisah di atas. Kita pakai
+     class eksplisit '.section-header-divider' (bukan sibling selector)
+     karena markup '.kas-row' kini berupa table sehingga selector seperti
+     '.kas-row + .section-header' tidak match. */
+  .detail-card .section-header.section-header-divider {
     border-top: 1px solid #e4e4e7;
     padding-top: 5mm;
     margin-top: 0;
   }
 
-  .detail-card .kas-row {
-    display: grid;
-    grid-template-columns: 1fr 14mm 1fr;
-    gap: 4mm;
-    padding: 3mm 1mm;
+  /* Catatan: pakai <table> (bukan display:grid) supaya paged.js bisa
+     mengukur & memposisikan blok ini dengan reliable. Grid/flex container
+     sering bikin paged.js memperlakukan seluruh blok sebagai monolitik
+     dan mendorongnya ke halaman baru kalau sedikit saja over. Lihat
+     komentar serupa di src/features/keuangan/printSignature.ts. */
+  table.kas-row {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    margin: 0;
     border-top: 1px solid #f4f4f5;
     border-bottom: 1px solid #f4f4f5;
+  }
+  table.kas-row > tbody > tr > td {
+    padding: 0 1mm;
+    border: none;
+    vertical-align: middle;
+    background: transparent;
+  }
+  table.kas-row > tbody > tr > td.kas-arrow-cell {
+    width: 14mm;
+    text-align: center;
   }
   .detail-card .kas-panel {
     display: flex;
@@ -227,7 +249,7 @@ const TRANSFER_EXTRA_CSS = `
     align-items: baseline;
     justify-content: space-between;
     gap: 6mm;
-    padding: 2.5mm 1mm;
+    padding: 0 0;
     border-bottom: 1px solid #f4f4f5;
     font-size: 10pt;
   }
@@ -259,10 +281,7 @@ const TRANSFER_EXTRA_CSS = `
     color: #3f3f46;
   }
   .detail-card .summary-row.grand-total {
-    margin-top: 1mm;
-    padding: 3mm 3mm;
-    background: #fafafa;
-    border-radius: 1.5mm;
+    padding: 2mm 0;
     border-bottom: none;
   }
   .detail-card .summary-row.grand-total dt {
@@ -270,9 +289,15 @@ const TRANSFER_EXTRA_CSS = `
     color: #18181b;
   }
   .detail-card .summary-row.grand-total dd {
-    font-size: 12pt;
+    font-size: 10pt;
     font-weight: 700;
     color: #18181b;
+  }
+  .detail-card .summary-row.flex {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6mm;
   }
 `;
 
@@ -312,20 +337,20 @@ function buildInvoiceBody(
   const biayaRow = adaBiaya
     ? `
       <div class="summary-row subtle">
-        <dt>Biaya transfer (admin / bank)</dt>
-        <dd>− ${escapeHtml(formatRupiah(detail.biayaTransfer))}</dd>
-      </div>
-      <div class="summary-akun-biaya">
-        Akun biaya:
-        ${
-          detail.akunBiayaKode
-            ? `<span class="mono">${escapeHtml(detail.akunBiayaKode)}</span>${
-                detail.akunBiayaNama
-                  ? ` — ${escapeHtml(detail.akunBiayaNama)}`
-                  : ""
-              }`
-            : `<em style="color:#a1a1aa;">tidak diset</em>`
-        }
+        <div>
+          <div class="label">Biaya transfer (admin / bank)
+            ${
+              detail.akunBiayaKode
+                ? `${escapeHtml(detail.akunBiayaKode)}${
+                    detail.akunBiayaNama
+                      ? ` — ${escapeHtml(detail.akunBiayaNama)}`
+                      : ""
+                  }`
+                : ``
+            }
+          </div>
+        </div>
+        <div class="value">− ${escapeHtml(formatRupiah(detail.biayaTransfer))}</div>
       </div>
     `
     : "";
@@ -333,18 +358,14 @@ function buildInvoiceBody(
   return `
     ${inlineHeader}
     <div class="grid">
-      <div>
-        <div class="label">Tanggal transfer</div>
-        <div class="value">${escapeHtml(formatTanggal(detail.tanggal))}</div>
+      <div class="flex">
+        <span class="label">Tanggal transfer: </span>
+        <span class="mono">${escapeHtml(formatTanggal(detail.tanggal))}</span>
       </div>
-      <div>
-        <div class="label">Dicatat pada</div>
-        <div class="value">${escapeHtml(formatWaktu(detail.createdAt))}</div>
-        ${
-          detail.updatedAt > detail.createdAt
-            ? `<div class="muted">Diperbarui ${escapeHtml(formatWaktu(detail.updatedAt))}</div>`
-            : ""
-        }
+      <div class="flex">
+        <span class="label">Dicatat pada: </span>
+        <span class="mono">${escapeHtml(formatWaktu(detail.createdAt))}</span>
+        ${detail.updatedAt > detail.createdAt ? `<!-- <span class="muted">Diperbarui ${escapeHtml(formatWaktu(detail.updatedAt))}</span> -->` : ""}
       </div>
       ${
         detail.catatan.trim()
@@ -359,35 +380,43 @@ function buildInvoiceBody(
     <div class="detail-card">
       <div class="section-header">
         <h2>Kas asal → tujuan</h2>
-        <p class="section-desc">Saldo dipindahkan antar rekening kas / bank.</p>
       </div>
-      <div class="kas-row">
-        <div class="kas-panel">
-          <div class="kas-role">
-            <div class="role">Kas asal</div>
-            <div class="role-hint">Yang menyerahkan saldo</div>
-          </div>
-          <div class="kas-akun">
-            <div class="akun-nama">${escapeHtml(detail.akunSumberNama || detail.akunSumberKode)}</div>
-            <div class="akun-kode">${escapeHtml(detail.akunSumberKode)}</div>
-          </div>
-        </div>
-        <div class="kas-arrow" aria-hidden="true">→</div>
-        <div class="kas-panel">
-          <div class="kas-role">
-            <div class="role">Kas tujuan</div>
-            <div class="role-hint">Yang menerima saldo</div>
-          </div>
-          <div class="kas-akun">
-            <div class="akun-nama">${escapeHtml(detail.akunTujuanNama || detail.akunTujuanKode)}</div>
-            <div class="akun-kode">${escapeHtml(detail.akunTujuanKode)}</div>
-          </div>
-        </div>
-      </div>
+      <table class="kas-row" role="presentation">
+        <tbody>
+          <tr>
+            <td>
+              <div class="kas-panel">
+                <div class="kas-role">
+                  <div class="role">Kas asal</div>
+                  <div class="role-hint">Yang menyerahkan saldo</div>
+                </div>
+                <div class="kas-akun">
+                  <div class="akun-nama">${escapeHtml(detail.akunSumberNama || detail.akunSumberKode)}</div>
+                  <div class="akun-kode">${escapeHtml(detail.akunSumberKode)}</div>
+                </div>
+              </div>
+            </td>
+            <td class="kas-arrow-cell">
+              <div class="kas-arrow" aria-hidden="true">→</div>
+            </td>
+            <td>
+              <div class="kas-panel">
+                <div class="kas-role">
+                  <div class="role">Kas tujuan</div>
+                  <div class="role-hint">Yang menerima saldo</div>
+                </div>
+                <div class="kas-akun">
+                  <div class="akun-nama">${escapeHtml(detail.akunTujuanNama || detail.akunTujuanKode)}</div>
+                  <div class="akun-kode">${escapeHtml(detail.akunTujuanKode)}</div>
+                </div>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
-      <div class="section-header" style="padding-top: 5mm; border-top: 1px solid #e4e4e7;">
+      <div class="section-header section-header-divider">
         <h2>Ringkasan nominal</h2>
-        <p class="section-desc">Selisih kirim &amp; terima dibebankan ke akun biaya admin / bank.</p>
       </div>
       <dl class="summary-list">
         <div class="summary-row">
@@ -430,7 +459,7 @@ function buildReceiptBody(detail: TransferKasDetail): string {
       <div class="mono muted" style="font-size: 10px;">${escapeHtml(detail.akunTujuanKode)}</div>
     </div>
 
-    <table style="font-size: 11px;">
+    <table style="font-size: 10px;">
       <tbody>
         <tr>
           <td style="padding: 2px;">Dikirim</td>

@@ -17,6 +17,25 @@ export type SignatureColumn = {
 };
 
 /**
+ * Mode tampilan blok tanda tangan.
+ *
+ * Konvensi dokumen bisnis Indonesia membedakan dua jenis konfirmasi tertulis:
+ * - **tanda-tangan**: tanda tangan penuh untuk dokumen formal (bukti legal,
+ *   melibatkan pihak luar). Ruang ~22mm, font 10pt. Cocok untuk penerimaan,
+ *   pengeluaran, pelunasan hutang/piutang.
+ * - **paraf**: paraf / inisial untuk konfirmasi internal (PIC menyetujui).
+ *   Ruang ~12mm, font sedikit lebih kecil. Cocok untuk transaksi internal
+ *   seperti transfer antar kas. Lebih kompak — mempermudah dokumen muat
+ *   di satu halaman.
+ */
+export type SignatureMode = "tanda-tangan" | "paraf";
+
+export type SignatureBlockOptions = {
+  /** Default `"tanda-tangan"` (size penuh). */
+  mode?: SignatureMode;
+};
+
+/**
  * Render blok tanda tangan untuk dokumen serah-terima uang.
  *
  * Layout pakai `<table>` (bukan flexbox) karena:
@@ -30,9 +49,20 @@ export type SignatureColumn = {
  * sempit. Pemanggil bertanggung jawab tidak memanggil ini untuk thermal.
  *
  * Pakai bersama `SIGNATURE_BLOCK_CSS` (di-append ke `extraCss`).
+ *
+ * @param options.mode `"tanda-tangan"` (default, ~47mm total tinggi) atau
+ *   `"paraf"` (~31mm total tinggi) untuk dokumen internal yang harus muat
+ *   di satu halaman.
  */
-export function buildSignatureBlockHtml(columns: SignatureColumn[]): string {
+export function buildSignatureBlockHtml(
+  columns: SignatureColumn[],
+  options?: SignatureBlockOptions,
+): string {
   if (columns.length === 0) return "";
+
+  const isParaf = options?.mode === "paraf";
+  const tableClass = isParaf ? "signature-block paraf" : "signature-block";
+  const ariaLabel = isParaf ? "Paraf" : "Tanda tangan";
 
   const cells = columns
     .map(
@@ -53,7 +83,7 @@ export function buildSignatureBlockHtml(columns: SignatureColumn[]): string {
   // role="presentation" pada <table> menyatakan ke screen reader bahwa
   // table ini cuma untuk layout (bukan data tabular).
   return `
-    <table class="signature-block" role="presentation" aria-label="Tanda tangan">
+    <table class="${tableClass}" role="presentation" aria-label="${ariaLabel}">
       <tbody>
         <tr>${cells}</tr>
       </tbody>
@@ -118,5 +148,31 @@ export const SIGNATURE_BLOCK_CSS = `
   }
   .signature-block .signature-fill {
     flex: 1;
+  }
+
+  /* Variant paraf — dimensi lebih kompak untuk dokumen internal (mis.
+     transfer antar kas) yang tidak butuh tanda tangan formal penuh.
+     Hemat ~16mm total tinggi dibanding default, membantu seluruh dokumen
+     muat di satu halaman A4. */
+  table.signature-block.paraf {
+    margin-top: 5mm;
+  }
+  table.signature-block.paraf > tbody > tr > td.signature-cell {
+    padding: 0 6mm;
+  }
+  .signature-block.paraf .signature-label {
+    font-size: 9pt;
+    margin-bottom: 1.5mm;
+  }
+  .signature-block.paraf .signature-space {
+    /* Paraf cukup 12mm — ruang untuk inisial 2-3 huruf. */
+    height: 12mm;
+  }
+  .signature-block.paraf .signature-line {
+    margin: 0 4mm;
+  }
+  .signature-block.paraf .signature-name {
+    margin: 1.5mm 4mm 0;
+    font-size: 8.5pt;
   }
 `;

@@ -431,7 +431,7 @@ function buildInvoiceBody(
       </dl>
     </div>
 
-    ${signatures ? buildSignatureBlockHtml(signatures) : ""}
+    ${signatures ? buildSignatureBlockHtml(signatures, { mode: "paraf" }) : ""}
   `;
 }
 

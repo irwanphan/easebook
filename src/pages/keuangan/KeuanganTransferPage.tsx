@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Pencil, Plus } from "lucide-react";
+import { ArrowRight, Eye, Pencil, Plus } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -190,7 +190,7 @@ export function KeuanganTransferPage() {
                 <th className="px-5 py-3 text-right">Biaya</th>
                 <th className="px-5 py-3">Akun biaya</th>
                 <th className="px-5 py-3">Catatan</th>
-                <th className="w-24 px-5 py-3 text-right">Aksi</th>
+                <th className="w-40 px-5 py-3 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -209,8 +209,14 @@ export function KeuanganTransferPage() {
               ) : (
                 rows.map((row) => (
                   <tr key={row.nomor} className="bg-white hover:bg-zinc-50/50">
-                    <td className="px-5 py-3 font-mono text-xs font-semibold text-brand-700">
-                      {row.nomor}
+                    <td className="px-5 py-3 font-mono text-xs font-semibold">
+                      <Link
+                        to={`/keuangan/transfer/detail/${encodeURIComponent(row.nomor)}`}
+                        className="text-brand-700 hover:text-brand-800 hover:underline"
+                        aria-label={`Lihat detail transfer ${row.nomor}`}
+                      >
+                        {row.nomor}
+                      </Link>
                     </td>
                     <td className="px-5 py-3 text-zinc-600">{formatTanggal(row.tanggal)}</td>
                     <td className="px-5 py-3 text-zinc-700">
@@ -256,14 +262,24 @@ export function KeuanganTransferPage() {
                       {row.catatan || "—"}
                     </td>
                     <td className="px-5 py-3 text-right">
-                      <Link
-                        to={`/keuangan/transfer/ubah/${encodeURIComponent(row.nomor)}`}
-                        className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-brand-700 transition hover:bg-brand-50"
-                        aria-label={`Ubah transfer ${row.nomor}`}
-                      >
-                        <Pencil className="h-3.5 w-3.5" aria-hidden />
-                        Ubah
-                      </Link>
+                      <div className="flex items-center justify-end gap-1">
+                        <Link
+                          to={`/keuangan/transfer/detail/${encodeURIComponent(row.nomor)}`}
+                          className="inline-flex border border-zinc-300 bg-white items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100"
+                          aria-label={`Lihat detail transfer ${row.nomor}`}
+                        >
+                          <Eye className="h-3.5 w-3.5" aria-hidden />
+                          Detail
+                        </Link>
+                        <Link
+                          to={`/keuangan/transfer/ubah/${encodeURIComponent(row.nomor)}`}
+                          className="inline-flex border border-zinc-300 bg-white items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-brand-700 transition hover:bg-brand-50"
+                          aria-label={`Ubah transfer ${row.nomor}`}
+                        >
+                          <Pencil className="h-3.5 w-3.5" aria-hidden />
+                          Ubah
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))

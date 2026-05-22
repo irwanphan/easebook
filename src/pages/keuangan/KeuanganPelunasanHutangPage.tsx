@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { PelunasanHutangModal } from "@/features/keuangan/PelunasanHutangModal";
 import type { BuatPelunasanHutangLocationState, HutangBelumLunasRow } from "@/data/pelunasanHutang";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { TokoSelect } from "@/components/ui/TokoInput";
 
 function todayLocalISODate(): string {
   const d = new Date();
@@ -170,11 +171,10 @@ export function KeuanganPelunasanHutangPage() {
               <label htmlFor="ph-pemasok" className="block text-sm font-medium text-zinc-700">
                 Pemasok
               </label>
-              <select
+              <TokoSelect
                 id="ph-pemasok"
                 value={filterPemasokKode}
                 onChange={(e) => setFilterPemasokKode(e.target.value)}
-                className={`${inputClass} mt-1 w-full`}
                 disabled={loading}
               >
                 <option value="">Semua pemasok</option>
@@ -183,22 +183,21 @@ export function KeuanganPelunasanHutangPage() {
                     {p.kode} — {p.nama}
                   </option>
                 ))}
-              </select>
+              </TokoSelect>
             </div>
             <div>
               <label htmlFor="ph-filter" className="block text-sm font-medium text-zinc-700">
                 Jatuh tempo
               </label>
-              <select
+              <TokoSelect
                 id="ph-filter"
                 value={filter}
                 onChange={(e) => setFilter(e.target.value as FilterTampilan)}
-                className={`${inputClass} mt-1 w-full`}
                 disabled={loading}
               >
                 <option value="semua">Semua hutang belum lunas</option>
                 <option value="jatuh_tempo">Hanya jatuh tempo lewat ({jatuhTempoCount})</option>
-              </select>
+              </TokoSelect>
             </div>
           </div>
         </div>

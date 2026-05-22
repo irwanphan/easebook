@@ -107,17 +107,6 @@ export function KasTransaksiDetailView({ detail, variant }: KasTransaksiDetailVi
             <p className="mt-0.5 text-xs text-zinc-500">{detail.lines.length} baris akun</p>
           </div>
 
-          <div className="sm:col-span-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Pengaruh jurnal</p>
-            <p className="mt-1 text-sm text-zinc-700">{variant.arahJurnal}</p>
-            <Link
-              to="/keuangan/jurnal-umum"
-              className="mt-1 inline-block text-sm font-medium text-brand-600 hover:text-brand-700"
-            >
-              Lihat di jurnal umum
-            </Link>
-          </div>
-
           {detail.catatan.trim() ? (
             <div className="sm:col-span-2">
               <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Catatan</p>
@@ -178,6 +167,19 @@ export function KasTransaksiDetailView({ detail, variant }: KasTransaksiDetailVi
               </tfoot>
             ) : null}
           </table>
+        </div>
+      </Card>
+
+      <Card>
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Pengaruh jurnal</p>
+          <p className="mt-1 text-sm text-zinc-700">{variant.arahJurnal}</p>
+          <Link
+            to="/keuangan/jurnal-umum"
+            className="mt-1 inline-block text-sm font-medium text-brand-600 hover:text-brand-700"
+          >
+            Lihat di jurnal umum
+          </Link>
         </div>
       </Card>
     </>

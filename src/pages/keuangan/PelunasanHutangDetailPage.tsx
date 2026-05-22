@@ -192,17 +192,7 @@ export function PelunasanHutangDetailPage() {
                 <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Total pelunasan</p>
                 <p className="mt-1 text-lg font-semibold text-zinc-900">{formatRupiah(detail.total)}</p>
               </div>
-              {detail.jurnalId != null ? (
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Jurnal umum</p>
-                  <Link
-                    to="/keuangan/jurnal-umum"
-                    className="mt-1 inline-block text-sm font-medium text-brand-600 hover:text-brand-700"
-                  >
-                    Lihat di jurnal umum (ID {detail.jurnalId})
-                  </Link>
-                </div>
-              ) : null}
+              
               {detail.catatan.trim() ? (
                 <div className="sm:col-span-2">
                   <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Catatan</p>
@@ -261,6 +251,20 @@ export function PelunasanHutangDetailPage() {
                 ) : null}
               </table>
             </div>
+          </Card>
+
+          <Card>
+            {detail.jurnalId != null ? (
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Jurnal umum</p>
+                <Link
+                  to="/keuangan/jurnal-umum"
+                  className="mt-1 inline-block text-sm font-medium text-brand-600 hover:text-brand-700"
+                >
+                  Lihat di jurnal umum (ID {detail.jurnalId})
+                </Link>
+              </div>
+            ) : null}
           </Card>
         </>
       ) : null}

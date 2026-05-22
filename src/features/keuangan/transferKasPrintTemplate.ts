@@ -122,101 +122,174 @@ export function buildTransferKasPrintHtml(
 }
 
 /**
- * CSS spesifik layout transfer (Asal vs Tujuan + ringkasan nominal).
- * - `.transfer-arrows`: panel 2 kolom yang menampilkan kas asal & tujuan
- *   dengan tanda panah di tengah.
- * - `.summary-table`: tabel kanan-rata untuk daftar nominal.
+ * CSS spesifik layout transfer — meniru detail page baru:
+ * - `.detail-card`: kartu terkonsolidasi yang membungkus section
+ *   "Kas asal → tujuan" + "Ringkasan nominal" dalam satu blok bertepi.
+ * - `.section-header`: judul + deskripsi tiap section, dipisah hairline
+ *   horizontal.
+ * - `.kas-row`: 3 kolom (panel Asal | arrow | panel Tujuan). Tiap panel
+ *   horizontal: role di kiri, info akun di kanan (mengikuti `KasPanel`
+ *   versi UI yang pakai `justify-between`).
+ * - `.summary-list`: dl style — tiap baris flex space-between (label kiri,
+ *   nominal kanan). Baris terakhir (`grand-total`) diberi background
+ *   subtle + font lebih besar.
+ * - `.summary-akun-biaya`: note kecil ter-indent yang muncul tepat di
+ *   bawah baris "Biaya transfer".
  */
 const TRANSFER_EXTRA_CSS = `
-  .transfer-arrows {
+  .detail-card {
+    border: 1px solid #e4e4e7;
+    border-radius: 3mm;
+    padding: 5mm 6mm;
+    margin: 4mm 0;
+  }
+  .detail-card .section-header h2 {
+    margin: 0;
+    font-size: 11pt;
+    font-weight: 600;
+    color: #18181b;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .detail-card .section-header .section-desc {
+    margin: 0.5mm 0 0;
+    font-size: 8.5pt;
+    color: #71717a;
+  }
+  .detail-card .section-header {
+    padding-bottom: 3mm;
+  }
+  /* Section header berikutnya: garis tipis pemisah di atas. */
+  .detail-card .summary-list .section-header,
+  .detail-card .kas-row + .section-header {
+    border-top: 1px solid #e4e4e7;
+    padding-top: 5mm;
+    margin-top: 0;
+  }
+
+  .detail-card .kas-row {
     display: grid;
-    grid-template-columns: 1fr 16mm 1fr;
-    align-items: stretch;
-    gap: 0;
-    margin: 4mm 0 6mm;
-    border: 1px solid #d4d4d8;
-    border-radius: 2mm;
-    overflow: hidden;
+    grid-template-columns: 1fr 14mm 1fr;
+    gap: 4mm;
+    padding: 3mm 1mm;
+    border-top: 1px solid #f4f4f5;
+    border-bottom: 1px solid #f4f4f5;
   }
-  .transfer-arrows .col {
-    padding: 4mm 5mm;
-    background: #fafafa;
-  }
-  .transfer-arrows .col + .arrow + .col {
-    border-left: 1px dashed #d4d4d8;
-  }
-  .transfer-arrows .arrow {
+  .detail-card .kas-panel {
     display: flex;
     align-items: center;
-    justify-content: center;
-    font-size: 18pt;
-    font-weight: 700;
-    color: #a1a1aa;
-    background: #ffffff;
-    border-left: 1px dashed #d4d4d8;
-    border-right: 1px dashed #d4d4d8;
+    justify-content: space-between;
+    gap: 4mm;
   }
-  .transfer-arrows .role {
-    font-size: 9pt;
+  .detail-card .kas-role .role {
+    font-size: 8pt;
+    font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: #71717a;
-    margin-bottom: 1mm;
   }
-  .transfer-arrows .akun-nama {
+  .detail-card .kas-role .role-hint {
+    font-size: 8.5pt;
+    color: #71717a;
+    margin-top: 0.5mm;
+  }
+  .detail-card .kas-akun {
+    text-align: right;
+    min-width: 0;
+  }
+  .detail-card .kas-akun .akun-nama {
+    font-size: 10.5pt;
     font-weight: 600;
-    font-size: 11pt;
     color: #18181b;
     line-height: 1.3;
   }
-  .transfer-arrows .akun-kode {
+  .detail-card .kas-akun .akun-kode {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 9pt;
+    font-size: 8.5pt;
     color: #71717a;
-    margin-top: 1mm;
+    margin-top: 0.5mm;
   }
-  .summary-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 2mm;
+  .detail-card .kas-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16pt;
+    font-weight: 600;
+    color: #a1a1aa;
   }
-  .summary-table th,
-  .summary-table td {
-    padding: 2mm 3mm;
+
+  .detail-card .summary-list {
+    margin: 0;
+    padding: 0;
+  }
+  .detail-card .summary-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6mm;
+    padding: 2.5mm 1mm;
+    border-bottom: 1px solid #f4f4f5;
     font-size: 10pt;
-    border-bottom: 1px dashed #e4e4e7;
   }
-  .summary-table th {
-    text-align: left;
-    font-weight: 500;
-    color: #52525b;
-    width: 50%;
+  .detail-card .summary-row dt {
+    margin: 0;
+    color: #3f3f46;
   }
-  .summary-table td {
-    text-align: right;
+  .detail-card .summary-row dd {
+    margin: 0;
+    font-weight: 600;
+    color: #18181b;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
-  .summary-table tr.grand-total th,
-  .summary-table tr.grand-total td {
+  .detail-card .summary-row.subtle dt,
+  .detail-card .summary-row.subtle dd {
+    color: #71717a;
+    font-weight: 500;
+  }
+  .detail-card .summary-akun-biaya {
+    padding: 1.5mm 1mm 2.5mm 4mm;
+    font-size: 8.5pt;
+    color: #52525b;
+    border-bottom: 1px solid #f4f4f5;
+  }
+  .detail-card .summary-akun-biaya .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 8.5pt;
+    color: #3f3f46;
+  }
+  .detail-card .summary-row.grand-total {
+    margin-top: 1mm;
+    padding: 3mm 3mm;
+    background: #fafafa;
+    border-radius: 1.5mm;
     border-bottom: none;
-    border-top: 1px solid #18181b;
-    padding-top: 3mm;
-    font-weight: 700;
-    font-size: 11pt;
+  }
+  .detail-card .summary-row.grand-total dt {
+    font-weight: 600;
     color: #18181b;
   }
-  .summary-table tr.subtle td {
-    color: #71717a;
+  .detail-card .summary-row.grand-total dd {
+    font-size: 12pt;
+    font-weight: 700;
+    color: #18181b;
   }
 `;
 
 /**
  * Layout invoice untuk kertas A4 / Letter / continuous.
  *
- * - `showInlineHeader=true` saat paged.js NOT aktif: header inline di body.
- * - `showInlineHeader=false` saat paged.js aktif: header dipindah ke
- *   @page margin boxes (lihat `buildPagedCss`).
- * - `signatures`: kalau diisi, blok tanda tangan dirender setelah ringkasan.
+ * Strukturnya meniru `TransferKasDetailPage`:
+ * 1. Inline header (judul + nomor + tanggal) — hanya kalau paged.js OFF.
+ *    Kalau paged.js ON, header dirender lewat @page margin boxes.
+ * 2. `.grid` 2 kolom dengan info dasar (Tanggal / Dicatat pada / Catatan).
+ * 3. `.detail-card` terkonsolidasi yang berisi:
+ *    - Section "Kas asal → tujuan" — judul + deskripsi + panel Asal/Tujuan
+ *      dengan arrow di tengah.
+ *    - Section "Ringkasan nominal" — judul + deskripsi + list flex
+ *      (dikirim − biaya = diterima), dengan note akun biaya tepat di bawah
+ *      baris biaya.
+ * 4. Blok tanda tangan (kalau diisi caller).
  */
 function buildInvoiceBody(
   detail: TransferKasDetail,
@@ -235,14 +308,27 @@ function buildInvoiceBody(
     : "";
 
   const adaBiaya = detail.biayaTransfer > 0;
-  const akunBiayaLine =
-    adaBiaya && detail.akunBiayaKode
-      ? `<div class="muted" style="font-size: 9pt; margin-top: 1mm;">
-          Akun biaya:
-          <span class="mono">${escapeHtml(detail.akunBiayaKode)}</span>
-          ${detail.akunBiayaNama ? ` · ${escapeHtml(detail.akunBiayaNama)}` : ""}
-        </div>`
-      : "";
+
+  const biayaRow = adaBiaya
+    ? `
+      <div class="summary-row subtle">
+        <dt>Biaya transfer (admin / bank)</dt>
+        <dd>− ${escapeHtml(formatRupiah(detail.biayaTransfer))}</dd>
+      </div>
+      <div class="summary-akun-biaya">
+        Akun biaya:
+        ${
+          detail.akunBiayaKode
+            ? `<span class="mono">${escapeHtml(detail.akunBiayaKode)}</span>${
+                detail.akunBiayaNama
+                  ? ` — ${escapeHtml(detail.akunBiayaNama)}`
+                  : ""
+              }`
+            : `<em style="color:#a1a1aa;">tidak diset</em>`
+        }
+      </div>
+    `
+    : "";
 
   return `
     ${inlineHeader}
@@ -270,42 +356,51 @@ function buildInvoiceBody(
       }
     </div>
 
-    <div class="transfer-arrows">
-      <div class="col">
-        <div class="role">Kas asal</div>
-        <div class="akun-nama">${escapeHtml(detail.akunSumberNama || detail.akunSumberKode)}</div>
-        <div class="akun-kode">${escapeHtml(detail.akunSumberKode)}</div>
+    <div class="detail-card">
+      <div class="section-header">
+        <h2>Kas asal → tujuan</h2>
+        <p class="section-desc">Saldo dipindahkan antar rekening kas / bank.</p>
       </div>
-      <div class="arrow" aria-hidden="true">→</div>
-      <div class="col">
-        <div class="role">Kas tujuan</div>
-        <div class="akun-nama">${escapeHtml(detail.akunTujuanNama || detail.akunTujuanKode)}</div>
-        <div class="akun-kode">${escapeHtml(detail.akunTujuanKode)}</div>
+      <div class="kas-row">
+        <div class="kas-panel">
+          <div class="kas-role">
+            <div class="role">Kas asal</div>
+            <div class="role-hint">Yang menyerahkan saldo</div>
+          </div>
+          <div class="kas-akun">
+            <div class="akun-nama">${escapeHtml(detail.akunSumberNama || detail.akunSumberKode)}</div>
+            <div class="akun-kode">${escapeHtml(detail.akunSumberKode)}</div>
+          </div>
+        </div>
+        <div class="kas-arrow" aria-hidden="true">→</div>
+        <div class="kas-panel">
+          <div class="kas-role">
+            <div class="role">Kas tujuan</div>
+            <div class="role-hint">Yang menerima saldo</div>
+          </div>
+          <div class="kas-akun">
+            <div class="akun-nama">${escapeHtml(detail.akunTujuanNama || detail.akunTujuanKode)}</div>
+            <div class="akun-kode">${escapeHtml(detail.akunTujuanKode)}</div>
+          </div>
+        </div>
       </div>
-    </div>
 
-    <h2>Ringkasan nominal</h2>
-    <table class="summary-table">
-      <tbody>
-        <tr>
-          <th>Nominal dikirim dari kas asal</th>
-          <td>${escapeHtml(formatRupiah(detail.nominalKirim))}</td>
-        </tr>
-        ${
-          adaBiaya
-            ? `<tr class="subtle">
-                <th>Biaya transfer (admin / bank)</th>
-                <td>− ${escapeHtml(formatRupiah(detail.biayaTransfer))}</td>
-              </tr>`
-            : ""
-        }
-        <tr class="grand-total">
-          <th>Nominal diterima di kas tujuan</th>
-          <td>${escapeHtml(formatRupiah(detail.nominalTerima))}</td>
-        </tr>
-      </tbody>
-    </table>
-    ${akunBiayaLine}
+      <div class="section-header" style="padding-top: 5mm; border-top: 1px solid #e4e4e7;">
+        <h2>Ringkasan nominal</h2>
+        <p class="section-desc">Selisih kirim &amp; terima dibebankan ke akun biaya admin / bank.</p>
+      </div>
+      <dl class="summary-list">
+        <div class="summary-row">
+          <dt>Nominal dikirim dari kas asal</dt>
+          <dd>${escapeHtml(formatRupiah(detail.nominalKirim))}</dd>
+        </div>
+        ${biayaRow}
+        <div class="summary-row grand-total">
+          <dt>Nominal diterima di kas tujuan</dt>
+          <dd>${escapeHtml(formatRupiah(detail.nominalTerima))}</dd>
+        </div>
+      </dl>
+    </div>
 
     ${signatures ? buildSignatureBlockHtml(signatures) : ""}
   `;

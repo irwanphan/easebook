@@ -10,6 +10,7 @@ import {
   type KasTransaksiDetailVariant,
 } from "@/features/keuangan/KasTransaksiDetailView";
 import { buildKasTransaksiPrintHtml } from "@/features/keuangan/kasTransaksiPrintTemplate";
+import type { SignatureColumn } from "@/features/keuangan/printSignature";
 import type { PenerimaanDetail } from "@/data/penerimaan";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
@@ -19,6 +20,13 @@ const PENERIMAAN_VARIANT: KasTransaksiDetailVariant = {
   baristTitle: "Rincian pendapatan",
   arahJurnal: "Debit kas (total) · Kredit akun pendapatan per baris.",
 };
+
+// Penerimaan kas (uang masuk): kiri = pihak luar yang menyetor, kanan = kasir kita.
+// Konvensi: pemberi uang di kiri, penerima uang di kanan.
+const PENERIMAAN_SIGNATURES: SignatureColumn[] = [
+  { label: "Yang Menyerahkan" },
+  { label: "Yang Menerima" },
+];
 
 const DAFTAR_HREF = "/keuangan/penerimaan";
 
@@ -83,7 +91,13 @@ export function PenerimaanDetailPage() {
             label="Cetak"
             filenameHint={`penerimaan-${detail.nomor}`}
             htmlBuilder={({ paperSize }) =>
-              buildKasTransaksiPrintHtml(detail, PENERIMAAN_VARIANT, "Bukti penerimaan", paperSize)
+              buildKasTransaksiPrintHtml(
+                detail,
+                PENERIMAAN_VARIANT,
+                "Bukti penerimaan",
+                paperSize,
+                PENERIMAAN_SIGNATURES,
+              )
             }
             onError={(msg) => setError(msg)}
           />

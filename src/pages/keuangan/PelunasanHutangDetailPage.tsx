@@ -5,8 +5,30 @@ import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { PrintButton } from "@/components/ui/PrintButton";
+import {
+  buildPelunasanPrintHtml,
+  type PelunasanPrintConfig,
+} from "@/features/keuangan/pelunasanPrintTemplate";
+import type { SignatureColumn } from "@/features/keuangan/printSignature";
 import type { PelunasanHutangDetail } from "@/data/pelunasanHutang";
 import { tauriErrorMessage } from "@/lib/tauriError";
+
+// Pelunasan hutang (kita bayar ke pemasok):
+// kiri = kasir kita (yang membayar), kanan = pemasok (yang menerima).
+const PELUNASAN_HUTANG_SIGNATURES: SignatureColumn[] = [
+  { label: "Yang Membayar" },
+  { label: "Yang Menerima" },
+];
+
+const PELUNASAN_HUTANG_PRINT_CONFIG: PelunasanPrintConfig = {
+  judulDokumen: "Bukti pembayaran hutang",
+  pihakLabel: "Pemasok",
+  kasLabel: "Dibayar dari kas",
+  fakturTitle: "Faktur pembelian yang dilunasi",
+  fakturNomorLabel: "No. faktur pembelian",
+  signatures: PELUNASAN_HUTANG_SIGNATURES,
+};
 
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -85,18 +107,46 @@ export function PelunasanHutangDetailPage() {
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
-      <div>
-        <Link
-          to={daftarHref}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          Kembali ke daftar pelunasan hutang
-        </Link>
-        <PageHeader
-          title="Detail pelunasan hutang"
-          description={detail ? `Nomor ${detail.nomor}` : "Memuat data pelunasan…"}
-        />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <Link
+            to={daftarHref}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 print:hidden"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            Kembali ke daftar pelunasan hutang
+          </Link>
+          <PageHeader
+            title="Detail pelunasan hutang"
+            description={detail ? `Nomor ${detail.nomor}` : "Memuat data pelunasan…"}
+          />
+        </div>
+        {detail ? (
+          <PrintButton
+            mode="browser"
+            label="Cetak"
+            filenameHint={`pelunasan-hutang-${detail.nomor}`}
+            htmlBuilder={({ paperSize }) =>
+              buildPelunasanPrintHtml(
+                {
+                  nomor: detail.nomor,
+                  tanggal: detail.tanggal,
+                  pihakKode: detail.pemasokKode,
+                  pihakNama: detail.pemasokNama,
+                  akunKasKode: detail.akunKasKode,
+                  akunKasNama: detail.akunKasNama,
+                  total: detail.total,
+                  catatan: detail.catatan,
+                  createdAt: detail.createdAt,
+                  faktur: detail.faktur,
+                },
+                PELUNASAN_HUTANG_PRINT_CONFIG,
+                paperSize,
+              )
+            }
+            onError={(msg) => setError(msg)}
+          />
+        ) : null}
       </div>
 
       {error ? (

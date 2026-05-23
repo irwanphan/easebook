@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { Eye } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { FileText, Filter, Plus } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import type { PengeluaranListRow } from "@/data/pengeluaran";
 import { tauriErrorMessage } from "@/lib/tauriError";
-
-const inputClass =
-  "rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
+import { TokoInput } from "@/components/ui/TokoInput";
 
 function toIsoDate(d: Date) {
   const y = d.getFullYear();
@@ -91,6 +89,7 @@ export function KeuanganPengeluaranPage() {
         description="Catat dan kelola pengeluaran kas / bank perusahaan."
         actions={
           <Button type="button" onClick={() => navigate("/keuangan/pengeluaran/tambah")}>
+            <Plus className="h-4 w-4" aria-hidden />
             Tambah pengeluaran
           </Button>
         }
@@ -109,28 +108,27 @@ export function KeuanganPengeluaranPage() {
               <label htmlFor="pg-dari" className="block text-sm font-medium text-zinc-700">
                 Tanggal mulai
               </label>
-              <input
+              <TokoInput
                 id="pg-dari"
                 type="date"
                 value={tanggalDari}
                 onChange={(e) => setTanggalDari(e.target.value)}
-                className={`${inputClass} mt-1`}
               />
             </div>
             <div>
               <label htmlFor="pg-sampai" className="block text-sm font-medium text-zinc-700">
                 Tanggal akhir
               </label>
-              <input
+              <TokoInput
                 id="pg-sampai"
                 type="date"
                 value={tanggalSampai}
                 onChange={(e) => setTanggalSampai(e.target.value)}
-                className={`${inputClass} mt-1`}
               />
             </div>
           </div>
           <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
+            <Filter className="h-4 w-4" aria-hidden />
             {loading ? "Memuat…" : "Terapkan filter"}
           </Button>
         </div>
@@ -188,14 +186,15 @@ export function KeuanganPengeluaranPage() {
                       {row.catatan || "—"}
                     </td>
                     <td className="px-5 py-3 text-right">
-                      <Link
-                        to={`/keuangan/pengeluaran/detail/${encodeURIComponent(row.nomor)}`}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
+                      <Button
+                        onClick={() => navigate(`/keuangan/pengeluaran/detail/${encodeURIComponent(row.nomor)}`)}
+                        variant="outline"
+                        className="px-2 py-1 text-xs"
                         aria-label={`Lihat detail pengeluaran ${row.nomor}`}
                       >
-                        <Eye className="h-3.5 w-3.5" aria-hidden />
+                        <FileText className="h-3.5 w-3.5" aria-hidden />
                         Detail
-                      </Link>
+                      </Button>
                     </td>
                   </tr>
                 ))

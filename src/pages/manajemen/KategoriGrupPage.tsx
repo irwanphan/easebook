@@ -8,6 +8,7 @@ import { ListFilterBar } from "@/components/ui/ListFilterBar";
 import { useKategoriGrup } from "@/features/kategori-grup/KategoriGrupContext";
 import type { KategoriGrupRow } from "@/data/kategoriGrup";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { Pencil, Plus, Trash } from "lucide-react";
 
 export function KategoriGrupPage() {
   const navigate = useNavigate();
@@ -53,9 +54,10 @@ export function KategoriGrupPage() {
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Kategori / grup barang"
-        // description="Master pengelompokan SKU untuk laporan dan filter katalog."
+        description="Daftar kategori / grup barang."
         actions={
           <Button type="button" onClick={() => navigate("/manajemen/kategori/tambah")}>
+            <Plus className="h-4 w-4" aria-hidden />
             Tambah kategori
           </Button>
         }
@@ -124,15 +126,19 @@ export function KategoriGrupPage() {
                     </td>
                     <td className="px-5 py-3 text-right">
                       <div className="flex justify-end gap-1">
-                        <Button variant="outline" className="px-2 py-1 text-xs font-semibold">
+                        <Button type="button" variant="outline" 
+                        className="h-8 text-xs"
+                        onClick={() => navigate(`/manajemen/kategori/ubah/${encodeURIComponent(row.kode)}`)}>
+                          <Pencil className="h-4 w-4" aria-hidden />
                           Ubah
                         </Button>
                         <Button
                           type="button"
                           variant="danger"
-                          className="px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                          className="h-8 text-xs"
                           onClick={() => setPendingDelete(row)}
                         >
+                          <Trash className="h-4 w-4" aria-hidden />
                           Hapus
                         </Button>
                       </div>

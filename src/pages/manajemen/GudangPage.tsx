@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Pencil, Plus, Trash } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -58,9 +59,10 @@ export function GudangPage() {
     <div className="mx-auto flex max-w-[1600px] flex-col gap-6">
       <PageHeader
         title="Gudang"
-        // description="Master lokasi penyimpanan: alamat, koordinat peta, PIC, dan kapasitas."
+        description="Daftar gudang."
         actions={
           <Button type="button" onClick={() => navigate("/manajemen/gudang/tambah")}>
+            <Plus className="h-4 w-4" aria-hidden />
             Tambah gudang
           </Button>
         }
@@ -147,15 +149,18 @@ export function GudangPage() {
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right">
                       <div className="flex justify-end gap-1">
-                        <Button variant="outline" className="px-2 py-1 text-xs font-semibold">
+                        <Button type="button" variant="outline" className="h-8 text-xs"
+                          onClick={() => navigate(`/manajemen/gudang/ubah/${encodeURIComponent(row.kode)}`)}>
+                          <Pencil className="h-4 w-4" aria-hidden />
                           Ubah
                         </Button>
                         <Button
                           type="button"
                           variant="danger"
-                          className="px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                          className="h-8 text-xs"
                           onClick={() => setPendingDelete(row)}
                         >
+                          <Trash className="h-4 w-4" aria-hidden />
                           Hapus
                         </Button>
                       </div>

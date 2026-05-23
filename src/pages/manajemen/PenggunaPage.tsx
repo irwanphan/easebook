@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Copy, Plus, Pencil, Trash } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -76,9 +77,10 @@ export function PenggunaPage() {
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Manajemen pengguna"
-        // description="Daftar akun yang dapat mengakses aplikasi EasyBook."
+        description="Daftar akun yang dapat mengakses aplikasi EasyBook."
         actions={
           <Button type="button" onClick={() => navigate("/manajemen/pengguna/tambah")}>
+            <Plus className="h-4 w-4" aria-hidden />
             Tambah pengguna
           </Button>
         }
@@ -164,6 +166,7 @@ export function PenggunaPage() {
                             navigate(`/manajemen/pengguna/ubah/${encodeURIComponent(row.username)}`)
                           }
                         >
+                          <Pencil className="h-4 w-4" aria-hidden />
                           Ubah
                         </Button>
                         <Button
@@ -174,6 +177,7 @@ export function PenggunaPage() {
                             navigate(`/manajemen/pengguna/tambah?duplikat=${encodeURIComponent(row.username)}`)
                           }
                         >
+                          <Copy className="h-4 w-4" aria-hidden />
                           Duplikat
                         </Button>
                         <Button
@@ -182,6 +186,7 @@ export function PenggunaPage() {
                           className="px-2 py-1 text-xs text-red-700 hover:bg-red-50"
                           onClick={() => setPendingDelete(row)}
                         >
+                          <Trash className="h-4 w-4" aria-hidden />
                           Hapus
                         </Button>
                       </div>

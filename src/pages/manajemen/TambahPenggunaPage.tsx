@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Save, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -157,7 +157,7 @@ export function TambahPenggunaPage() {
         </Link>
         <PageHeader 
           title={judul} 
-          // description={deskripsi} 
+          description={deskripsi} 
         />
       </div>
 
@@ -177,12 +177,14 @@ export function TambahPenggunaPage() {
             <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>
           ) : null}
 
-          <div className="flex flex-wrap gap-2 pt-1">
-            <Button type="submit" disabled={saving}>
-              {saving ? "Menyimpan…" : "Simpan pengguna"}
-            </Button>
-            <Button type="button" variant="ghost" onClick={() => navigate("/manajemen/pengguna")}>
+          <div className="flex flex-wrap gap-2 pt-1 justify-end">
+            <Button type="button" variant="outline" onClick={() => navigate("/manajemen/pengguna")}>
+              <X className="h-4 w-4" aria-hidden />
               Batal
+            </Button>
+            <Button type="submit" disabled={saving}>
+              <Save className="h-4 w-4" aria-hidden />
+              {saving ? "Menyimpan…" : "Simpan"}
             </Button>
           </div>
         </form>

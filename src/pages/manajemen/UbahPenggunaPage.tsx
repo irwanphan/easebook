@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Save, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -137,7 +137,7 @@ export function UbahPenggunaPage() {
       <div className="mx-auto flex max-w-2xl flex-col gap-6">
         <PageHeader
           title="Pengguna tidak ditemukan" 
-          // description="Username tidak ada di daftar." 
+          description="Perbarui data pengguna; username tidak dapat diubah." 
         />
         <Button type="button" variant="ghost" className="self-start" onClick={() => navigate("/manajemen/pengguna")}>
           Kembali ke daftar
@@ -156,7 +156,7 @@ export function UbahPenggunaPage() {
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Kembali ke daftar
         </Link>
-        <PageHeader title="Ubah pengguna" description={`Akun: ${values.username}`} />
+        <PageHeader title="Ubah pengguna" description="Perbarui data pengguna; username tidak dapat diubah." />
       </div>
 
       <Card>
@@ -167,12 +167,14 @@ export function UbahPenggunaPage() {
             <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>
           ) : null}
 
-          <div className="flex flex-wrap gap-2 pt-1">
-            <Button type="submit" disabled={saving}>
-              {saving ? "Menyimpan…" : "Simpan perubahan"}
-            </Button>
-            <Button type="button" variant="ghost" onClick={() => navigate("/manajemen/pengguna")}>
+          <div className="flex flex-wrap gap-2 pt-1 justify-end">
+            <Button type="button" variant="outline" onClick={() => navigate("/manajemen/pengguna")}>
+              <X className="h-4 w-4" aria-hidden />
               Batal
+            </Button>
+            <Button type="submit" disabled={saving}>
+              <Save className="h-4 w-4" aria-hidden />
+              {saving ? "Menyimpan…" : "Simpan perubahan"}
             </Button>
           </div>
         </form>

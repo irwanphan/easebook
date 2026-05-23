@@ -12,7 +12,7 @@ export function PageHeader({ title, description, actions }: PageHeaderProps) {
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-zinc-900">{title}</h1>
         {description ? (
-          <p className="mt-1 text-sm text-zinc-500">{description}</p>
+          <p className="mt-0.5 text-sm font-medium text-slate-600">{description}</p>
         ) : null}
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}

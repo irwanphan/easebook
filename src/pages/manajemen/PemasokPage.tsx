@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Plus } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
@@ -44,9 +45,10 @@ export function PemasokPage() {
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Pemasok"
-        // description="Master supplier untuk pembelian, hutang dagang, dan kontak pengadaan."
+        description="Daftar pemasok."
         actions={
           <Button type="button" onClick={() => navigate("/manajemen/pemasok/tambah")}>
+            <Plus className="h-4 w-4" aria-hidden />
             Tambah pemasok
           </Button>
         }

@@ -3,13 +3,39 @@ import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { ListFilterBar } from "@/components/ui/ListFilterBar";
 import { useKategoriGrup } from "@/features/kategori-grup/KategoriGrupContext";
+import type { KategoriGrupRow } from "@/data/kategoriGrup";
+import { tauriErrorMessage } from "@/lib/tauriError";
 
 export function KategoriGrupPage() {
   const navigate = useNavigate();
-  const { items, loading } = useKategoriGrup();
+  const { items, loading, removeItem } = useKategoriGrup();
   const [query, setQuery] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<KategoriGrupRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await removeItem(pendingDelete.kode);
+      setPendingDelete(null);
+    } catch (e) {
+      setError(tauriErrorMessage(e));
+    } finally {
+      setDeleting(false);
+    }
+  }, [pendingDelete, removeItem]);
+
+  const handleCancelDelete = useCallback(() => {
+    if (deleting) return;
+    setPendingDelete(null);
+    setError(null);
+  }, [deleting]);
 
   const filteredItems = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -97,9 +123,19 @@ export function KategoriGrupPage() {
                       )}
                     </td>
                     <td className="px-5 py-3 text-right">
-                      <Button variant="outline" className="px-2 py-1 text-xs font-semibold">
-                        Ubah
-                      </Button>
+                      <div className="flex justify-end gap-1">
+                        <Button variant="outline" className="px-2 py-1 text-xs font-semibold">
+                          Ubah
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="danger"
+                          className="px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                          onClick={() => setPendingDelete(row)}
+                        >
+                          Hapus
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -108,6 +144,23 @@ export function KategoriGrupPage() {
           </table>
         </div>
       </Card>
+
+      <ConfirmModal
+        open={pendingDelete !== null}
+        variant="danger"
+        title="Hapus kategori"
+        message={
+          pendingDelete
+            ? error
+              ? error
+              : `Hapus kategori "${pendingDelete.kode} — ${pendingDelete.nama}"? Tindakan ini tidak dapat dibatalkan. Kategori yang masih dipakai oleh barang/jasa tidak akan terhapus.`
+            : ""
+        }
+        confirmLabel="Hapus"
+        loading={deleting}
+        onConfirm={() => void handleConfirmDelete()}
+        onCancel={handleCancelDelete}
+      />
     </div>
   );
 }

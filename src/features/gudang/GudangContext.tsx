@@ -15,6 +15,7 @@ type GudangContextValue = {
   loading: boolean;
   refresh: () => Promise<void>;
   addItem: (row: GudangRow) => Promise<void>;
+  removeItem: (kode: string) => Promise<void>;
   kodeExists: (kode: string) => Promise<boolean>;
 };
 
@@ -57,9 +58,17 @@ export function GudangProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const removeItem = useCallback(
+    async (kode: string) => {
+      await invoke("gudang_delete", { kode });
+      await refresh();
+    },
+    [refresh],
+  );
+
   const value = useMemo(
-    () => ({ items, loading, refresh, addItem, kodeExists }),
-    [items, loading, refresh, addItem, kodeExists],
+    () => ({ items, loading, refresh, addItem, removeItem, kodeExists }),
+    [items, loading, refresh, addItem, removeItem, kodeExists],
   );
 
   return <GudangContext.Provider value={value}>{children}</GudangContext.Provider>;

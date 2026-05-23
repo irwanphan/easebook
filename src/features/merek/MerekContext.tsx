@@ -15,6 +15,7 @@ type MerekContextValue = {
   loading: boolean;
   refresh: () => Promise<void>;
   addItem: (row: MerekRow) => Promise<void>;
+  removeItem: (kode: string) => Promise<void>;
   kodeExists: (kode: string) => Promise<boolean>;
 };
 
@@ -48,9 +49,17 @@ export function MerekProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const removeItem = useCallback(
+    async (kode: string) => {
+      await invoke("merek_delete", { kode });
+      await refresh();
+    },
+    [refresh],
+  );
+
   const value = useMemo(
-    () => ({ items, loading, refresh, addItem, kodeExists }),
-    [items, loading, refresh, addItem, kodeExists],
+    () => ({ items, loading, refresh, addItem, removeItem, kodeExists }),
+    [items, loading, refresh, addItem, removeItem, kodeExists],
   );
 
   return <MerekContext.Provider value={value}>{children}</MerekContext.Provider>;

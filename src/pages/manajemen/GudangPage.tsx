@@ -3,8 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { ListFilterBar } from "@/components/ui/ListFilterBar";
 import { useGudang } from "@/features/gudang/GudangContext";
+import type { GudangRow } from "@/data/gudang";
+import { tauriErrorMessage } from "@/lib/tauriError";
 
 function formatLuas(n: number) {
   return `${new Intl.NumberFormat("id-ID").format(n)} m²`;
@@ -12,8 +15,31 @@ function formatLuas(n: number) {
 
 export function GudangPage() {
   const navigate = useNavigate();
-  const { items, loading } = useGudang();
+  const { items, loading, removeItem } = useGudang();
   const [query, setQuery] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<GudangRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await removeItem(pendingDelete.kode);
+      setPendingDelete(null);
+    } catch (e) {
+      setError(tauriErrorMessage(e));
+    } finally {
+      setDeleting(false);
+    }
+  }, [pendingDelete, removeItem]);
+
+  const handleCancelDelete = useCallback(() => {
+    if (deleting) return;
+    setPendingDelete(null);
+    setError(null);
+  }, [deleting]);
 
   const filteredItems = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -120,9 +146,19 @@ export function GudangPage() {
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right">
-                      <Button variant="outline" className="px-2 py-1 text-xs font-semibold">
-                        Ubah
-                      </Button>
+                      <div className="flex justify-end gap-1">
+                        <Button variant="outline" className="px-2 py-1 text-xs font-semibold">
+                          Ubah
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="danger"
+                          className="px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                          onClick={() => setPendingDelete(row)}
+                        >
+                          Hapus
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -131,6 +167,23 @@ export function GudangPage() {
           </table>
         </div>
       </Card>
+
+      <ConfirmModal
+        open={pendingDelete !== null}
+        variant="danger"
+        title="Hapus gudang"
+        message={
+          pendingDelete
+            ? error
+              ? error
+              : `Hapus gudang "${pendingDelete.kode} — ${pendingDelete.nama}"? Tindakan ini tidak dapat dibatalkan. Gudang yang masih memiliki stok atau histori transaksi tidak akan terhapus.`
+            : ""
+        }
+        confirmLabel="Hapus"
+        loading={deleting}
+        onConfirm={() => void handleConfirmDelete()}
+        onCancel={handleCancelDelete}
+      />
     </div>
   );
 }

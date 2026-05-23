@@ -114,6 +114,38 @@ pub fn kategori_insert(state: State<DbState>, row: KategoriInsert) -> Result<(),
     })
 }
 
+#[tauri::command]
+pub fn kategori_delete(state: State<DbState>, kode: String) -> Result<(), String> {
+    let kode = kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode wajib diisi.".into());
+    }
+    with_conn_app(&state, |conn| {
+        let dipakai: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM barang_jasa WHERE kategori_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if dipakai > 0 {
+            return Err(format!(
+                "Kategori tidak dapat dihapus karena masih dipakai oleh {dipakai} barang/jasa. Ubah dulu kategori pada item terkait sebelum menghapus."
+            ));
+        }
+        let n = conn
+            .execute(
+                "DELETE FROM kategori WHERE kode = ? COLLATE NOCASE",
+                params![kode],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Kategori tidak ditemukan.".into());
+        }
+        Ok(())
+    })
+}
+
 // --- Merek ---
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -177,6 +209,38 @@ pub fn merek_insert(state: State<DbState>, row: MerekInsert) -> Result<(), Strin
         } else {
             e
         }
+    })
+}
+
+#[tauri::command]
+pub fn merek_delete(state: State<DbState>, kode: String) -> Result<(), String> {
+    let kode = kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode wajib diisi.".into());
+    }
+    with_conn_app(&state, |conn| {
+        let dipakai: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM barang_jasa WHERE merek_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if dipakai > 0 {
+            return Err(format!(
+                "Merek tidak dapat dihapus karena masih dipakai oleh {dipakai} barang/jasa. Ubah dulu merek pada item terkait sebelum menghapus."
+            ));
+        }
+        let n = conn
+            .execute(
+                "DELETE FROM merek WHERE kode = ? COLLATE NOCASE",
+                params![kode],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Merek tidak ditemukan.".into());
+        }
+        Ok(())
     })
 }
 
@@ -274,6 +338,93 @@ pub fn gudang_insert(state: State<DbState>, row: GudangInsert) -> Result<(), Str
         } else {
             e
         }
+    })
+}
+
+#[tauri::command]
+pub fn gudang_delete(state: State<DbState>, kode: String) -> Result<(), String> {
+    let kode = kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode wajib diisi.".into());
+    }
+    with_conn_app(&state, |conn| {
+        // Hitung stok per barang di gudang ini (positif = ada fisik).
+        // Pakai stok_mutasi sebagai single source of truth untuk pergerakan
+        // stok (semua transaksi: pembelian/penjualan/mutasi antar gudang
+        // menulis ke sini).
+        let barang_dengan_stok: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM (
+                    SELECT barang_kode
+                    FROM stok_mutasi
+                    WHERE gudang_kode = ? COLLATE NOCASE
+                    GROUP BY barang_kode
+                    HAVING COALESCE(SUM(qty_masuk - qty_keluar), 0) > 0
+                )",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if barang_dengan_stok > 0 {
+            return Err(format!(
+                "Gudang tidak dapat dihapus karena masih ada {barang_dengan_stok} barang di dalamnya. Kosongkan dulu stok lewat mutasi antar gudang sebelum menghapus."
+            ));
+        }
+
+        // Cek default_gudang_kode pada barang_jasa — meskipun FK-nya SET NULL,
+        // user-experience-wise lebih baik kasih tahu agar mereka cabut dulu.
+        let default_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM barang_jasa WHERE default_gudang_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if default_count > 0 {
+            return Err(format!(
+                "Gudang ini dipakai sebagai gudang default oleh {default_count} barang/jasa. Ubah dulu gudang default pada item terkait sebelum menghapus."
+            ));
+        }
+
+        // Cek histori transaksi (pembelian/penjualan/mutasi) — meskipun stok
+        // 0, kalau pernah dipakai akan menyebabkan FK constraint error.
+        let mutasi_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM stok_mutasi WHERE gudang_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        let pembelian_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pembelian WHERE gudang_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        let penjualan_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM penjualan WHERE gudang_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if mutasi_count > 0 || pembelian_count > 0 || penjualan_count > 0 {
+            return Err(format!(
+                "Gudang ini memiliki histori transaksi ({pembelian_count} pembelian, {penjualan_count} penjualan, {mutasi_count} mutasi stok). Histori tidak boleh dihapus, sehingga gudang juga tidak dapat dihapus."
+            ));
+        }
+
+        let n = conn
+            .execute(
+                "DELETE FROM gudang WHERE kode = ? COLLATE NOCASE",
+                params![kode],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Gudang tidak ditemukan.".into());
+        }
+        Ok(())
     })
 }
 

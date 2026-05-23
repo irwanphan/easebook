@@ -15,6 +15,7 @@ type KategoriGrupContextValue = {
   loading: boolean;
   refresh: () => Promise<void>;
   addItem: (row: KategoriGrupRow) => Promise<void>;
+  removeItem: (kode: string) => Promise<void>;
   kodeExists: (kode: string) => Promise<boolean>;
 };
 
@@ -48,9 +49,17 @@ export function KategoriGrupProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const removeItem = useCallback(
+    async (kode: string) => {
+      await invoke("kategori_delete", { kode });
+      await refresh();
+    },
+    [refresh],
+  );
+
   const value = useMemo(
-    () => ({ items, loading, refresh, addItem, kodeExists }),
-    [items, loading, refresh, addItem, kodeExists],
+    () => ({ items, loading, refresh, addItem, removeItem, kodeExists }),
+    [items, loading, refresh, addItem, removeItem, kodeExists],
   );
 
   return (

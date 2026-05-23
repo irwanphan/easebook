@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -9,6 +10,11 @@ export type KontakMasterListTableProps = {
   editPathForKode: (kode: string) => string;
   onDelete: (row: KontakMasterRow) => void;
   emptyMessage: string;
+  /**
+   * Slot opsional untuk filter bar (mis. `<ListFilterBar />`). Dirender
+   * sebagai bagian Card yang sama dengan tabel, di atas tabel.
+   */
+  filterBar?: ReactNode;
 };
 
 function cellText(v: string) {
@@ -22,13 +28,15 @@ export function KontakMasterListTable({
   editPathForKode,
   onDelete,
   emptyMessage,
+  filterBar,
 }: KontakMasterListTableProps) {
   return (
     <>
-      {loading ? (
+      {loading && !filterBar ? (
         <p className="text-sm text-zinc-500">Memuat data dari database lokal…</p>
       ) : null}
       <Card className="overflow-hidden p-0">
+        {filterBar ?? null}
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead>

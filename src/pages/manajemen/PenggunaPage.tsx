@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { ListFilterBar } from "@/components/ui/ListFilterBar";
 import type { PenggunaRow } from "@/data/pengguna";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
@@ -13,6 +14,7 @@ export function PenggunaPage() {
   const [rows, setRows] = useState<PenggunaRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -31,6 +33,19 @@ export function PenggunaPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const filteredRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((row) => {
+      const hay =
+        `${row.username} ${row.namaLengkap} ${row.email} ${row.departemen} ${row.nomorHp} ${row.catatan}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [rows, query]);
+
+  const handleReset = useCallback(() => setQuery(""), []);
+  const isDefault = query === "";
 
   async function handleDelete(row: PenggunaRow) {
     const ok = window.confirm(
@@ -62,11 +77,33 @@ export function PenggunaPage() {
       ) : null}
 
       <Card className="overflow-hidden p-0">
+        <ListFilterBar
+          search={{
+            value: query,
+            onChange: setQuery,
+            placeholder: "Cari username, nama, email, departemen, atau HP…",
+          }}
+          onReset={handleReset}
+          canReset={!isDefault}
+          summary={
+            loading
+              ? "Memuat daftar pengguna…"
+              : filteredRows.length === 0
+                ? rows.length === 0
+                  ? "Belum ada pengguna."
+                  : "Tidak ada pengguna yang cocok dengan pencarian."
+                : `${filteredRows.length} pengguna${
+                    filteredRows.length !== rows.length ? ` dari ${rows.length}` : ""
+                  }`
+          }
+        />
         {loading ? (
           <p className="p-8 text-center text-sm text-zinc-500">Memuat daftar pengguna…</p>
-        ) : rows.length === 0 ? (
+        ) : filteredRows.length === 0 ? (
           <p className="p-8 text-center text-sm text-zinc-500">
-            Belum ada pengguna. Klik &quot;Tambah pengguna&quot; untuk menambahkan.
+            {rows.length === 0
+              ? 'Belum ada pengguna. Klik "Tambah pengguna" untuk menambahkan.'
+              : "Tidak ada pengguna yang cocok dengan pencarian."}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -84,7 +121,7 @@ export function PenggunaPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
-                {rows.map((row) => (
+                {filteredRows.map((row) => (
                   <tr key={row.username} className="hover:bg-zinc-50/60">
                     <td className="px-4 py-3 font-mono text-xs font-medium text-zinc-900">{row.username}</td>
                     <td className="px-4 py-3 font-medium text-zinc-900">{row.namaLengkap}</td>
@@ -147,4 +184,3 @@ export function PenggunaPage() {
     </div>
   );
 }
-

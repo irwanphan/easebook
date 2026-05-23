@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Save, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -9,9 +9,7 @@ import { Badge } from "@/components/ui/Badge";
 import type { AkunKeuanganRow } from "@/data/keuangan";
 import type { HutangBelumLunasRow, PelunasanHutangBatchPayload } from "@/data/pelunasanHutang";
 import { tauriErrorMessage } from "@/lib/tauriError";
-
-const inputClass =
-  "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
+import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
 
 function todayLocalISODate(): string {
   const d = new Date();
@@ -247,11 +245,10 @@ export function PelunasanHutangBatchForm({
             <label htmlFor="phb-pemasok" className="block text-sm font-medium text-zinc-700">
               Pemasok
             </label>
-            <select
+            <TokoSelect
               id="phb-pemasok"
               value={pemasokKode}
               onChange={(e) => handlePemasokChange(e.target.value)}
-              className={inputClass}
               disabled={formDisabled || pemasokOptions.length === 0}
               required
             >
@@ -261,7 +258,7 @@ export function PelunasanHutangBatchForm({
                   {p.kode} — {p.nama}
                 </option>
               ))}
-            </select>
+            </TokoSelect>
             {loading ? (
               <p className="mt-1.5 text-xs text-zinc-400">Memuat hutang…</p>
             ) : pemasokOptions.length === 0 ? (
@@ -271,7 +268,7 @@ export function PelunasanHutangBatchForm({
         </Card>
 
         <Card className="overflow-hidden p-0">
-          <div className="border-b border-zinc-100 px-5 py-4 sm:px-6">
+          <div className="border-b border-zinc-100 pb-4">
             <h2 className="text-sm font-semibold text-zinc-900">Faktur hutang</h2>
             <p className="mt-1 text-sm text-zinc-500">
               {!pemasokKode
@@ -391,12 +388,11 @@ export function PelunasanHutangBatchForm({
               <label htmlFor="phb-tgl" className="block text-sm font-medium text-zinc-700">
                 Tanggal pelunasan
               </label>
-              <input
+              <TokoInput
                 id="phb-tgl"
                 type="date"
                 value={tanggal}
                 onChange={(e) => setTanggal(e.target.value)}
-                className={inputClass}
                 disabled={formDisabled}
                 required
               />
@@ -405,11 +401,10 @@ export function PelunasanHutangBatchForm({
               <label htmlFor="phb-kas" className="block text-sm font-medium text-zinc-700">
                 Dibayar melalui (kas / bank)
               </label>
-              <select
+              <TokoSelect
                 id="phb-kas"
                 value={kasKode}
                 onChange={(e) => setKasKode(e.target.value)}
-                className={inputClass}
                 disabled={formDisabled}
                 required
               >
@@ -419,7 +414,7 @@ export function PelunasanHutangBatchForm({
                     {a.kode} — {a.nama}
                   </option>
                 ))}
-              </select>
+              </TokoSelect>
               {akunKasLoading ? (
                 <p className="mt-1.5 text-xs text-zinc-400">Memuat akun kas…</p>
               ) : akunKasList.length === 0 ? (
@@ -432,14 +427,13 @@ export function PelunasanHutangBatchForm({
             <label htmlFor="phb-catatan" className="block text-sm font-medium text-zinc-700">
               Catatan
             </label>
-            <input
+            <TokoInput
               id="phb-catatan"
               type="text"
               value={catatan}
               onChange={(e) => setCatatan(e.target.value)}
-              className={inputClass}
               disabled={formDisabled}
-              placeholder="opsional"
+              placeholder="Catatan pelunasan"
             />
           </div>
 
@@ -451,12 +445,14 @@ export function PelunasanHutangBatchForm({
 
         <div className="flex flex-wrap justify-end gap-3">
           <Button type="button" variant="ghost" onClick={() => navigate(cancelHref)} disabled={submitting}>
+            <X className="h-4 w-4" aria-hidden />
             Batal
           </Button>
           <Button
             type="submit"
             disabled={formDisabled || !pemasokKode || selectedNomor.size === 0 || akunKasList.length === 0}
           >
+            <Save className="h-4 w-4" aria-hidden />
             {submitting ? "Menyimpan…" : "Simpan pelunasan"}
           </Button>
         </div>

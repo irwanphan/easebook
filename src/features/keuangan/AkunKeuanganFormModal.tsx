@@ -9,9 +9,8 @@ import type {
 } from "@/data/keuangan";
 import { KELOMPOK_AKUN, KELOMPOK_LABA_RUGI, KOLOM_NORM } from "@/data/keuangan";
 import { tauriErrorMessage } from "@/lib/tauriError";
-
-const inputClass =
-  "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
+import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
+import { Save, X } from "lucide-react";
 
 const FORM_ID = "akun-keuangan-form";
 
@@ -181,10 +180,12 @@ export function AkunKeuanganFormModal({
       }}
       footer={
         <div className="flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="ghost" disabled={submitting} onClick={onClose}>
+          <Button type="button" variant="outline" className="bg-white" disabled={submitting} onClick={onClose}>
+            <X className="h-4 w-4" aria-hidden />
             Batal
           </Button>
           <Button type="submit" form={FORM_ID} disabled={submitting}>
+            <Save className="h-4 w-4" aria-hidden />
             {submitting ? "Menyimpan…" : "Simpan"}
           </Button>
         </div>
@@ -208,11 +209,10 @@ export function AkunKeuanganFormModal({
           <label htmlFor="ak-form-kode" className="block text-sm font-medium text-zinc-700">
             Kode akun
           </label>
-          <input
+          <TokoInput
             id="ak-form-kode"
             value={kode}
             onChange={(e) => setKode(e.target.value)}
-            className={`${inputClass} disabled:bg-zinc-50 disabled:text-zinc-500`}
             placeholder="1000 atau 1001.1"
             disabled={submitting || mode === "edit"}
             required
@@ -225,11 +225,10 @@ export function AkunKeuanganFormModal({
           <label htmlFor="ak-form-nama" className="block text-sm font-medium text-zinc-700">
             Nama akun
           </label>
-          <input
+          <TokoInput
             id="ak-form-nama"
             value={nama}
             onChange={(e) => setNama(e.target.value)}
-            className={inputClass}
             placeholder="Kas Toko"
             disabled={submitting}
             required
@@ -239,11 +238,10 @@ export function AkunKeuanganFormModal({
           <label htmlFor="ak-form-induk" className="block text-sm font-medium text-zinc-700">
             Induk akun (opsional)
           </label>
-          <select
+          <TokoSelect
             id="ak-form-induk"
             value={indukKode}
             onChange={(e) => setIndukKode(e.target.value)}
-            className={inputClass}
             disabled={submitting}
           >
             <option value="">— Tanpa induk —</option>
@@ -252,18 +250,17 @@ export function AkunKeuanganFormModal({
                 {a.kode} — {a.nama}
               </option>
             ))}
-          </select>
+          </TokoSelect>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="ak-form-kelompok" className="block text-sm font-medium text-zinc-700">
               Kelompok
             </label>
-            <select
+            <TokoSelect
               id="ak-form-kelompok"
               value={kelompok}
               onChange={(e) => setKelompok(e.target.value)}
-              className={inputClass}
               disabled={submitting}
             >
               <option value="">— Pilih kelompok —</option>
@@ -272,17 +269,16 @@ export function AkunKeuanganFormModal({
                   {o.label}
                 </option>
               ))}
-            </select>
+            </TokoSelect>
           </div>
           <div>
             <label htmlFor="ak-form-norm" className="block text-sm font-medium text-zinc-700">
               Kolom norm
             </label>
-            <select
+            <TokoSelect
               id="ak-form-norm"
               value={kolomNorm}
               onChange={(e) => setKolomNorm(e.target.value)}
-              className={inputClass}
               disabled={submitting}
             >
               {KOLOM_NORM.map((o) => (
@@ -290,18 +286,17 @@ export function AkunKeuanganFormModal({
                   {o.label}
                 </option>
               ))}
-            </select>
+            </TokoSelect>
           </div>
         </div>
         <div>
           <label htmlFor="ak-form-lr" className="block text-sm font-medium text-zinc-700">
             Kelompok laba rugi (opsional)
           </label>
-          <select
+          <TokoSelect
             id="ak-form-lr"
             value={kelompokLr}
             onChange={(e) => setKelompokLr(e.target.value)}
-            className={inputClass}
             disabled={submitting}
           >
             {KELOMPOK_LABA_RUGI.map((o) => (
@@ -309,28 +304,26 @@ export function AkunKeuanganFormModal({
                 {o.label}
               </option>
             ))}
-          </select>
+          </TokoSelect>
         </div>
         <div>
           <label htmlFor="ak-form-sub" className="block text-sm font-medium text-zinc-700">
             Sub pendapatan &amp; biaya (opsional)
           </label>
-          <input
+          <TokoInput
             id="ak-form-sub"
             value={subKelompok}
             onChange={(e) => setSubKelompok(e.target.value)}
-            className={inputClass}
             placeholder="Pendapatan Usaha, Biaya Operasional, …"
             disabled={submitting}
           />
         </div>
         <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-200 bg-zinc-50/80 px-4 py-3">
-          <input
+          <TokoInput
             type="checkbox"
             checked={isAkunKas}
             onChange={(e) => setIsAkunKas(e.target.checked)}
             disabled={submitting}
-            className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-brand-600 focus:ring-brand-500"
           />
           <span>
             <span className="block text-sm font-medium text-zinc-900">Sebagai akun kas</span>

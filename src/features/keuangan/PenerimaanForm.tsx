@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Save, Trash2, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -9,9 +9,7 @@ import type { AkunKeuanganRow, JurnalKonfigurasi } from "@/data/keuangan";
 import type { PenerimaanInsertPayload } from "@/data/penerimaan";
 import { filterAkunPenerimaan } from "@/lib/akunPenerimaan";
 import { tauriErrorMessage } from "@/lib/tauriError";
-
-const inputClass =
-  "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
+import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
 
 function todayLocalISODate(): string {
   const d = new Date();
@@ -161,7 +159,7 @@ export function PenerimaanForm({ cancelHref, onSuccess }: PenerimaanFormProps) {
         </Link>
         <PageHeader
           title="Tambah penerimaan"
-          // description="Catat penerimaan tunai ke kas atau bank. Setiap baris memilih akun pendapatan/penerimaan."
+          description="Catat penerimaan tunai ke kas atau bank. Setiap baris memilih akun pendapatan/penerimaan."
         />
       </div>
 
@@ -182,12 +180,10 @@ export function PenerimaanForm({ cancelHref, onSuccess }: PenerimaanFormProps) {
               <label htmlFor="pn-tgl" className="block text-sm font-medium text-zinc-700">
                 Tanggal
               </label>
-              <input
+              <TokoInput
                 id="pn-tgl"
-                type="date"
                 value={tanggal}
                 onChange={(e) => setTanggal(e.target.value)}
-                className={inputClass}
                 disabled={disabled}
                 required
               />
@@ -196,11 +192,10 @@ export function PenerimaanForm({ cancelHref, onSuccess }: PenerimaanFormProps) {
               <label htmlFor="pn-kas" className="block text-sm font-medium text-zinc-700">
                 Diterima oleh (kas / bank)
               </label>
-              <select
+              <TokoSelect
                 id="pn-kas"
                 value={kasKode}
                 onChange={(e) => setKasKode(e.target.value)}
-                className={inputClass}
                 disabled={disabled}
                 required
               >
@@ -210,7 +205,7 @@ export function PenerimaanForm({ cancelHref, onSuccess }: PenerimaanFormProps) {
                     {a.kode} — {a.nama}
                   </option>
                 ))}
-              </select>
+              </TokoSelect>
               {masterLoading ? (
                 <p className="mt-1.5 text-xs text-zinc-400">Memuat akun kas…</p>
               ) : akunKasList.length === 0 ? (
@@ -221,21 +216,19 @@ export function PenerimaanForm({ cancelHref, onSuccess }: PenerimaanFormProps) {
               <label htmlFor="pn-catatan" className="block text-sm font-medium text-zinc-700">
                 Catatan
               </label>
-              <input
+              <TokoInput
                 id="pn-catatan"
-                type="text"
                 value={catatan}
                 onChange={(e) => setCatatan(e.target.value)}
-                className={inputClass}
                 disabled={disabled}
-                placeholder="opsional"
+                placeholder="Catatan penerimaan"
               />
             </div>
           </div>
         </Card>
 
         <Card className="overflow-hidden p-0">
-          <div className="flex flex-col gap-4 border-b border-zinc-100 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
+          <div className="flex flex-col gap-4 border-b border-zinc-100 sm:flex-row sm:items-start sm:justify-between pb-4">
             <div>
               <h2 className="text-sm font-semibold text-zinc-900">Baris penerimaan</h2>
               <p className="mt-1 text-sm text-zinc-500">
@@ -274,11 +267,11 @@ export function PenerimaanForm({ cancelHref, onSuccess }: PenerimaanFormProps) {
                 <tbody className="divide-y divide-zinc-100">
                   {lines.map((line) => (
                     <tr key={line.id} className="bg-white">
-                      <td className="px-4 py-3">
-                        <select
+                      <td className="px-2 py-1">
+                        <TokoSelect
+                          id={`pn-akun-${line.id}`}
                           value={line.akunKode}
                           onChange={(e) => updateLine(line.id, { akunKode: e.target.value })}
-                          className={`${inputClass} mt-0`}
                           disabled={disabled}
                           required
                         >
@@ -288,10 +281,11 @@ export function PenerimaanForm({ cancelHref, onSuccess }: PenerimaanFormProps) {
                               {a.kode} — {a.nama}
                             </option>
                           ))}
-                        </select>
+                        </TokoSelect>
                       </td>
-                      <td className="px-4 py-3">
-                        <input
+                      <td className="px-2 py-1">
+                        <TokoInput
+                          id={`pn-jumlah-${line.id}`}
                           type="number"
                           min={1}
                           step={1}
@@ -299,31 +293,32 @@ export function PenerimaanForm({ cancelHref, onSuccess }: PenerimaanFormProps) {
                           onChange={(e) =>
                             updateLine(line.id, { jumlah: Math.max(0, Math.round(Number(e.target.value) || 0)) })
                           }
-                          className={`${inputClass} mt-0 text-right`}
+                          placeholder="1"
                           disabled={disabled}
                           required
                         />
                       </td>
-                      <td className="px-4 py-3">
-                        <input
+                      <td className="px-2 py-1">
+                        <TokoInput
+                          id={`pn-catatan-${line.id}`}
                           type="text"
                           value={line.catatan}
                           onChange={(e) => updateLine(line.id, { catatan: e.target.value })}
-                          className={`${inputClass} mt-0`}
                           disabled={disabled}
-                          placeholder="opsional"
+                          placeholder="Catatan per baris"
                         />
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
+                      <td className="px-2 py-1 text-right">
+                        <Button
                           type="button"
-                          className="rounded-lg p-2 text-zinc-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                          variant="danger"
+                          className="h-10"
                           onClick={() => removeLine(line.id)}
                           disabled={disabled || lines.length <= 1}
                           aria-label="Hapus baris"
                         >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                          <Trash2 className="h-4 w-4" aria-hidden />
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -344,13 +339,12 @@ export function PenerimaanForm({ cancelHref, onSuccess }: PenerimaanFormProps) {
         </Card>
 
         <div className="flex flex-wrap justify-end gap-3">
-          <Button type="button" variant="ghost" onClick={() => navigate(cancelHref)} disabled={submitting}>
+          <Button type="button" variant="outline" className="bg-white" onClick={() => navigate(cancelHref)} disabled={submitting}>
+            <X className="h-4 w-4" aria-hidden />
             Batal
           </Button>
-          <Button
-            type="submit"
-            disabled={disabled || total <= 0 || akunKasList.length === 0 || akunPenerimaanList.length === 0}
-          >
+          <Button type="submit" disabled={disabled || total <= 0 || akunKasList.length === 0 || akunPenerimaanList.length === 0}>
+            <Save className="h-4 w-4" aria-hidden />
             {submitting ? "Menyimpan…" : "Simpan penerimaan"}
           </Button>
         </div>

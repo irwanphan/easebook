@@ -10,6 +10,7 @@ import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import type { AkunKeuanganRow } from "@/data/keuangan";
 import { tauriErrorMessage } from "@/lib/tauriError";
 import { groupAkunByKelompok } from "@/lib/akunKeuanganDisplay";
+import { Pencil, Plus, Settings, Trash } from "lucide-react";
 
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -110,9 +111,11 @@ export function DaftarAkunPage() {
             className="shrink-0"
             onClick={() => navigate("/keuangan/konfigurasi-akun-jurnal")}
           >
+            <Settings className="h-4 w-4" aria-hidden />
             Konfigurasi akun jurnal
           </Button>
           <Button type="button" onClick={openCreate} className="shrink-0">
+            <Plus className="h-4 w-4" aria-hidden />
             Tambah akun
           </Button>
         </div>
@@ -198,21 +201,23 @@ export function DaftarAkunPage() {
                           <div className="flex flex-wrap justify-end gap-1">
                             <Button
                               type="button"
-                              variant="ghost"
-                              className="px-2 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-100"
+                              variant="outline"
+                              className="h-8 text-xs"
                               onClick={() => openEdit(r)}
                             >
+                              <Pencil className="h-4 w-4" aria-hidden />
                               Ubah
                             </Button>
                             <Button
                               type="button"
-                              variant="ghost"
-                              className="px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                              variant="danger"
+                              className="h-8 text-xs"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setDeleteTarget(r);
                               }}
                             >
+                              <Trash className="h-4 w-4" aria-hidden />
                               Hapus
                             </Button>
                           </div>

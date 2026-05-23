@@ -1951,6 +1951,26 @@ pub fn pengguna_delete(state: State<DbState>, username: String) -> Result<(), St
             }
         }
 
+        // Block hard-delete kalau user pernah punya aktivitas tercatat
+        // (transaksi, perubahan master data, dst.). `activity_log` adalah
+        // single source of truth untuk jejak aktor — semua transaksi
+        // melewati `activity_log_record_tx` saat dibuat / diubah / dihapus.
+        // Histori audit tidak boleh "menggantung" ke username yang tidak ada,
+        // jadi user dengan riwayat hanya boleh dinonaktifkan via menu Ubah
+        // (toggle aktif), bukan dihapus permanen.
+        let aktivitas_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM activity_log WHERE lower(aktor_username) = lower(?)",
+                params![key],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if aktivitas_count > 0 {
+            return Err(format!(
+                "Pengguna tidak dapat dihapus karena sudah memiliki {aktivitas_count} aktivitas tercatat (transaksi / perubahan data). Untuk membatasi akses, buka menu Ubah lalu set status menjadi Nonaktif."
+            ));
+        }
+
         let n = conn
             .execute(
                 "DELETE FROM pengguna WHERE lower(username) = lower(?)",

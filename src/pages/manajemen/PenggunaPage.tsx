@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { ListFilterBar } from "@/components/ui/ListFilterBar";
 import type { PenggunaRow } from "@/data/pengguna";
 import { tauriErrorMessage } from "@/lib/tauriError";
@@ -15,6 +16,9 @@ export function PenggunaPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<PenggunaRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -47,18 +51,26 @@ export function PenggunaPage() {
   const handleReset = useCallback(() => setQuery(""), []);
   const isDefault = query === "";
 
-  async function handleDelete(row: PenggunaRow) {
-    const ok = window.confirm(
-      `Hapus pengguna ${row.username} — ${row.namaLengkap}?\n\nTindakan ini tidak dapat dibatalkan.`,
-    );
-    if (!ok) return;
+  const handleConfirmDelete = useCallback(async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    setDeleteError(null);
     try {
-      await invoke("pengguna_delete", { username: row.username });
+      await invoke("pengguna_delete", { username: pendingDelete.username });
+      setPendingDelete(null);
       await load();
     } catch (err) {
-      window.alert(tauriErrorMessage(err));
+      setDeleteError(tauriErrorMessage(err));
+    } finally {
+      setDeleting(false);
     }
-  }
+  }, [pendingDelete, load]);
+
+  const handleCancelDelete = useCallback(() => {
+    if (deleting) return;
+    setPendingDelete(null);
+    setDeleteError(null);
+  }, [deleting]);
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -168,7 +180,7 @@ export function PenggunaPage() {
                           type="button"
                           variant="danger"
                           className="px-2 py-1 text-xs text-red-700 hover:bg-red-50"
-                          onClick={() => void handleDelete(row)}
+                          onClick={() => setPendingDelete(row)}
                         >
                           Hapus
                         </Button>
@@ -181,6 +193,23 @@ export function PenggunaPage() {
           </div>
         )}
       </Card>
+
+      <ConfirmModal
+        open={pendingDelete !== null}
+        variant="danger"
+        title="Hapus pengguna"
+        message={
+          pendingDelete
+            ? deleteError
+              ? deleteError
+              : `Hapus pengguna "${pendingDelete.username} — ${pendingDelete.namaLengkap}"? Tindakan ini tidak dapat dibatalkan. Pengguna yang sudah memiliki aktivitas tercatat (transaksi / perubahan data) tidak dapat dihapus — gunakan menu Ubah untuk menonaktifkan akun.`
+            : ""
+        }
+        confirmLabel="Hapus"
+        loading={deleting}
+        onConfirm={() => void handleConfirmDelete()}
+        onCancel={handleCancelDelete}
+      />
     </div>
   );
 }

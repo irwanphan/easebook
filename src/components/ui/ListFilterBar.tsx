@@ -1,5 +1,5 @@
 import { useId, type ReactNode } from "react";
-import { CalendarRange, RotateCcw, Search } from "lucide-react";
+import { CalendarRange, ListFilter, RotateCcw, Search } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
 /**
@@ -26,9 +26,36 @@ export type SearchFilter = {
   label?: string;
 };
 
+/**
+ * Pilihan untuk select dropdown. `value === ""` umumnya dipakai untuk
+ * "semua" / tidak filter.
+ */
+export type SelectFilterOption = {
+  value: string;
+  label: string;
+};
+
+/**
+ * Konfigurasi single-select dropdown. Dipakai untuk filter terstruktur
+ * seperti kategori, status, gudang, dsb. Boleh pass beberapa.
+ */
+export type SelectFilter = {
+  /** Label di atas dropdown (uppercase kecil). */
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: SelectFilterOption[];
+  /** Opsi index ke berapa yang valuenya kosong dianggap "semua". Default `""`. */
+  allValue?: string;
+  /** Lebar khusus untuk dropdown ini (mis. "lg:min-w-[200px]"). */
+  className?: string;
+};
+
 export type ListFilterBarProps = {
   dateRange?: DateRangeFilter;
   search?: SearchFilter;
+  /** 0..N filter dropdown (kategori, status, dst.). */
+  selects?: SelectFilter[];
   /**
    * Callback tombol reset. Tombol hanya tampil kalau `canReset = true`.
    */
@@ -49,6 +76,56 @@ const inputBaseClass =
 const inputWithIconClass = `${inputBaseClass} pl-9`;
 
 /**
+ * Single-select dropdown sub-control. Dipisah supaya tiap select bisa
+ * pakai `useId` sendiri (hook tidak boleh dipanggil di dalam `.map`).
+ */
+function SelectFilterControl({ select }: { select: SelectFilter }) {
+  const id = useId();
+  return (
+    <div className={`flex-1 lg:min-w-[180px] lg:max-w-xs ${select.className ?? ""}`}>
+      <label
+        htmlFor={id}
+        className="block text-xs font-semibold uppercase tracking-wide text-zinc-500"
+      >
+        {select.label}
+      </label>
+      <div className="relative mt-1">
+        <ListFilter
+          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400"
+          aria-hidden
+        />
+        <select
+          id={id}
+          value={select.value}
+          onChange={(e) => select.onChange(e.target.value)}
+          className={`${inputWithIconClass} w-full appearance-none pr-8`}
+        >
+          {select.options.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <svg
+          className="pointer-events-none absolute right-3 top-1/2 h-3 w-3 -translate-y-1/2 text-zinc-400"
+          viewBox="0 0 10 6"
+          fill="none"
+          aria-hidden
+        >
+          <path
+            d="M1 1l4 4 4-4"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Bilah filter generik untuk halaman daftar transaksi.
  *
  * Menggabungkan tiga slot opsional:
@@ -66,6 +143,7 @@ const inputWithIconClass = `${inputBaseClass} pl-9`;
 export function ListFilterBar({
   dateRange,
   search,
+  selects,
   onReset,
   canReset = false,
   summary,
@@ -77,6 +155,7 @@ export function ListFilterBar({
 
   const hasDate = Boolean(dateRange);
   const hasSearch = Boolean(search);
+  const hasSelects = Boolean(selects && selects.length > 0);
 
   return (
     <div className="flex flex-col gap-3 border-b border-zinc-100 p-6">
@@ -152,6 +231,15 @@ export function ListFilterBar({
             </div>
           </div>
         ) : null}
+
+        {hasSelects && selects
+          ? selects.map((select, idx) => (
+              <SelectFilterControl
+                key={`${select.label}-${idx}`}
+                select={select}
+              />
+            ))
+          : null}
 
         {onReset && canReset ? (
           <div className="lg:self-end">

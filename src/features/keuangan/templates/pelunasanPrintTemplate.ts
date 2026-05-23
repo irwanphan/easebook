@@ -208,13 +208,13 @@ function buildInvoiceBody(
     <div class="grid">
       <div class="flex">
         <span class="label">${escapeHtml(config.pihakLabel)}: </span>
-        <span class="mono">${escapeHtml(data.pihakKode)}</span>
-        ${data.pihakNama ? `<span class="muted"> — ${escapeHtml(data.pihakNama)}</span>` : ""}
+        <!-- <span class="mono">${escapeHtml(data.pihakKode)}</span> -->
+        ${data.pihakNama ? `<span class="mono"> — ${escapeHtml(data.pihakNama)}</span>` : ""}
       </div>
       <div class="flex">
         <span class="label">${escapeHtml(config.kasLabel)}: </span>
-        <span class="mono">${escapeHtml(data.akunKasKode)}</span>
-        ${data.akunKasNama ? `<span class="muted"> — ${escapeHtml(data.akunKasNama)}</span>` : ""}
+        <!-- <span class="mono">${escapeHtml(data.akunKasKode)}</span> -->
+        ${data.akunKasNama ? `<span class="mono"> — ${escapeHtml(data.akunKasNama)}</span>` : ""}
       </div>
       <div class="flex">
         <span class="label">Dicatat pada: </span>

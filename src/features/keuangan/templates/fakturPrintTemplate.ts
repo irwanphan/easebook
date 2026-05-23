@@ -387,8 +387,8 @@ function buildInvoiceBody(
     <div class="grid">
       <div class="flex">
         <span class="label">${escapeHtml(config.pihakLabel)}: </span>
-        <span class="mono">${escapeHtml(data.pihakKode)}</span>
-        ${data.pihakNama ? `<span class="muted"> — ${escapeHtml(data.pihakNama)}</span>` : ""}
+        <!-- <span class="mono">${escapeHtml(data.pihakKode)}</span> -->
+        ${data.pihakNama ? `<span class="mono"> — ${escapeHtml(data.pihakNama)}</span>` : ""}
       </div>
       <div class="flex">
         <span class="label">Status: </span>
@@ -407,10 +407,10 @@ function buildInvoiceBody(
         <span class="mono">${escapeHtml(data.gudangKode)}</span>
         ${data.gudangNama ? `<span class="muted"> — ${escapeHtml(data.gudangNama)}</span>` : ""}
       </div>
-      <div class="flex">
+      <!-- <div class="flex">
         <span class="label">${escapeHtml(config.pembayaranLabel)}: </span>
         ${pembayaranValue}${metodeSuffix}
-      </div>
+      </div> -->
       ${
         config.showSalesman && data.salesman
           ? `<div class="flex">

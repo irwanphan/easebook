@@ -98,6 +98,7 @@ export function PengeluaranDetailPage() {
                 "Bukti pengeluaran",
                 paperSize,
                 PENGELUARAN_SIGNATURES,
+                "paraf"
               )
             }
             onError={(msg) => setError(msg)}

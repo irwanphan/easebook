@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { FileText, Plus } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -127,7 +128,8 @@ export function PenjualanPage() {
             disabled={!canCreateTransaction}
             onClick={() => navigate("/penjualan/tambah")}
           >
-            Penjualan baru
+            <Plus className="h-4 w-4" aria-hidden />
+            Faktur jual baru
           </Button>
         }
       />
@@ -200,13 +202,15 @@ export function PenjualanPage() {
                     {rows.length === 0 ? (
                       <>
                         Belum ada faktur penjualan.{" "}
-                        <button
+                        <Button
                           type="button"
-                          className="font-semibold text-brand-600 hover:text-brand-700"
+                          variant="primary"
+                          className="px-2 py-1 text-xs"
                           onClick={() => navigate("/penjualan/tambah")}
                         >
-                          Buat penjualan baru
-                        </button>
+                          <Plus className="h-4 w-4" aria-hidden />
+                          Faktur jual baru
+                        </Button>
                         .
                       </>
                     ) : (
@@ -226,12 +230,14 @@ export function PenjualanPage() {
                       <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
                     </td>
                     <td className="px-5 py-3 text-right">
-                      <Link
-                        to={`/penjualan/detail/${encodeURIComponent(row.nomor)}`}
-                        className="inline-flex rounded-lg px-2 py-1 text-xs font-semibold text-brand-700 transition hover:bg-brand-50 border border-brand-300"
+                      <Button
+                        onClick={() => navigate(`/penjualan/detail/${encodeURIComponent(row.nomor)}`)}
+                        variant="outline"
+                        className="px-2 py-1 text-xs"
                       >
+                        <FileText className="h-4 w-4" aria-hidden />
                         Detail
-                      </Link>
+                      </Button>
                     </td>
                   </tr>
                 ))

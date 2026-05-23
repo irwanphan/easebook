@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { LineChart } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { BookOpenCheck, FileText, LineChart, PackagePlus, Pencil, SendToBack, Warehouse } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -111,12 +111,19 @@ export function BarangJasaPage() {
               Pergerakan stok
             </Button>
             <Button type="button" variant="secondary" onClick={() => navigate("/barang-jasa/per-gudang")}>
+              <Warehouse className="h-4 w-4" aria-hidden />
               Lihat per gudang
             </Button>
             <Button type="button" variant="secondary" onClick={() => navigate("/barang-jasa/mutasi-antar-gudang")}>
+              <SendToBack className="h-4 w-4" aria-hidden />
               Mutasi antar gudang
             </Button>
+            <Button type="button" variant="secondary" onClick={() => navigate("/barang-jasa/koreksi-stok")}>
+              <BookOpenCheck className="h-4 w-4" aria-hidden />
+              Koreksi stok
+            </Button>
             <Button type="button" onClick={() => navigate("/barang-jasa/tambah")}>
+              <PackagePlus className="h-4 w-4" aria-hidden />
               Tambah item
             </Button>
           </div>
@@ -215,19 +222,23 @@ export function BarangJasaPage() {
                       <td className="px-5 py-3 text-right">
                         <div className="flex flex-wrap items-center justify-end gap-1">
                           {row.tipe === "Barang" ? (
-                            <Link
-                              to={`/barang-jasa/kartu-stok/${encodeURIComponent(row.kode)}`}
-                              className="rounded-lg px-2 py-1 text-xs font-semibold text-brand-700 transition hover:bg-brand-50"
+                            <Button
+                              onClick={() => navigate(`/barang-jasa/kartu-stok/${encodeURIComponent(row.kode)}`)}
+                              variant="outline"
+                              className="px-2 py-1 text-xs"
                             >
+                              <FileText className="h-4 w-4" aria-hidden />
                               Kartu stok
-                            </Link>
+                            </Button>
                           ) : null}
-                          <Link
-                            to={`/barang-jasa/ubah/${encodeURIComponent(row.kode)}`}
-                            className="rounded-lg px-2 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100"
+                          <Button
+                            onClick={() => navigate(`/barang-jasa/ubah/${encodeURIComponent(row.kode)}`)}
+                            variant="outline"
+                            className="px-2 py-1 text-xs"
                           >
+                            <Pencil className="h-4 w-4" aria-hidden />
                             Ubah
-                          </Link>
+                          </Button>
                         </div>
                       </td>
                     </tr>

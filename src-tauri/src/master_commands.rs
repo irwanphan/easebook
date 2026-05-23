@@ -1320,7 +1320,32 @@ pub fn pelanggan_update(
 
 #[tauri::command]
 pub fn pelanggan_delete(state: State<DbState>, kode: String) -> Result<(), String> {
+    let kode = kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode wajib diisi.".into());
+    }
     with_conn_app(&state, |conn| {
+        // Cek faktur penjualan (FK RESTRICT — kalau ada, FK akan gagal juga).
+        let penjualan_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM penjualan WHERE pelanggan_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        // Cek pelunasan piutang (tanpa FK — harus dicek manual).
+        let pelunasan_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pelunasan_piutang WHERE pelanggan_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if penjualan_count > 0 || pelunasan_count > 0 {
+            return Err(format!(
+                "Pelanggan tidak dapat dihapus karena sudah memiliki transaksi ({penjualan_count} faktur penjualan, {pelunasan_count} pelunasan piutang). Histori transaksi tidak boleh dihapus."
+            ));
+        }
         let n = kontak_delete_conn(conn, "pelanggan", &kode).map_err(|e| e.to_string())?;
         if n == 0 {
             return Err("Pelanggan tidak ditemukan.".into());
@@ -1375,7 +1400,32 @@ pub fn pemasok_update(
 
 #[tauri::command]
 pub fn pemasok_delete(state: State<DbState>, kode: String) -> Result<(), String> {
+    let kode = kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode wajib diisi.".into());
+    }
     with_conn_app(&state, |conn| {
+        // Cek faktur pembelian (FK RESTRICT — kalau ada, FK akan gagal juga).
+        let pembelian_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pembelian WHERE pemasok_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        // Cek pelunasan hutang (tanpa FK — harus dicek manual).
+        let pelunasan_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pelunasan_hutang WHERE pemasok_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if pembelian_count > 0 || pelunasan_count > 0 {
+            return Err(format!(
+                "Pemasok tidak dapat dihapus karena sudah memiliki transaksi ({pembelian_count} faktur pembelian, {pelunasan_count} pelunasan hutang). Histori transaksi tidak boleh dihapus."
+            ));
+        }
         let n = kontak_delete_conn(conn, "pemasok", &kode).map_err(|e| e.to_string())?;
         if n == 0 {
             return Err("Pemasok tidak ditemukan.".into());

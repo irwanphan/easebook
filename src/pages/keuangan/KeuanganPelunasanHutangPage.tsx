@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { CreditCard, List, Plus, RefreshCcw } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -151,12 +152,15 @@ export function KeuanganPelunasanHutangPage() {
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
             <Button type="button" onClick={() => openPelunasanBaru()} disabled={loading || rows.length === 0}>
+              <Plus className="h-4 w-4" aria-hidden />
               Buat pelunasan
             </Button>
             <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/pelunasan-hutang/daftar")}>
+              <List className="h-4 w-4" aria-hidden />
               Daftar pelunasan hutang
             </Button>
             <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
+              <RefreshCcw className="h-4 w-4" aria-hidden />
               {loading ? "Memuat…" : "Refresh"}
             </Button>
           </div>
@@ -255,9 +259,10 @@ export function KeuanganPelunasanHutangPage() {
                         <Button
                           type="button"
                           variant="secondary"
-                          className="!px-3 !py-1.5 text-xs"
+                          className="px-2 py-1 text-xs"
                           onClick={() => openPelunasan(row)}
                         >
+                          <CreditCard className="h-4 w-4" aria-hidden />
                           Lunaskan
                         </Button>
                       </td>

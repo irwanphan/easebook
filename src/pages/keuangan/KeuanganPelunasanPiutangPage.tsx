@@ -9,6 +9,7 @@ import { PelunasanPiutangModal } from "@/features/keuangan/PelunasanPiutangModal
 import type { BuatPelunasanPiutangLocationState, PiutangBelumLunasRow } from "@/data/pelunasanPiutang";
 import { tauriErrorMessage } from "@/lib/tauriError";
 import { TokoSelect } from "@/components/ui/TokoInput";
+import { HandCoins, List, Plus, RefreshCcw } from "lucide-react";
 
 function todayLocalISODate(): string {
   const d = new Date();
@@ -153,12 +154,15 @@ export function KeuanganPelunasanPiutangPage() {
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
             <Button type="button" onClick={() => openPelunasanBaru()} disabled={loading || rows.length === 0}>
+              <Plus className="h-4 w-4" aria-hidden />
               Buat pelunasan
             </Button>
             <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/pelunasan-piutang/daftar")}>
+              <List className="h-4 w-4" aria-hidden />
               Daftar pelunasan
             </Button>
             <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
+              <RefreshCcw className="h-4 w-4" aria-hidden />
               {loading ? "Memuat…" : "Refresh"}
             </Button>
           </div>
@@ -257,6 +261,9 @@ export function KeuanganPelunasanPiutangPage() {
                       </td>
                       <td className="px-5 py-3 text-right">
                         <Button type="button" variant="secondary" className="!px-3 !py-1.5 text-xs" onClick={() => openPelunasan(row)}>
+                          <HandCoins
+                            className="h-4 w-4"
+                            aria-hidden />
                           Lunaskan
                         </Button>
                       </td>

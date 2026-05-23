@@ -7,6 +7,7 @@ import {
   buildSignatureBlockHtml,
   SIGNATURE_BLOCK_CSS,
   type SignatureColumn,
+  type SignatureMode,
 } from "@/features/keuangan/printSignature";
 import { escapeHtml, wrapPrintableDocument } from "@/lib/print";
 import {
@@ -67,6 +68,9 @@ function formatWaktuSekarang() {
  * @param signatures Optional 2+ kolom tanda tangan untuk serah-terima uang.
  *   Hanya ditampilkan pada paged docs (A4/Letter/½ continuous). Convention:
  *   pemberi uang di kiri, penerima uang di kanan.
+ * @param signatureMode Default `"tanda-tangan"` (~47mm) untuk dokumen formal.
+ *   Pakai `"paraf"` (~31mm) supaya signature lebih kompak & seluruh dokumen
+ *   muat di satu halaman.
  */
 export function buildKasTransaksiPrintHtml(
   detail: KasTransaksiDetailData,
@@ -74,6 +78,7 @@ export function buildKasTransaksiPrintHtml(
   judulDokumen: string,
   paperSize?: PaperSize,
   signatures?: SignatureColumn[],
+  signatureMode?: SignatureMode,
 ): string {
   const receipt = paperSize ? isReceiptPaper(paperSize) : false;
   const paged = paperSize ? isPaperPaged(paperSize) : true;
@@ -92,6 +97,7 @@ export function buildKasTransaksiPrintHtml(
         judulDokumen,
         !usePagedJs,
         showSignatures ? signatures : undefined,
+        signatureMode,
       );
 
   let extraCss = "";
@@ -144,6 +150,7 @@ function buildInvoiceBody(
   judulDokumen: string,
   showInlineHeader: boolean,
   signatures?: SignatureColumn[],
+  signatureMode?: SignatureMode,
 ): string {
   const baris = detail.lines
     .map(
@@ -221,7 +228,7 @@ function buildInvoiceBody(
       }
     </table>
 
-    ${signatures ? buildSignatureBlockHtml(signatures) : ""}
+    ${signatures ? buildSignatureBlockHtml(signatures, { mode: signatureMode }) : ""}
   `;
 }
 

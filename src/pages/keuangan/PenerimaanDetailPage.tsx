@@ -97,6 +97,7 @@ export function PenerimaanDetailPage() {
                 "Bukti penerimaan",
                 paperSize,
                 PENERIMAAN_SIGNATURES,
+                "paraf"
               )
             }
             onError={(msg) => setError(msg)}

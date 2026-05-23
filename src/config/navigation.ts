@@ -56,6 +56,7 @@ export const primaryNavEntries: PrimaryNavEntry[] = [
     children: [
       { id: "lap-stok", label: "Pergerakan stok", path: "/laporan/pergerakan-stok" },
       { id: "lap-mutasi-gudang", label: "Mutasi antar gudang", path: "/laporan/mutasi-antar-gudang" },
+      { id: "lap-hpp", label: "HPP (rata-rata bergerak)", path: "/laporan/hpp" },
     ],
   },
   {

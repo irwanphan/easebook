@@ -7955,3 +7955,415 @@ pub fn transfer_kas_update(
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
+
+// --- HPP (moving average) ------------------------------------------------
+//
+// Konsep
+// ------
+// HPP per barang dihitung dengan metode **moving average (rata-rata
+// bergerak)** secara global per item (digabung lintas gudang). Setiap
+// pembelian merekalkulasi HPP:
+//
+//   hpp_baru = (stok_lama * hpp_lama + qty_masuk * harga_beli_per_unit) /
+//              (stok_lama + qty_masuk)
+//
+// Penjualan dan mutasi antar gudang TIDAK mengubah HPP — hanya mengubah
+// posisi stok. Pendekatan "global per item" dipilih karena standar &
+// paling familiar untuk laporan keuangan HPP; kalau di masa depan butuh
+// HPP per gudang, hitungan dapat dipindah ke key (barang_kode, gudang_kode).
+//
+// Sumber data
+// -----------
+// - `stok_mutasi`  : timeline event stok per barang (kronologis).
+// - `pembelian_line.subtotal`  : nilai bersih (net diskon line) per baris
+//   faktur. `subtotal / qty_smallest` = harga beli per satuan terkecil.
+//   Catatan: belum prorata diskon faktur & pajak — bisa di-refine nanti.
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct HppListRow {
+    pub kode: String,
+    pub nama: String,
+    pub satuan: String,
+    pub stok: i64,
+    /// HPP per satuan terkecil (Rp), dibulatkan ke integer.
+    pub hpp: i64,
+    /// Total nilai persediaan (Rp) = stok × hpp (kurang lebih).
+    pub total_nilai: i64,
+    /// Jumlah event yang pernah mempengaruhi HPP (info ringan untuk UI).
+    pub jumlah_event: i64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct HppHistoryEvent {
+    pub waktu: i64,
+    pub tanggal_transaksi: String,
+    pub jenis: String,
+    pub referensi: String,
+    pub gudang_kode: String,
+    pub gudang_nama: String,
+    pub qty_masuk: i64,
+    pub qty_keluar: i64,
+    /// Harga beli per satuan terkecil (Rp) — hanya untuk jenis PEMBELIAN.
+    pub harga_satuan_beli: Option<i64>,
+    /// Nilai event (Rp): + untuk masuk (qty × harga), − untuk keluar (qty × hpp_saat_itu).
+    pub nilai_event: i64,
+    pub stok_setelah: i64,
+    pub hpp_setelah: i64,
+    pub total_nilai_setelah: i64,
+    pub catatan: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct HppDetail {
+    pub kode: String,
+    pub nama: String,
+    pub satuan: String,
+    pub stok_akhir: i64,
+    pub hpp_akhir: i64,
+    pub total_nilai_akhir: i64,
+    pub events: Vec<HppHistoryEvent>,
+}
+
+/// State internal saat replay event per barang.
+struct HppState {
+    stok: i64,
+    /// Total nilai persediaan (Rp). Disimpan presisi tinggi (i128) untuk
+    /// menghindari error akumulasi saat banyak event.
+    total_nilai: i128,
+}
+
+impl HppState {
+    fn new() -> Self {
+        Self {
+            stok: 0,
+            total_nilai: 0,
+        }
+    }
+
+    fn hpp(&self) -> i64 {
+        if self.stok <= 0 {
+            0
+        } else {
+            (self.total_nilai / self.stok as i128) as i64
+        }
+    }
+}
+
+/// Ambil mapping `(referensi, barang_kode) -> subtotal` pembelian sekali muat
+/// untuk hindari N+1 query saat replay banyak event.
+fn hpp_load_pembelian_subtotals(
+    conn: &Connection,
+    barang_kode: Option<&str>,
+) -> Result<HashMap<(String, String), i64>, String> {
+    let mut map: HashMap<(String, String), i64> = HashMap::new();
+    if let Some(kode) = barang_kode {
+        let mut stmt = conn
+            .prepare(
+                "SELECT nomor, barang_kode, subtotal FROM pembelian_line WHERE lower(barang_kode) = lower(?)",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![kode], |r| {
+                let nomor: String = r.get(0)?;
+                let barang: String = r.get(1)?;
+                let sub: i64 = r.get(2)?;
+                Ok((nomor, barang, sub))
+            })
+            .map_err(|e| e.to_string())?;
+        for r in rows {
+            let (nomor, barang, sub) = r.map_err(|e| e.to_string())?;
+            map.entry((nomor.to_uppercase(), barang.to_uppercase()))
+                .and_modify(|v| *v += sub)
+                .or_insert(sub);
+        }
+    } else {
+        let mut stmt = conn
+            .prepare("SELECT nomor, barang_kode, subtotal FROM pembelian_line")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                let nomor: String = r.get(0)?;
+                let barang: String = r.get(1)?;
+                let sub: i64 = r.get(2)?;
+                Ok((nomor, barang, sub))
+            })
+            .map_err(|e| e.to_string())?;
+        for r in rows {
+            let (nomor, barang, sub) = r.map_err(|e| e.to_string())?;
+            map.entry((nomor.to_uppercase(), barang.to_uppercase()))
+                .and_modify(|v| *v += sub)
+                .or_insert(sub);
+        }
+    }
+    Ok(map)
+}
+
+/// Replay satu event ke state HPP. Mengembalikan info event yang sudah
+/// terdekorasi (harga_satuan_beli, nilai_event, snapshot setelah).
+#[allow(clippy::too_many_arguments)]
+fn hpp_apply_event(
+    state: &mut HppState,
+    waktu: i64,
+    tanggal: &str,
+    jenis_raw: &str,
+    referensi: &str,
+    gudang_kode: &str,
+    gudang_nama: &str,
+    qty_masuk: i64,
+    qty_keluar: i64,
+    catatan: &str,
+    pembelian_subtotal_map: &HashMap<(String, String), i64>,
+    barang_kode: &str,
+) -> HppHistoryEvent {
+    let jenis = jenis_raw.trim().to_uppercase();
+    let mut harga_satuan_beli: Option<i64> = None;
+    let mut nilai_event: i64 = 0;
+
+    match jenis.as_str() {
+        "PEMBELIAN" | "PEMBELIAN_TUNAI" => {
+            if qty_masuk > 0 {
+                let key = (
+                    referensi.trim().to_uppercase(),
+                    barang_kode.trim().to_uppercase(),
+                );
+                if let Some(sub) = pembelian_subtotal_map.get(&key) {
+                    let harga_per_unit = sub / qty_masuk; // round-down jika tidak habis
+                    harga_satuan_beli = Some(harga_per_unit);
+                    // Pakai subtotal asli untuk akurasi nilai_event (hindari
+                    // pembulatan harga_per_unit × qty).
+                    state.total_nilai += *sub as i128;
+                    state.stok += qty_masuk;
+                    nilai_event = *sub;
+                } else {
+                    // Pembelian line tidak ketemu (kemungkinan data lama /
+                    // sudah dihapus) — fallback pakai 0, biar saldo tetap konsisten.
+                    state.stok += qty_masuk;
+                }
+            }
+        }
+        "PENJUALAN" | "PENJUALAN_TUNAI" => {
+            if qty_keluar > 0 {
+                let hpp_saat_ini = state.hpp();
+                let nilai_keluar = (qty_keluar as i128) * (hpp_saat_ini as i128);
+                state.total_nilai -= nilai_keluar;
+                state.stok -= qty_keluar;
+                nilai_event = -(nilai_keluar as i64);
+            }
+        }
+        "MUTASI_GUDANG" => {
+            // Per-item agnostik gudang: mutasi antar gudang netral terhadap
+            // total stok & nilai (qty keluar di sumber + qty masuk di tujuan
+            // = 0). Tetap dicatat di histori untuk transparansi.
+            nilai_event = 0;
+        }
+        _ => {
+            // Jenis lain (ADJUSTMENT, dst.): perlakukan masuk/keluar tanpa
+            // mengubah HPP — masuk dengan asumsi pakai HPP sekarang
+            // (opening-like), keluar dengan HPP sekarang (sale-like).
+            let hpp_saat_ini = state.hpp();
+            if qty_masuk > 0 {
+                let nilai_masuk = (qty_masuk as i128) * (hpp_saat_ini as i128);
+                state.total_nilai += nilai_masuk;
+                state.stok += qty_masuk;
+                nilai_event = nilai_masuk as i64;
+            } else if qty_keluar > 0 {
+                let nilai_keluar = (qty_keluar as i128) * (hpp_saat_ini as i128);
+                state.total_nilai -= nilai_keluar;
+                state.stok -= qty_keluar;
+                nilai_event = -(nilai_keluar as i64);
+            }
+        }
+    }
+
+    HppHistoryEvent {
+        waktu,
+        tanggal_transaksi: tanggal.to_string(),
+        jenis: jenis_raw.to_string(),
+        referensi: referensi.to_string(),
+        gudang_kode: gudang_kode.to_string(),
+        gudang_nama: gudang_nama.to_string(),
+        qty_masuk,
+        qty_keluar,
+        harga_satuan_beli,
+        nilai_event,
+        stok_setelah: state.stok,
+        hpp_setelah: state.hpp(),
+        total_nilai_setelah: state.total_nilai as i64,
+        catatan: catatan.to_string(),
+    }
+}
+
+#[tauri::command]
+pub fn barang_hpp_list(state: State<DbState>) -> Result<Vec<HppListRow>, String> {
+    with_conn_app(&state, |conn| {
+        // 1. Ambil semua barang tipe "Barang" (skip Jasa — tidak punya stok).
+        let mut stmt = conn
+            .prepare(
+                "SELECT kode, nama, satuan FROM barang_jasa WHERE tipe = 'Barang' ORDER BY kode COLLATE NOCASE",
+            )
+            .map_err(|e| e.to_string())?;
+        let barangs: Vec<(String, String, String)> = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+
+        // 2. Preload semua subtotal pembelian sekali (hindari N+1 query).
+        let pembelian_map = hpp_load_pembelian_subtotals(conn, None)?;
+
+        // 3. Replay event per barang & ambil snapshot akhir.
+        let mut result: Vec<HppListRow> = Vec::with_capacity(barangs.len());
+        let mut event_stmt = conn
+            .prepare(
+                "SELECT waktu, tanggal_transaksi, jenis, referensi, gudang_kode, qty_masuk, qty_keluar, catatan
+                 FROM stok_mutasi
+                 WHERE lower(barang_kode) = lower(?)
+                 ORDER BY waktu ASC, id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+
+        for (kode, nama, satuan) in barangs {
+            let mut state_hpp = HppState::new();
+            let mut jumlah_event: i64 = 0;
+            let rows = event_stmt
+                .query_map(params![&kode], |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, String>(4)?,
+                        r.get::<_, i64>(5)?,
+                        r.get::<_, i64>(6)?,
+                        r.get::<_, String>(7)?,
+                    ))
+                })
+                .map_err(|e| e.to_string())?;
+            for r in rows {
+                let (waktu, tanggal, jenis, referensi, gudang_kode, qm, qk, catatan) =
+                    r.map_err(|e| e.to_string())?;
+                hpp_apply_event(
+                    &mut state_hpp,
+                    waktu,
+                    &tanggal,
+                    &jenis,
+                    &referensi,
+                    &gudang_kode,
+                    "",
+                    qm,
+                    qk,
+                    &catatan,
+                    &pembelian_map,
+                    &kode,
+                );
+                jumlah_event += 1;
+            }
+            result.push(HppListRow {
+                kode,
+                nama,
+                satuan,
+                stok: state_hpp.stok,
+                hpp: state_hpp.hpp(),
+                total_nilai: state_hpp.total_nilai as i64,
+                jumlah_event,
+            });
+        }
+
+        Ok(result)
+    })
+}
+
+#[tauri::command]
+pub fn barang_hpp_detail(state: State<DbState>, kode: String) -> Result<HppDetail, String> {
+    let kode = kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode barang wajib diisi.".into());
+    }
+    with_conn_app(&state, |conn| {
+        // 1. Validasi barang ada & tipe Barang.
+        let (kode_db, nama, satuan, tipe): (String, String, String, String) = conn
+            .query_row(
+                "SELECT kode, nama, satuan, tipe FROM barang_jasa WHERE lower(kode) = lower(?)",
+                params![&kode],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .map_err(|_| "Barang tidak ditemukan.".to_string())?;
+        if tipe != "Barang" {
+            return Err(
+                "HPP hanya berlaku untuk barang fisik (tipe Barang). Jasa tidak punya stok.".into(),
+            );
+        }
+
+        // 2. Preload subtotal pembelian khusus barang ini.
+        let pembelian_map = hpp_load_pembelian_subtotals(conn, Some(&kode_db))?;
+
+        // 3. Replay event + simpan setiap snapshot ke vektor.
+        let mut stmt = conn
+            .prepare(
+                "SELECT m.waktu, m.tanggal_transaksi, m.jenis, m.referensi, m.gudang_kode,
+                        COALESCE(g.nama, m.gudang_kode) AS gudang_nama,
+                        m.qty_masuk, m.qty_keluar, m.catatan
+                 FROM stok_mutasi m
+                 LEFT JOIN gudang g ON lower(g.kode) = lower(m.gudang_kode)
+                 WHERE lower(m.barang_kode) = lower(?)
+                 ORDER BY m.waktu ASC, m.id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![&kode_db], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, String>(5)?,
+                    r.get::<_, i64>(6)?,
+                    r.get::<_, i64>(7)?,
+                    r.get::<_, String>(8)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut state_hpp = HppState::new();
+        let mut events: Vec<HppHistoryEvent> = Vec::new();
+        for r in rows {
+            let (waktu, tanggal, jenis, referensi, gudang_kode, gudang_nama, qm, qk, catatan) =
+                r.map_err(|e| e.to_string())?;
+            let ev = hpp_apply_event(
+                &mut state_hpp,
+                waktu,
+                &tanggal,
+                &jenis,
+                &referensi,
+                &gudang_kode,
+                &gudang_nama,
+                qm,
+                qk,
+                &catatan,
+                &pembelian_map,
+                &kode_db,
+            );
+            events.push(ev);
+        }
+
+        Ok(HppDetail {
+            kode: kode_db,
+            nama,
+            satuan,
+            stok_akhir: state_hpp.stok,
+            hpp_akhir: state_hpp.hpp(),
+            total_nilai_akhir: state_hpp.total_nilai as i64,
+            events,
+        })
+    })
+}

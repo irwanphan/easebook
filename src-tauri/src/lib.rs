@@ -61,6 +61,8 @@ pub fn run() {
             master_commands::barang_foto_remove,
             master_commands::barang_stok_per_gudang_matrix,
             master_commands::stok_barang_di_gudang,
+            master_commands::barang_hpp_list,
+            master_commands::barang_hpp_detail,
             master_commands::mutasi_antar_gudang_apply,
             master_commands::mutasi_antar_gudang_riwayat_list,
             master_commands::mutasi_antar_gudang_riwayat_detail,

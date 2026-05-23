@@ -56,6 +56,8 @@ import { JurnalUmumPage } from "@/pages/keuangan/JurnalUmumPage";
 import { KonfigurasiAkunJurnalPage } from "@/pages/keuangan/KonfigurasiAkunJurnalPage";
 import { LaporanPergerakanStokPage } from "@/pages/laporan/LaporanPergerakanStokPage";
 import { LaporanMutasiAntarGudangPage } from "@/pages/laporan/LaporanMutasiAntarGudangPage";
+import { LaporanHppPage } from "@/pages/laporan/LaporanHppPage";
+import { LaporanHppDetailPage } from "@/pages/laporan/LaporanHppDetailPage";
 import { ProfilPenggunaPage } from "@/pages/ProfilPenggunaPage";
 
 function AuthLayout() {
@@ -88,6 +90,8 @@ export const router = createHashRouter([
       { path: "barang-jasa", element: <BarangJasaPage /> },
       { path: "laporan/pergerakan-stok", element: <LaporanPergerakanStokPage /> },
       { path: "laporan/mutasi-antar-gudang", element: <LaporanMutasiAntarGudangPage /> },
+      { path: "laporan/hpp", element: <LaporanHppPage /> },
+      { path: "laporan/hpp/:kode", element: <LaporanHppDetailPage /> },
       { path: "penjualan/tambah", element: <TambahPenjualanPage /> },
       { path: "penjualan/detail/:nomor", element: <PenjualanDetailPage /> },
       { path: "penjualan/ubah/:nomor", element: <UbahPenjualanPage /> },

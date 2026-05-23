@@ -151,7 +151,7 @@ function buildInvoiceBody(
       <tr>
         <td style="border: 1px solid #d4d4d8;">
           <div><strong>${escapeHtml(line.akunNama || line.akunKode)}</strong></div>
-          <div class="mono muted">${escapeHtml(line.akunKode)}</div>
+          <!-- <div class="mono muted">${escapeHtml(line.akunKode)}</div> -->
         </td>
         <td>${line.catatan ? escapeHtml(line.catatan) : "—"}</td>
         <td class="num">${escapeHtml(formatRupiah(line.jumlah))}</td>
@@ -173,17 +173,17 @@ function buildInvoiceBody(
   return `
     ${inlineHeader}
     <div class="grid">
-      <div>
-        <div class="label">${escapeHtml(variant.kasLabel)}</div>
-        <div class="value">${escapeHtml(detail.akunKasNama || detail.akunKasKode)}</div>
-        <div class="mono muted">${escapeHtml(detail.akunKasKode)}</div>
+      <div class="flex">
+        <span class="label">${escapeHtml(variant.kasLabel)}: </span>
+        <span class="mono">${escapeHtml(detail.akunKasKode)}</span>
+        ${detail.akunKasNama ? `<span class="muted"> — ${escapeHtml(detail.akunKasNama)}</span>` : ""}
       </div>
-      <div>
-        <div class="label">Dicatat pada</div>
-        <div class="value">${escapeHtml(formatWaktu(detail.createdAt))}</div>
+      <div class="flex">
+        <span class="label">Dicatat pada: </span>
+        <span class="mono">${escapeHtml(formatWaktu(detail.createdAt))}</span>
         ${
           detail.updatedAt > detail.createdAt
-            ? `<div class="muted">Diperbarui ${escapeHtml(formatWaktu(detail.updatedAt))}</div>`
+            ? `<span class="muted"> (diperbarui ${escapeHtml(formatWaktu(detail.updatedAt))})</span>`
             : ""
         }
       </div>

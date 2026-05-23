@@ -79,13 +79,13 @@ export function KontakMasterListTable({
                     <td className="px-4 py-3 text-right whitespace-nowrap">
                       <Link
                         to={editPathForKode(row.kode)}
-                        className="mr-1 inline-flex items-center justify-center rounded-xl px-2 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400"
+                        className="mr-1 inline-flex items-center justify-center rounded-lg px-2 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 border border-zinc-300 h-8"
                       >
                         Ubah
                       </Link>
                       <Button
                         type="button"
-                        variant="ghost"
+                        variant="danger"
                         className="px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 hover:text-rose-800"
                         onClick={() => onDelete(row)}
                       >

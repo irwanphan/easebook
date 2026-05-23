@@ -146,7 +146,7 @@ export function PenggunaPage() {
                       <div className="flex justify-end gap-1">
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="outline"
                           className="px-2 py-1 text-xs"
                           onClick={() =>
                             navigate(`/manajemen/pengguna/ubah/${encodeURIComponent(row.username)}`)
@@ -156,7 +156,7 @@ export function PenggunaPage() {
                         </Button>
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="outline"
                           className="px-2 py-1 text-xs"
                           onClick={() =>
                             navigate(`/manajemen/pengguna/tambah?duplikat=${encodeURIComponent(row.username)}`)
@@ -166,7 +166,7 @@ export function PenggunaPage() {
                         </Button>
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="danger"
                           className="px-2 py-1 text-xs text-red-700 hover:bg-red-50"
                           onClick={() => void handleDelete(row)}
                         >

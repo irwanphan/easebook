@@ -120,7 +120,7 @@ export function GudangPage() {
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right">
-                      <Button variant="ghost" className="px-2 py-1 text-xs font-semibold">
+                      <Button variant="outline" className="px-2 py-1 text-xs font-semibold">
                         Ubah
                       </Button>
                     </td>

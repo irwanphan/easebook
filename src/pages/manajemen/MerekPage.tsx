@@ -53,7 +53,7 @@ export function MerekPage() {
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Merek"
-        description="Master merek untuk produk dan pemetaan ke katalog."
+        // description="Master merek untuk produk dan pemetaan ke katalog."
         actions={
           <Button type="button" onClick={() => navigate("/manajemen/merek/tambah")}>
             Tambah merek

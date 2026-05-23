@@ -102,7 +102,7 @@ export function PengaturanPage() {
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <PageHeader
         title="Pengaturan"
-        description="Data perusahaan dan preferensi operasional aplikasi."
+        // description="Data perusahaan dan preferensi operasional aplikasi."
       />
 
       <Card className="overflow-hidden p-0">

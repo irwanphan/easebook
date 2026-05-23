@@ -151,7 +151,7 @@ export function LaporanPergerakanStokPage() {
         </Link>
         <PageHeader
           title="Pergerakan stok"
-          description="Mutasi difilter menurut tanggal pencatatan di sistem (bukan tanggal faktur), supaya koreksi pembelian lama tetap terlihat saat Anda simpan dalam rentang ini. Kolom tanggal tabel = tanggal transaksi dokumen. Qty masuk/keluar/saldo dalam satuan terkecil per barang (hasil konversi dari faktur pembelian/penjualan)."
+          // description="Mutasi difilter menurut tanggal pencatatan di sistem (bukan tanggal faktur), supaya koreksi pembelian lama tetap terlihat saat Anda simpan dalam rentang ini. Kolom tanggal tabel = tanggal transaksi dokumen. Qty masuk/keluar/saldo dalam satuan terkecil per barang (hasil konversi dari faktur pembelian/penjualan)."
         />
       </div>
 

@@ -75,7 +75,10 @@ export function UbahPelangganPage() {
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Kembali ke daftar
         </Link>
-        <PageHeader title="Ubah pelanggan" description="Perbarui data kontak; kode tidak dapat diubah." />
+        <PageHeader 
+          title="Ubah pelanggan" 
+          // description="Perbarui data kontak; kode tidak dapat diubah." 
+        />
       </div>
 
       <Card>

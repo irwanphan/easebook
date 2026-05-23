@@ -78,7 +78,7 @@ export function BarangStokPerGudangPage() {
         </Link>
         <PageHeader
           title="Stok barang per gudang"
-          description="Satu baris per barang; kolom dinamis mengikuti gudang yang terdaftar. Angka stok dihitung dari mutasi masuk/keluar per gudang, dalam satuan terkecil tiap barang."
+          // description="Satu baris per barang; kolom dinamis mengikuti gudang yang terdaftar. Angka stok dihitung dari mutasi masuk/keluar per gudang, dalam satuan terkecil tiap barang."
           actions={
             <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>
               {loading ? "Memuat…" : "Refresh"}

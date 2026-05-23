@@ -57,7 +57,10 @@ export function UbahPemasokPage() {
   if (ready && !loading && !found) {
     return (
       <div className="mx-auto flex max-w-2xl flex-col gap-6">
-        <PageHeader title="Pemasok tidak ditemukan" description="Kode tidak ada di daftar pemasok." />
+        <PageHeader 
+          title="Pemasok tidak ditemukan" 
+          // description="Kode tidak ada di daftar pemasok." 
+        />
         <Button type="button" variant="ghost" className="self-start" onClick={() => navigate("/manajemen/pemasok")}>
           Kembali ke daftar
         </Button>

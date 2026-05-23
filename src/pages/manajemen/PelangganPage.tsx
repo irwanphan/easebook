@@ -44,7 +44,7 @@ export function PelangganPage() {
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Pelanggan"
-        description="Master pelanggan untuk penjualan, piutang, dan kontak bisnis."
+        // description="Master pelanggan untuk penjualan, piutang, dan kontak bisnis."
         actions={
           <Button type="button" onClick={() => navigate("/manajemen/pelanggan/tambah")}>
             Tambah pelanggan

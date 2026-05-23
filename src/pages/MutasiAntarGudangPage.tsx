@@ -221,7 +221,7 @@ export function MutasiAntarGudangPage() {
         </Link>
         <PageHeader
           title="Mutasi antar gudang"
-          description="Pindahkan stok barang dari satu gudang ke gudang lain. Total stok perusahaan tidak berubah; hanya alokasi per gudang yang bergeser."
+          // description="Pindahkan stok barang dari satu gudang ke gudang lain. Total stok perusahaan tidak berubah; hanya alokasi per gudang yang bergeser."
         />
       </div>
 

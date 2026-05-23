@@ -135,7 +135,10 @@ export function UbahPenggunaPage() {
   if (!values) {
     return (
       <div className="mx-auto flex max-w-2xl flex-col gap-6">
-        <PageHeader title="Pengguna tidak ditemukan" description="Username tidak ada di daftar." />
+        <PageHeader
+          title="Pengguna tidak ditemukan" 
+          // description="Username tidak ada di daftar." 
+        />
         <Button type="button" variant="ghost" className="self-start" onClick={() => navigate("/manajemen/pengguna")}>
           Kembali ke daftar
         </Button>

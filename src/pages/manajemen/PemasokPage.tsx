@@ -44,7 +44,7 @@ export function PemasokPage() {
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Pemasok"
-        description="Master supplier untuk pembelian, hutang dagang, dan kontak pengadaan."
+        // description="Master supplier untuk pembelian, hutang dagang, dan kontak pengadaan."
         actions={
           <Button type="button" onClick={() => navigate("/manajemen/pemasok/tambah")}>
             Tambah pemasok

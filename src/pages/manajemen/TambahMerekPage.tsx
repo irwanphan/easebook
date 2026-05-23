@@ -75,7 +75,7 @@ export function TambahMerekPage() {
         </Link>
         <PageHeader
           title="Tambah merek"
-          description="Daftarkan merek untuk dipilih di master barang."
+          // description="Daftarkan merek untuk dipilih di master barang."
         />
       </div>
 

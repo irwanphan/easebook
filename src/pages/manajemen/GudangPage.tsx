@@ -58,7 +58,7 @@ export function GudangPage() {
     <div className="mx-auto flex max-w-[1600px] flex-col gap-6">
       <PageHeader
         title="Gudang"
-        description="Master lokasi penyimpanan: alamat, koordinat peta, PIC, dan kapasitas."
+        // description="Master lokasi penyimpanan: alamat, koordinat peta, PIC, dan kapasitas."
         actions={
           <Button type="button" onClick={() => navigate("/manajemen/gudang/tambah")}>
             Tambah gudang

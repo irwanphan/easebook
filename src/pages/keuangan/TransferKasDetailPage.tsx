@@ -114,7 +114,7 @@ export function TransferKasDetailPage() {
           </Link>
           <PageHeader
             title="Detail transfer kas"
-            description={detail ? `Nomor ${detail.nomor}` : "Memuat data transfer…"}
+            // description={detail ? `Nomor ${detail.nomor}` : "Memuat data transfer…"}
           />
         </div>
         {detail ? (

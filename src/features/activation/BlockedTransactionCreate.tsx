@@ -23,7 +23,10 @@ export function BlockedTransactionCreate({ title, description, backHref, backLab
 
   return (
     <div className="mx-auto flex max-w-lg flex-col gap-6">
-      <PageHeader title={title} description={description} />
+      <PageHeader 
+        title={title} 
+        // description={description} 
+      />
       <Card className="text-center">
         <p className="text-sm font-semibold text-zinc-900">Batas uji coba tercapai</p>
         <p className="mt-2 text-sm leading-relaxed text-zinc-600">

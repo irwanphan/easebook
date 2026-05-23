@@ -155,7 +155,10 @@ export function TambahPenggunaPage() {
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Kembali ke daftar
         </Link>
-        <PageHeader title={judul} description={deskripsi} />
+        <PageHeader 
+          title={judul} 
+          // description={deskripsi} 
+        />
       </div>
 
       {sumberDuplikat ? (

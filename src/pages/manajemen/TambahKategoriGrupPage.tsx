@@ -75,7 +75,7 @@ export function TambahKategoriGrupPage() {
         </Link>
         <PageHeader
           title="Tambah kategori / grup"
-          description="Buat grup klasifikasi untuk master barang."
+          // description="Buat grup klasifikasi untuk master barang."
         />
       </div>
 

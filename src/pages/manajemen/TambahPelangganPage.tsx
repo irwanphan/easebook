@@ -63,7 +63,10 @@ export function TambahPelangganPage() {
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Kembali ke daftar
         </Link>
-        <PageHeader title="Tambah pelanggan" description="Simpan data kontak pelanggan ke database lokal." />
+        <PageHeader 
+          title="Tambah pelanggan" 
+          // description="Simpan data kontak pelanggan ke database lokal."
+        />
       </div>
 
       <Card>

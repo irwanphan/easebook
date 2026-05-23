@@ -53,7 +53,7 @@ export function KategoriGrupPage() {
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Kategori / grup barang"
-        description="Master pengelompokan SKU untuk laporan dan filter katalog."
+        // description="Master pengelompokan SKU untuk laporan dan filter katalog."
         actions={
           <Button type="button" onClick={() => navigate("/manajemen/kategori/tambah")}>
             Tambah kategori

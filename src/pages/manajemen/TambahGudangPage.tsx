@@ -133,7 +133,7 @@ export function TambahGudangPage() {
         </Link>
         <PageHeader
           title="Tambah gudang"
-          description="Lengkapi data lokasi, koordinat untuk peta, PIC, dan kapasitas."
+          // description="Lengkapi data lokasi, koordinat untuk peta, PIC, dan kapasitas."
         />
       </div>
 

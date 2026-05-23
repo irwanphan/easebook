@@ -135,7 +135,7 @@ export function UbahTransferKasPage() {
         </Link>
         <PageHeader
           title={`Ubah transfer ${nomorTrim || ""}`.trim()}
-          description="Perbarui data transfer kas. Jurnal dan saldo otomatis diselaraskan lewat jurnal pembalik."
+          // description="Perbarui data transfer kas. Jurnal dan saldo otomatis diselaraskan lewat jurnal pembalik."
         />
       </div>
 

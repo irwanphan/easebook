@@ -150,7 +150,7 @@ export function LaporanMutasiAntarGudangPage() {
 
       <PageHeader
         title="Laporan mutasi antar gudang"
-        description="Riwayat pemindahan stok antar gudang, dikelompokkan per dokumen mutasi."
+        // description="Riwayat pemindahan stok antar gudang, dikelompokkan per dokumen mutasi."
         actions={
           <Link to="/barang-jasa/mutasi-antar-gudang">
             <Button type="button" variant="primary">

@@ -76,7 +76,7 @@ export function PenggunaPage() {
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Manajemen pengguna"
-        description="Daftar akun yang dapat mengakses aplikasi EasyBook."
+        // description="Daftar akun yang dapat mengakses aplikasi EasyBook."
         actions={
           <Button type="button" onClick={() => navigate("/manajemen/pengguna/tambah")}>
             Tambah pengguna

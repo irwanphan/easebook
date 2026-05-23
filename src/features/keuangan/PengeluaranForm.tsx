@@ -161,7 +161,7 @@ export function PengeluaranForm({ cancelHref, onSuccess }: PengeluaranFormProps)
         </Link>
         <PageHeader
           title="Tambah pengeluaran"
-          description="Catat pembayaran biaya dari kas atau bank. Setiap baris memilih akun beban/biaya."
+          // description="Catat pembayaran biaya dari kas atau bank. Setiap baris memilih akun beban/biaya."
         />
       </div>
 

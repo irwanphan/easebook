@@ -87,7 +87,10 @@ export function PembelianDetailPage() {
   if (!nomor.trim()) {
     return (
       <div className="mx-auto flex max-w-2xl flex-col gap-6">
-        <PageHeader title="Faktur tidak valid" description="Nomor faktur tidak ada di URL." />
+        <PageHeader 
+          title="Faktur tidak valid" 
+          // description="Nomor faktur tidak ada di URL." 
+        />
         <Button type="button" variant="ghost" className="self-start" onClick={() => navigate("/pembelian")}>
           Kembali ke daftar
         </Button>
@@ -109,7 +112,7 @@ export function PembelianDetailPage() {
         </Link>
         <PageHeader
           title="Detail faktur pembelian"
-          description={detail ? `Nomor ${detail.nomor}` : "Memuat data faktur…"}
+          // description={detail ? `Nomor ${detail.nomor}` : "Memuat data faktur…"}
           actions={
             detail ? (
               <div className="flex flex-wrap items-center gap-2">

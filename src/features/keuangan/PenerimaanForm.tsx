@@ -161,7 +161,7 @@ export function PenerimaanForm({ cancelHref, onSuccess }: PenerimaanFormProps) {
         </Link>
         <PageHeader
           title="Tambah penerimaan"
-          description="Catat penerimaan tunai ke kas atau bank. Setiap baris memilih akun pendapatan/penerimaan."
+          // description="Catat penerimaan tunai ke kas atau bank. Setiap baris memilih akun pendapatan/penerimaan."
         />
       </div>
 

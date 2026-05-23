@@ -132,7 +132,7 @@ export function TambahBarangJasaPage() {
         </Link>
         <PageHeader
           title="Tambah barang / jasa"
-          description="Isi data master item untuk katalog penjualan."
+          // description="Isi data master item untuk katalog penjualan."
         />
       </div>
 

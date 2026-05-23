@@ -121,7 +121,7 @@ export function PenjualanPage() {
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Penjualan"
-        description="Faktur jual ke pelanggan — mengurangi stok barang fisik dan tercatat di pergerakan stok."
+        // description="Faktur jual ke pelanggan — mengurangi stok barang fisik dan tercatat di pergerakan stok."
         actions={
           <Button
             type="button"

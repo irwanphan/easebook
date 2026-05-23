@@ -98,7 +98,7 @@ export function BarangJasaPage() {
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Barang & jasa"
-        description="Kelola katalog produk dan layanan yang dijual."
+        // description="Kelola katalog produk dan layanan yang dijual."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button

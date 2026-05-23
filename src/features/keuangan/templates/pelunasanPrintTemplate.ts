@@ -199,24 +199,24 @@ function buildInvoiceBody(
   return `
     ${inlineHeader}
     <div class="grid">
-      <div>
-        <div class="label">${escapeHtml(config.pihakLabel)}</div>
-        <div class="value">${escapeHtml(data.pihakNama || data.pihakKode)}</div>
-        <div class="mono muted">${escapeHtml(data.pihakKode)}</div>
+      <div class="flex">
+        <span class="label">${escapeHtml(config.pihakLabel)}: </span>
+        <span class="mono">${escapeHtml(data.pihakKode)}</span>
+        ${data.pihakNama ? `<span class="muted"> — ${escapeHtml(data.pihakNama)}</span>` : ""}
       </div>
-      <div>
-        <div class="label">${escapeHtml(config.kasLabel)}</div>
-        <div class="value">${escapeHtml(data.akunKasNama || data.akunKasKode)}</div>
-        <div class="mono muted">${escapeHtml(data.akunKasKode)}</div>
+      <div class="flex">
+        <span class="label">${escapeHtml(config.kasLabel)}: </span>
+        <span class="mono">${escapeHtml(data.akunKasKode)}</span>
+        ${data.akunKasNama ? `<span class="muted"> — ${escapeHtml(data.akunKasNama)}</span>` : ""}
       </div>
-      <div>
-        <div class="label">Dicatat pada</div>
-        <div class="value">${escapeHtml(formatWaktu(data.createdAt))}</div>
+      <div class="flex">
+        <span class="label">Dicatat pada: </span>
+        <span class="mono">${escapeHtml(formatWaktu(data.createdAt))}</span>
       </div>
-      <div>
-        <div class="label">Total pelunasan</div>
-        <div class="value total">${escapeHtml(formatRupiah(data.total))}</div>
-        <div class="muted">${data.faktur.length} faktur</div>
+      <div class="flex">
+        <span class="label">Total pelunasan: </span>
+        <span class="mono">${escapeHtml(formatRupiah(data.total))}</span>
+        <span class="muted"> (${data.faktur.length} faktur)</span>
       </div>
       ${
         data.catatan.trim()

@@ -229,7 +229,7 @@ export function DaftarPelunasanPiutangPage() {
                       <div className="flex flex-wrap justify-end gap-1.5">
                         <Button
                           type="button"
-                          variant="secondary"
+                          variant="outline"
                           className="!px-3 !py-1.5 text-xs"
                           onClick={() =>
                             navigate(`/keuangan/pelunasan-piutang/daftar/${encodeURIComponent(row.nomor)}`)

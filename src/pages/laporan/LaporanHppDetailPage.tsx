@@ -123,7 +123,7 @@ export function LaporanHppDetailPage() {
               ? `Histori HPP — ${detail.kode} · ${detail.nama}`
               : "Histori HPP barang"
           }
-          // description="Setiap baris adalah event yang mempengaruhi (atau dicatat dalam) perhitungan HPP rata-rata bergerak. HPP baru hanya muncul saat pembelian; penjualan menggunakan HPP saat itu untuk menghitung nilai keluar."
+          description="Setiap baris adalah event yang mempengaruhi (atau dicatat dalam) perhitungan HPP rata-rata bergerak. HPP baru terbentuk pada saat pembelian."
           actions={
             <Button
               type="button"

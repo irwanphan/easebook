@@ -14,6 +14,7 @@ import {
   validateTransferKas,
   type TransferKasFormState,
 } from "./TransferKasFormFields";
+import { Save, X } from "lucide-react";
 
 export type TransferKasModalProps = {
   open: boolean;
@@ -107,9 +108,11 @@ export function TransferKasModal({ open, onClose, onSuccess }: TransferKasModalP
       footer={
         <div className="flex flex-wrap justify-end gap-3">
           <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
+            <X className="h-4 w-4" aria-hidden />
             Batal
           </Button>
           <Button type="submit" form="transfer-kas-form" disabled={disableSubmit}>
+            <Save className="h-4 w-4" aria-hidden />
             {submitting ? "Menyimpan…" : "Simpan transfer"}
           </Button>
         </div>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRightLeft } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, FileText, Filter, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -150,7 +150,7 @@ export function LaporanMutasiAntarGudangPage() {
 
       <PageHeader
         title="Laporan mutasi antar gudang"
-        // description="Riwayat pemindahan stok antar gudang, dikelompokkan per dokumen mutasi."
+        description="Riwayat pemindahan stok antar gudang, dikelompokkan per dokumen mutasi."
         actions={
           <Link to="/barang-jasa/mutasi-antar-gudang">
             <Button type="button" variant="primary">
@@ -182,6 +182,7 @@ export function LaporanMutasiAntarGudangPage() {
             />
           </label>
           <Button type="button" variant="secondary" disabled={loading} onClick={() => void fetchRows()}>
+            <Filter className="h-4 w-4" aria-hidden />
             {loading ? "Memuat…" : "Terapkan filter"}
           </Button>
         </div>
@@ -286,10 +287,11 @@ export function LaporanMutasiAntarGudangPage() {
                       <td className="px-4 py-3 text-right">
                         <Button
                           type="button"
-                          variant="secondary"
-                          className="px-2 py-1 text-xs"
+                          variant="outline"
+                          className="h-8 text-xs"
                           onClick={() => void openDetail(row.referensi)}
                         >
+                          <FileText className="h-4 w-4" aria-hidden />
                           Detail
                         </Button>
                       </td>
@@ -308,7 +310,8 @@ export function LaporanMutasiAntarGudangPage() {
         onClose={closeDetail}
         panelClassName="max-w-2xl"
         footer={
-          <Button type="button" variant="secondary" onClick={closeDetail}>
+          <Button type="button" variant="outline" onClick={closeDetail}>
+            <X className="h-4 w-4" aria-hidden />
             Tutup
           </Button>
         }

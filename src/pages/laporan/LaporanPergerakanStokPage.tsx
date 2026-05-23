@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Filter } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -151,7 +151,7 @@ export function LaporanPergerakanStokPage() {
         </Link>
         <PageHeader
           title="Pergerakan stok"
-          // description="Mutasi difilter menurut tanggal pencatatan di sistem (bukan tanggal faktur), supaya koreksi pembelian lama tetap terlihat saat Anda simpan dalam rentang ini. Kolom tanggal tabel = tanggal transaksi dokumen. Qty masuk/keluar/saldo dalam satuan terkecil per barang (hasil konversi dari faktur pembelian/penjualan)."
+          description="Mutasi difilter menurut tanggal pencatatan di sistem (bukan tanggal faktur), supaya koreksi pembelian lama tetap terlihat saat Anda simpan dalam rentang ini. Kolom tanggal tabel = tanggal transaksi dokumen. Qty masuk/keluar/saldo dalam satuan terkecil per barang (hasil konversi dari faktur pembelian/penjualan)."
         />
       </div>
 
@@ -201,10 +201,12 @@ export function LaporanPergerakanStokPage() {
           <div className="flex sm:col-span-2 lg:col-span-1">
             <Button
               type="button"
-              className="mt-6 w-full sm:mt-0 lg:mt-6"
+              variant="secondary"
+              className="h-10 w-full"
               disabled={sinkronBusy}
               onClick={() => void load()}
             >
+              <Filter className="h-4 w-4" aria-hidden />
               Terapkan
             </Button>
           </div>

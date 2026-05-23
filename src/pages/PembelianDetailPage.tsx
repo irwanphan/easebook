@@ -32,6 +32,7 @@ const PEMBELIAN_PRINT_CONFIG: FakturPrintConfig = {
   pembayaranKreditFallback: "Hutang dagang",
   showMetodePembayaran: true,
   signatures: PEMBELIAN_SIGNATURES,
+  signatureMode: "paraf",
 };
 
 function formatRupiah(n: number) {

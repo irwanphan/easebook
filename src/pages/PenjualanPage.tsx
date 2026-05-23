@@ -127,7 +127,7 @@ export function PenjualanPage() {
                     <td className="px-5 py-3 text-right">
                       <Link
                         to={`/penjualan/detail/${encodeURIComponent(row.nomor)}`}
-                        className="inline-flex rounded-xl px-2 py-1 text-xs font-semibold text-brand-700 transition hover:bg-brand-50"
+                        className="inline-flex rounded-lg px-2 py-1 text-xs font-semibold text-brand-700 transition hover:bg-brand-50 border border-brand-300"
                       >
                         Detail
                       </Link>

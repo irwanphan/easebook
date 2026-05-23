@@ -341,10 +341,17 @@ function buildInvoiceBody(
     : "";
 
   const pembayaranValue = data.akunKasKode
-    ? `${escapeHtml(data.akunKasKode)}${
-        data.akunKasNama ? ` — ${escapeHtml(data.akunKasNama)}` : ""
+    ? `<span class="mono">${escapeHtml(data.akunKasKode)}</span>${
+        data.akunKasNama
+          ? `<span class="muted"> — ${escapeHtml(data.akunKasNama)}</span>`
+          : ""
       } <span class="muted">(tunai)</span>`
     : `<span class="muted">${escapeHtml(config.pembayaranKreditFallback)}</span>`;
+
+  const metodeSuffix =
+    config.showMetodePembayaran && data.metodePembayaranLabel
+      ? ` <span class="muted">· ${escapeHtml(data.metodePembayaranLabel)}</span>`
+      : "";
 
   const showLineCatatan = config.showLineCatatan === true;
   const colCount = showLineCatatan ? 7 : 6;
@@ -378,42 +385,37 @@ function buildInvoiceBody(
   return `
     ${inlineHeader}
     <div class="grid">
-      <div>
-        <div class="label">${escapeHtml(config.pihakLabel)}</div>
-        <div class="value">${escapeHtml(data.pihakNama || data.pihakKode)}</div>
-        <div class="mono muted">${escapeHtml(data.pihakKode)}</div>
+      <div class="flex">
+        <span class="label">${escapeHtml(config.pihakLabel)}: </span>
+        <span class="mono">${escapeHtml(data.pihakKode)}</span>
+        ${data.pihakNama ? `<span class="muted"> — ${escapeHtml(data.pihakNama)}</span>` : ""}
       </div>
-      <div>
-        <div class="label">Status</div>
-        <div class="value"><span class="status-badge">${escapeHtml(data.status)}</span></div>
+      <div class="flex">
+        <span class="label">Status: </span>
+        <span class="status-badge">${escapeHtml(data.status)}</span>
       </div>
-      <div>
-        <div class="label">Tanggal faktur</div>
-        <div class="value">${escapeHtml(formatTanggal(data.tanggalFaktur))}</div>
+      <div class="flex">
+        <span class="label">Tanggal faktur: </span>
+        <span class="mono">${escapeHtml(formatTanggal(data.tanggalFaktur))}</span>
       </div>
-      <div>
-        <div class="label">Jatuh tempo</div>
-        <div class="value">${escapeHtml(formatTanggal(data.jatuhTempo))}</div>
+      <div class="flex">
+        <span class="label">Jatuh tempo: </span>
+        <span class="mono">${escapeHtml(formatTanggal(data.jatuhTempo))}</span>
       </div>
-      <div>
-        <div class="label">Gudang</div>
-        <div class="value">${escapeHtml(data.gudangNama || data.gudangKode)}</div>
-        <div class="mono muted">${escapeHtml(data.gudangKode)}</div>
+      <div class="flex">
+        <span class="label">Gudang: </span>
+        <span class="mono">${escapeHtml(data.gudangKode)}</span>
+        ${data.gudangNama ? `<span class="muted"> — ${escapeHtml(data.gudangNama)}</span>` : ""}
       </div>
-      <div>
-        <div class="label">${escapeHtml(config.pembayaranLabel)}</div>
-        <div class="value">${pembayaranValue}</div>
-        ${
-          config.showMetodePembayaran && data.metodePembayaranLabel
-            ? `<div class="muted">${escapeHtml(data.metodePembayaranLabel)}</div>`
-            : ""
-        }
+      <div class="flex">
+        <span class="label">${escapeHtml(config.pembayaranLabel)}: </span>
+        ${pembayaranValue}${metodeSuffix}
       </div>
       ${
         config.showSalesman && data.salesman
-          ? `<div>
-              <div class="label">Salesman</div>
-              <div class="value">${escapeHtml(data.salesman)}</div>
+          ? `<div class="flex">
+              <span class="label">Salesman: </span>
+              <span>${escapeHtml(data.salesman)}</span>
             </div>`
           : ""
       }

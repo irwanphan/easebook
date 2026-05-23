@@ -31,6 +31,7 @@ const PENJUALAN_PRINT_CONFIG: FakturPrintConfig = {
   showLineCatatan: true,
   showSalesman: true,
   signatures: PENJUALAN_SIGNATURES,
+  signatureMode: "paraf",
 };
 
 function formatRupiah(n: number) {

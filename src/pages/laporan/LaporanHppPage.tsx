@@ -76,7 +76,7 @@ export function LaporanHppPage() {
         </Link>
         <PageHeader
           title="HPP barang (rata-rata bergerak)"
-          description="Harga Pokok Penjualan dihitung dengan metode moving average per item — setiap pembelian merekalkulasi HPP berdasarkan stok lama, HPP lama, dan harga beli baru. Penjualan & mutasi antar gudang tidak mengubah HPP."
+          // description="Harga Pokok Penjualan dihitung dengan metode moving average per item — setiap pembelian merekalkulasi HPP berdasarkan stok lama, HPP lama, dan harga beli baru. Penjualan & mutasi antar gudang tidak mengubah HPP."
           actions={
             <Button
               type="button"
@@ -183,8 +183,8 @@ export function LaporanHppPage() {
                       <td className="px-5 py-3 text-right">
                         <Button
                           type="button"
-                          variant="ghost"
-                          className="!px-3 !py-1.5 text-xs"
+                          variant="outline"
+                          className="px-2 py-1 text-xs"
                           onClick={() =>
                             navigate(
                               `/laporan/hpp/${encodeURIComponent(row.kode)}`,

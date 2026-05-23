@@ -174,6 +174,40 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_stok_mutasi_tgl ON stok_mutasi(tanggal_transaksi);
         CREATE INDEX IF NOT EXISTS idx_stok_mutasi_waktu ON stok_mutasi(waktu);
 
+        -- Koreksi stok (stok opname, barang rusak/hilang/ditemukan, dll.)
+        --
+        -- Setiap dokumen koreksi punya satu gudang & satu alasan, dan boleh
+        -- berisi banyak baris (campuran masuk/keluar). Saat insert, baris
+        -- akan diturunkan jadi entri di `stok_mutasi` dengan jenis
+        -- `KOREKSI_MASUK` / `KOREKSI_KELUAR`, sehingga modul HPP & laporan
+        -- pergerakan stok tetap konsisten memakai timeline mutasi.
+        CREATE TABLE IF NOT EXISTS koreksi_stok (
+            nomor TEXT PRIMARY KEY NOT NULL,
+            tanggal TEXT NOT NULL,
+            gudang_kode TEXT NOT NULL REFERENCES gudang(kode) ON UPDATE CASCADE,
+            alasan TEXT NOT NULL DEFAULT 'STOK_OPNAME',
+            catatan TEXT NOT NULL DEFAULT '',
+            dibuat_oleh TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS koreksi_stok_line (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nomor TEXT NOT NULL REFERENCES koreksi_stok(nomor) ON DELETE CASCADE ON UPDATE CASCADE,
+            barang_kode TEXT NOT NULL REFERENCES barang_jasa(kode) ON UPDATE CASCADE,
+            arah TEXT NOT NULL CHECK (arah IN ('MASUK', 'KELUAR')),
+            qty INTEGER NOT NULL,
+            satuan_tingkat INTEGER NOT NULL DEFAULT 1,
+            nilai_per_unit INTEGER NOT NULL DEFAULT 0,
+            subtotal_nilai INTEGER NOT NULL DEFAULT 0,
+            catatan TEXT NOT NULL DEFAULT ''
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_koreksi_stok_tgl ON koreksi_stok(tanggal);
+        CREATE INDEX IF NOT EXISTS idx_koreksi_stok_line_nomor ON koreksi_stok_line(nomor);
+        CREATE INDEX IF NOT EXISTS idx_koreksi_stok_line_barang ON koreksi_stok_line(barang_kode);
+
         -- Keuangan: akun & jurnal umum (double-entry)
         CREATE TABLE IF NOT EXISTS akun_keuangan (
             kode TEXT PRIMARY KEY NOT NULL COLLATE NOCASE,

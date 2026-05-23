@@ -62,6 +62,8 @@ export function labelJenisEventHpp(jenis: string): string {
   if (j === "PEMBELIAN" || j === "PEMBELIAN_TUNAI") return "Pembelian";
   if (j === "PENJUALAN" || j === "PENJUALAN_TUNAI") return "Penjualan";
   if (j === "MUTASI_GUDANG") return "Mutasi antar gudang";
+  if (j === "KOREKSI_MASUK") return "Koreksi masuk";
+  if (j === "KOREKSI_KELUAR") return "Koreksi keluar";
   if (j === "ADJUSTMENT") return "Penyesuaian";
   return jenis;
 }
@@ -69,14 +71,18 @@ export function labelJenisEventHpp(jenis: string): string {
 /**
  * Apakah event ini benar-benar mengubah nilai HPP?
  *
- * Hanya pembelian (qty masuk + harga beli) yang merekalkulasi HPP.
- * Event lain ditampilkan untuk transparansi tapi HPP tidak berubah.
+ * Pembelian (qty masuk + harga beli) dan koreksi masuk (qty masuk +
+ * nilai user) keduanya merekalkulasi HPP. Event lain (penjualan,
+ * koreksi keluar, mutasi gudang) ditampilkan untuk transparansi tapi
+ * HPP tidak berubah.
  */
 export function eventMengubahHpp(ev: HppHistoryEvent): boolean {
   const j = ev.jenis.trim().toUpperCase();
-  return (
-    (j === "PEMBELIAN" || j === "PEMBELIAN_TUNAI") &&
-    ev.qtyMasuk > 0 &&
-    ev.hargaSatuanBeli !== null
-  );
+  if (j === "PEMBELIAN" || j === "PEMBELIAN_TUNAI") {
+    return ev.qtyMasuk > 0 && ev.hargaSatuanBeli !== null;
+  }
+  if (j === "KOREKSI_MASUK") {
+    return ev.qtyMasuk > 0 && ev.hargaSatuanBeli !== null;
+  }
+  return false;
 }

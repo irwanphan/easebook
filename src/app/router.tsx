@@ -10,6 +10,7 @@ import { UbahBarangJasaPage } from "@/pages/UbahBarangJasaPage";
 import { KartuStokBarangPage } from "@/pages/KartuStokBarangPage";
 import { BarangStokPerGudangPage } from "@/pages/BarangStokPerGudangPage";
 import { MutasiAntarGudangPage } from "@/pages/MutasiAntarGudangPage";
+import { KoreksiStokPage } from "@/pages/KoreksiStokPage";
 import { PenjualanPage } from "@/pages/PenjualanPage";
 import { TambahPenjualanPage } from "@/pages/TambahPenjualanPage";
 import { PenjualanDetailPage } from "@/pages/PenjualanDetailPage";
@@ -87,6 +88,7 @@ export const router = createHashRouter([
       { path: "barang-jasa/kartu-stok/:kode", element: <KartuStokBarangPage /> },
       { path: "barang-jasa/per-gudang", element: <BarangStokPerGudangPage /> },
       { path: "barang-jasa/mutasi-antar-gudang", element: <MutasiAntarGudangPage /> },
+      { path: "barang-jasa/koreksi-stok", element: <KoreksiStokPage /> },
       { path: "barang-jasa", element: <BarangJasaPage /> },
       { path: "laporan/pergerakan-stok", element: <LaporanPergerakanStokPage /> },
       { path: "laporan/mutasi-antar-gudang", element: <LaporanMutasiAntarGudangPage /> },

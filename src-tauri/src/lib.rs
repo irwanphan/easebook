@@ -63,6 +63,7 @@ pub fn run() {
             master_commands::stok_barang_di_gudang,
             master_commands::barang_hpp_list,
             master_commands::barang_hpp_detail,
+            master_commands::koreksi_stok_insert,
             master_commands::mutasi_antar_gudang_apply,
             master_commands::mutasi_antar_gudang_riwayat_list,
             master_commands::mutasi_antar_gudang_riwayat_detail,

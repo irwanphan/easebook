@@ -8101,6 +8101,48 @@ fn hpp_load_pembelian_subtotals(
     Ok(map)
 }
 
+/// Ambil mapping `(nomor_koreksi, barang_kode) -> subtotal_nilai` koreksi stok.
+/// Subtotal selalu positif; arah (MASUK/KELUAR) ditentukan dari jenis event di
+/// `stok_mutasi` saat replay.
+fn hpp_load_koreksi_subtotals(
+    conn: &Connection,
+    barang_kode: Option<&str>,
+) -> Result<HashMap<(String, String), i64>, String> {
+    let mut map: HashMap<(String, String), i64> = HashMap::new();
+    let sql_all = "SELECT nomor, barang_kode, subtotal_nilai FROM koreksi_stok_line";
+    let sql_one =
+        "SELECT nomor, barang_kode, subtotal_nilai FROM koreksi_stok_line WHERE lower(barang_kode) = lower(?)";
+    let collect = |rows: Vec<(String, String, i64)>, m: &mut HashMap<(String, String), i64>| {
+        for (nomor, barang, sub) in rows {
+            m.entry((nomor.to_uppercase(), barang.to_uppercase()))
+                .and_modify(|v| *v += sub)
+                .or_insert(sub);
+        }
+    };
+    if let Some(kode) = barang_kode {
+        let mut stmt = conn.prepare(sql_one).map_err(|e| e.to_string())?;
+        let rows: Vec<(String, String, i64)> = stmt
+            .query_map(params![kode], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<_, _>>()
+            .map_err(|e| e.to_string())?;
+        collect(rows, &mut map);
+    } else {
+        let mut stmt = conn.prepare(sql_all).map_err(|e| e.to_string())?;
+        let rows: Vec<(String, String, i64)> = stmt
+            .query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<_, _>>()
+            .map_err(|e| e.to_string())?;
+        collect(rows, &mut map);
+    }
+    Ok(map)
+}
+
 /// Replay satu event ke state HPP. Mengembalikan info event yang sudah
 /// terdekorasi (harga_satuan_beli, nilai_event, snapshot setelah).
 #[allow(clippy::too_many_arguments)]
@@ -8116,6 +8158,7 @@ fn hpp_apply_event(
     qty_keluar: i64,
     catatan: &str,
     pembelian_subtotal_map: &HashMap<(String, String), i64>,
+    koreksi_subtotal_map: &HashMap<(String, String), i64>,
     barang_kode: &str,
 ) -> HppHistoryEvent {
     let jenis = jenis_raw.trim().to_uppercase();
@@ -8158,6 +8201,41 @@ fn hpp_apply_event(
             // total stok & nilai (qty keluar di sumber + qty masuk di tujuan
             // = 0). Tetap dicatat di histori untuk transparansi.
             nilai_event = 0;
+        }
+        "KOREKSI_MASUK" => {
+            // Koreksi masuk = nilai yang user input adalah basis valuasi
+            // tambahan persediaan (mirip pembelian dengan harga manual).
+            if qty_masuk > 0 {
+                let key = (
+                    referensi.trim().to_uppercase(),
+                    barang_kode.trim().to_uppercase(),
+                );
+                if let Some(sub) = koreksi_subtotal_map.get(&key) {
+                    let harga_per_unit = sub / qty_masuk;
+                    harga_satuan_beli = Some(harga_per_unit);
+                    state.total_nilai += *sub as i128;
+                    state.stok += qty_masuk;
+                    nilai_event = *sub;
+                } else {
+                    // Tidak ada nilai (data lama / nilai 0) — masukkan qty
+                    // tanpa mengubah total nilai (HPP rata-rata jadi turun).
+                    state.stok += qty_masuk;
+                }
+            }
+        }
+        "KOREKSI_KELUAR" => {
+            // Koreksi keluar = barang dihilangkan dari persediaan. Untuk
+            // konsistensi akuntansi HPP rata-rata, nilai yang dikeluarkan =
+            // qty × HPP saat itu (HPP tidak berubah). Nilai per unit yang
+            // user input disimpan di `koreksi_stok_line` sebagai referensi
+            // valuasi kerugian, tetapi tidak dipakai untuk HPP module.
+            if qty_keluar > 0 {
+                let hpp_saat_ini = state.hpp();
+                let nilai_keluar = (qty_keluar as i128) * (hpp_saat_ini as i128);
+                state.total_nilai -= nilai_keluar;
+                state.stok -= qty_keluar;
+                nilai_event = -(nilai_keluar as i64);
+            }
         }
         _ => {
             // Jenis lain (ADJUSTMENT, dst.): perlakukan masuk/keluar tanpa
@@ -8217,8 +8295,9 @@ pub fn barang_hpp_list(state: State<DbState>) -> Result<Vec<HppListRow>, String>
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| e.to_string())?;
 
-        // 2. Preload semua subtotal pembelian sekali (hindari N+1 query).
+        // 2. Preload semua subtotal pembelian & koreksi sekali (hindari N+1 query).
         let pembelian_map = hpp_load_pembelian_subtotals(conn, None)?;
+        let koreksi_map = hpp_load_koreksi_subtotals(conn, None)?;
 
         // 3. Replay event per barang & ambil snapshot akhir.
         let mut result: Vec<HppListRow> = Vec::with_capacity(barangs.len());
@@ -8263,6 +8342,7 @@ pub fn barang_hpp_list(state: State<DbState>) -> Result<Vec<HppListRow>, String>
                     qk,
                     &catatan,
                     &pembelian_map,
+                    &koreksi_map,
                     &kode,
                 );
                 jumlah_event += 1;
@@ -8303,8 +8383,9 @@ pub fn barang_hpp_detail(state: State<DbState>, kode: String) -> Result<HppDetai
             );
         }
 
-        // 2. Preload subtotal pembelian khusus barang ini.
+        // 2. Preload subtotal pembelian & koreksi khusus barang ini.
         let pembelian_map = hpp_load_pembelian_subtotals(conn, Some(&kode_db))?;
+        let koreksi_map = hpp_load_koreksi_subtotals(conn, Some(&kode_db))?;
 
         // 3. Replay event + simpan setiap snapshot ke vektor.
         let mut stmt = conn
@@ -8351,6 +8432,7 @@ pub fn barang_hpp_detail(state: State<DbState>, kode: String) -> Result<HppDetai
                 qk,
                 &catatan,
                 &pembelian_map,
+                &koreksi_map,
                 &kode_db,
             );
             events.push(ev);
@@ -8366,4 +8448,293 @@ pub fn barang_hpp_detail(state: State<DbState>, kode: String) -> Result<HppDetai
             events,
         })
     })
+}
+
+// --- Koreksi stok --------------------------------------------------------
+//
+// Dokumen koreksi mencatat penyesuaian persediaan manual (stok opname,
+// barang rusak/hilang/ditemukan, reklasifikasi, dll.) untuk satu gudang
+// dengan banyak baris campuran masuk/keluar. Saat insert, setiap baris
+// dijabarkan menjadi entri `stok_mutasi` (`KOREKSI_MASUK`/`KOREKSI_KELUAR`),
+// sehingga modul HPP dan laporan pergerakan stok tetap konsisten.
+
+const KOREKSI_ALASAN_VALID: &[&str] = &[
+    "STOK_OPNAME",
+    "RUSAK",
+    "HILANG",
+    "DITEMUKAN",
+    "REKLASIFIKASI",
+    "LAINNYA",
+];
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KoreksiStokLinePayload {
+    pub barang_kode: String,
+    /// "MASUK" atau "KELUAR".
+    pub arah: String,
+    pub qty: i64,
+    pub satuan_tingkat: u8,
+    /// Nilai per satuan yang dipilih user (mis. per Dus / per Pcs).
+    pub nilai_per_unit: i64,
+    pub catatan: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KoreksiStokInsertPayload {
+    pub tanggal: String,
+    pub gudang_kode: String,
+    pub alasan: String,
+    pub catatan: String,
+    pub actor_username: String,
+    pub actor_nama: String,
+    pub lines: Vec<KoreksiStokLinePayload>,
+}
+
+#[tauri::command]
+pub fn koreksi_stok_insert(
+    state: State<DbState>,
+    payload: KoreksiStokInsertPayload,
+) -> Result<String, String> {
+    // --- Validasi header ringan di luar tx --------------------------------
+    let tanggal = payload.tanggal.trim().to_string();
+    NaiveDate::parse_from_str(&tanggal, "%Y-%m-%d")
+        .map_err(|_| "Tanggal koreksi tidak valid (YYYY-MM-DD).".to_string())?;
+    let gudang_kode = payload.gudang_kode.trim().to_string();
+    if gudang_kode.is_empty() {
+        return Err("Gudang wajib dipilih.".into());
+    }
+    let alasan = payload.alasan.trim().to_uppercase();
+    if !KOREKSI_ALASAN_VALID.iter().any(|a| *a == alasan) {
+        return Err("Alasan koreksi tidak dikenali.".into());
+    }
+    if payload.lines.is_empty() {
+        return Err("Minimal satu baris barang harus diisi.".into());
+    }
+    let actor_username = payload.actor_username.trim().to_string();
+    if actor_username.is_empty() {
+        return Err("Sesi pengguna tidak terbaca — silakan login ulang.".into());
+    }
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    // --- Validasi gudang ada ---------------------------------------------
+    let gudang_ada: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM gudang WHERE lower(kode) = lower(?)",
+            params![&gudang_kode],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if gudang_ada == 0 {
+        return Err(format!("Gudang {gudang_kode} tidak ditemukan."));
+    }
+
+    let now = now_ts();
+    let waktu_mutasi = waktu_mutasi_dari_tgl_faktur(&tanggal)?;
+    let nomor = format!("KOR-{}", Utc::now().timestamp_millis());
+
+    // --- Insert header ----------------------------------------------------
+    tx.execute(
+        "INSERT INTO koreksi_stok (nomor, tanggal, gudang_kode, alasan, catatan, dibuat_oleh, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
+            &nomor,
+            &tanggal,
+            &gudang_kode,
+            &alasan,
+            payload.catatan.trim(),
+            &actor_username,
+            now,
+            now
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // --- Per-baris: validasi, konversi qty, terapkan ke stok ------------
+    let mut barang_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut total_masuk_qty: i64 = 0;
+    let mut total_keluar_qty: i64 = 0;
+    let mut total_masuk_nilai: i64 = 0;
+    let mut total_keluar_nilai: i64 = 0;
+
+    for (idx, line) in payload.lines.iter().enumerate() {
+        let nomor_line = idx + 1;
+        let kode_b = line.barang_kode.trim().to_string();
+        if kode_b.is_empty() {
+            return Err(format!("Baris {nomor_line}: kode barang kosong."));
+        }
+        let key = kode_b.to_lowercase();
+        if !barang_seen.insert(key.clone()) {
+            return Err(format!(
+                "Baris {nomor_line}: barang {kode_b} muncul lebih dari satu kali. Gabungkan menjadi satu baris."
+            ));
+        }
+        let arah = line.arah.trim().to_uppercase();
+        if arah != "MASUK" && arah != "KELUAR" {
+            return Err(format!("Baris {nomor_line}: arah harus MASUK atau KELUAR."));
+        }
+        if line.qty <= 0 {
+            return Err(format!("Baris {nomor_line}: qty harus > 0."));
+        }
+        if line.nilai_per_unit < 0 {
+            return Err(format!(
+                "Baris {nomor_line}: nilai per satuan tidak boleh negatif."
+            ));
+        }
+
+        // Pastikan barang tipe Barang (Jasa tidak punya stok untuk dikoreksi).
+        let tipe: String = tx
+            .query_row(
+                "SELECT tipe FROM barang_jasa WHERE lower(kode) = lower(?)",
+                params![&kode_b],
+                |r| r.get(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    format!("Baris {nomor_line}: barang {kode_b} tidak ditemukan.")
+                }
+                _ => e.to_string(),
+            })?;
+        if tipe != "Barang" {
+            return Err(format!(
+                "Baris {nomor_line}: koreksi stok hanya berlaku untuk barang fisik (tipe Barang). {kode_b} bertipe {tipe}."
+            ));
+        }
+
+        let qty_smallest =
+            barang_line_qty_to_smallest_conn(&*tx, &kode_b, line.qty, line.satuan_tingkat)?;
+        if qty_smallest <= 0 {
+            return Err(format!(
+                "Baris {nomor_line}: hasil konversi qty ke satuan terkecil tidak valid."
+            ));
+        }
+        let subtotal_nilai = line
+            .qty
+            .checked_mul(line.nilai_per_unit)
+            .ok_or_else(|| format!("Baris {nomor_line}: subtotal nilai melimpahi batas."))?;
+
+        // Update master stok (gabungan lintas gudang) & catat mutasi.
+        let prev_stok: i64 = tx
+            .query_row(
+                "SELECT COALESCE(stok, 0) FROM barang_jasa WHERE lower(kode) = lower(?)",
+                params![&kode_b],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        let next_stok = if arah == "MASUK" {
+            prev_stok
+                .checked_add(qty_smallest)
+                .ok_or_else(|| format!("Baris {nomor_line}: stok melimpahi batas."))?
+        } else {
+            // Validasi stok cukup di gudang ini.
+            let stok_gudang: i64 = tx
+                .query_row(
+                    "SELECT COALESCE(SUM(qty_masuk) - SUM(qty_keluar), 0)
+                     FROM stok_mutasi
+                     WHERE lower(barang_kode) = lower(?) AND lower(gudang_kode) = lower(?)",
+                    params![&kode_b, &gudang_kode],
+                    |r| r.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            if stok_gudang < qty_smallest {
+                return Err(format!(
+                    "Baris {nomor_line}: stok {kode_b} di gudang {gudang_kode} cuma {stok_gudang}, tidak cukup untuk mengurangi {qty_smallest}."
+                ));
+            }
+            if prev_stok < qty_smallest {
+                return Err(format!(
+                    "Baris {nomor_line}: stok global {kode_b} cuma {prev_stok}, tidak cukup untuk mengurangi {qty_smallest}."
+                ));
+            }
+            prev_stok - qty_smallest
+        };
+
+        tx.execute(
+            "UPDATE barang_jasa SET stok = ?, updated_at = ? WHERE lower(kode) = lower(?)",
+            params![next_stok, now, &kode_b],
+        )
+        .map_err(|e| e.to_string())?;
+
+        let (qm_mutasi, qk_mutasi, jenis_mutasi) = if arah == "MASUK" {
+            (qty_smallest, 0_i64, "KOREKSI_MASUK")
+        } else {
+            (0_i64, qty_smallest, "KOREKSI_KELUAR")
+        };
+
+        tx.execute(
+            "INSERT INTO stok_mutasi (waktu, tanggal_transaksi, barang_kode, gudang_kode, jenis, referensi, qty_masuk, qty_keluar, saldo_setelah, catatan)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                waktu_mutasi,
+                &tanggal,
+                &kode_b,
+                &gudang_kode,
+                jenis_mutasi,
+                &nomor,
+                qm_mutasi,
+                qk_mutasi,
+                next_stok,
+                line.catatan.trim()
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+
+        tx.execute(
+            "INSERT INTO koreksi_stok_line (nomor, barang_kode, arah, qty, satuan_tingkat, nilai_per_unit, subtotal_nilai, catatan)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &nomor,
+                &kode_b,
+                &arah,
+                line.qty,
+                line.satuan_tingkat as i64,
+                line.nilai_per_unit,
+                subtotal_nilai,
+                line.catatan.trim()
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+
+        if arah == "MASUK" {
+            total_masuk_qty += qty_smallest;
+            total_masuk_nilai += subtotal_nilai;
+        } else {
+            total_keluar_qty += qty_smallest;
+            total_keluar_nilai += subtotal_nilai;
+        }
+    }
+
+    // --- Audit log --------------------------------------------------------
+    let ringkasan = format!(
+        "Koreksi stok {nomor} ({alasan}, gudang {gudang_kode}): +{total_masuk_qty} unit / -{total_keluar_qty} unit, {} baris.",
+        payload.lines.len()
+    );
+    let metadata = format!(
+        "{{\"alasan\":\"{}\",\"gudang_kode\":\"{}\",\"total_masuk_qty\":{},\"total_keluar_qty\":{},\"total_masuk_nilai\":{},\"total_keluar_nilai\":{}}}",
+        alasan,
+        gudang_kode,
+        total_masuk_qty,
+        total_keluar_qty,
+        total_masuk_nilai,
+        total_keluar_nilai
+    );
+    activity_log_record_tx(
+        &tx,
+        now,
+        &actor_username,
+        payload.actor_nama.trim(),
+        "INSERT",
+        "KOREKSI_STOK",
+        &nomor,
+        &ringkasan,
+        None,
+        None,
+        Some(metadata.as_str()),
+    )?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(nomor)
 }

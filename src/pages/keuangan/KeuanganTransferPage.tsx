@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { ArrowRight, Eye, Pencil, Plus } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { ArrowRight, Eye, Filter, Pencil, Plus } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -44,6 +44,7 @@ function formatTanggal(iso: string): string {
 }
 
 export function KeuanganTransferPage() {
+  const navigate = useNavigate();
   const [tanggalDari, setTanggalDari] = useState(defaultTanggalDariBulanIni);
   const [tanggalSampai, setTanggalSampai] = useState(defaultTanggalSampaiBulanIni);
   const [rows, setRows] = useState<TransferKasListRow[]>([]);
@@ -164,6 +165,7 @@ export function KeuanganTransferPage() {
             onClick={() => void fetchRows()}
             disabled={loading}
           >
+            <Filter className="h-4 w-4" aria-hidden />
             {loading ? "Memuat…" : "Terapkan filter"}
           </Button>
         </div>
@@ -263,22 +265,24 @@ export function KeuanganTransferPage() {
                     </td>
                     <td className="px-5 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <Link
-                          to={`/keuangan/transfer/detail/${encodeURIComponent(row.nomor)}`}
-                          className="inline-flex border border-zinc-300 bg-white items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100"
+                        <Button
+                          onClick={() => navigate(`/keuangan/transfer/detail/${encodeURIComponent(row.nomor)}`)}
+                          variant="outline"
+                          className="px-2 py-1 text-xs"
                           aria-label={`Lihat detail transfer ${row.nomor}`}
                         >
-                          <Eye className="h-3.5 w-3.5" aria-hidden />
+                          <Eye className="h-4 w-4" aria-hidden />
                           Detail
-                        </Link>
-                        <Link
-                          to={`/keuangan/transfer/ubah/${encodeURIComponent(row.nomor)}`}
-                          className="inline-flex border border-zinc-300 bg-white items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-brand-700 transition hover:bg-brand-50"
+                        </Button>
+                        <Button
+                          onClick={() => navigate(`/keuangan/transfer/ubah/${encodeURIComponent(row.nomor)}`)}
+                          variant="outline"
+                          className="px-2 py-1 text-xs"
                           aria-label={`Ubah transfer ${row.nomor}`}
                         >
-                          <Pencil className="h-3.5 w-3.5" aria-hidden />
+                          <Pencil className="h-4 w-4" aria-hidden />
                           Ubah
-                        </Link>
+                        </Button>
                       </div>
                     </td>
                   </tr>

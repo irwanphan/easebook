@@ -15,6 +15,7 @@ import {
 } from "@/data/barangJasa";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
 
 function toIsoDate(d: Date) {
   const y = d.getFullYear();
@@ -47,9 +48,6 @@ function formatWaktu(ts: number) {
     minute: "2-digit",
   });
 }
-
-const selectClass =
-  "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
 
 export function LaporanPergerakanStokPage() {
   const { items: barangItems, loading: barangLoading, refresh: refreshBarang } = useBarangJasa();
@@ -163,35 +161,32 @@ export function LaporanPergerakanStokPage() {
             <label htmlFor="lap-dari" className="block text-sm font-medium text-zinc-700">
               Tanggal mulai
             </label>
-            <input
+            <TokoInput
               id="lap-dari"
               type="date"
               value={tanggalDari}
               onChange={(e) => setTanggalDari(e.target.value)}
-              className={selectClass}
             />
           </div>
           <div>
             <label htmlFor="lap-sampai" className="block text-sm font-medium text-zinc-700">
               Tanggal akhir
             </label>
-            <input
+            <TokoInput
               id="lap-sampai"
               type="date"
               value={tanggalSampai}
               onChange={(e) => setTanggalSampai(e.target.value)}
-              className={selectClass}
             />
           </div>
           <div className="sm:col-span-2 lg:col-span-1">
             <label htmlFor="lap-brg" className="block text-sm font-medium text-zinc-700">
               Barang (opsional)
             </label>
-            <select
+            <TokoSelect
               id="lap-brg"
               value={filterBarang}
               onChange={(e) => setFilterBarang(e.target.value)}
-              className={selectClass}
               disabled={barangLoading}
             >
               <option value="">Semua barang &amp; jasa</option>
@@ -201,7 +196,7 @@ export function LaporanPergerakanStokPage() {
                   {b.tipe === "Barang" ? ` (stok ${b.stok ?? 0} ${getSatuanStokBarang(b)})` : ""}
                 </option>
               ))}
-            </select>
+            </TokoSelect>
           </div>
           <div className="flex sm:col-span-2 lg:col-span-1">
             <Button

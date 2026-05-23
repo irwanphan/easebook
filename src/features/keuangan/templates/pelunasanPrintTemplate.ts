@@ -3,6 +3,7 @@ import {
   buildSignatureBlockHtml,
   SIGNATURE_BLOCK_CSS,
   type SignatureColumn,
+  type SignatureMode,
 } from "@/features/keuangan/printSignature";
 import { escapeHtml, wrapPrintableDocument } from "@/lib/print";
 import {
@@ -54,6 +55,12 @@ export type PelunasanPrintConfig = {
   fakturNomorLabel: string;
   /** Optional blok tanda tangan untuk serah-terima uang. */
   signatures?: SignatureColumn[];
+  /**
+   * Mode signature. Default `"tanda-tangan"` (~47mm) untuk dokumen formal.
+   * Pakai `"paraf"` (~31mm) supaya signature lebih kompak & seluruh dokumen
+   * muat di satu halaman.
+   */
+  signatureMode?: SignatureMode;
 };
 
 function formatRupiah(n: number) {
@@ -253,7 +260,7 @@ function buildInvoiceBody(
       }
     </table>
 
-    ${signatures ? buildSignatureBlockHtml(signatures) : ""}
+    ${signatures ? buildSignatureBlockHtml(signatures, { mode: config.signatureMode }) : ""}
   `;
 }
 

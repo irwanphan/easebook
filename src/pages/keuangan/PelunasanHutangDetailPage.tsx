@@ -28,6 +28,7 @@ const PELUNASAN_HUTANG_PRINT_CONFIG: PelunasanPrintConfig = {
   fakturTitle: "Faktur pembelian yang dilunasi",
   fakturNomorLabel: "No. faktur pembelian",
   signatures: PELUNASAN_HUTANG_SIGNATURES,
+  signatureMode: "paraf",
 };
 
 function formatRupiah(n: number) {

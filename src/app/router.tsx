@@ -15,6 +15,10 @@ import { PenjualanPage } from "@/pages/PenjualanPage";
 import { TambahPenjualanPage } from "@/pages/TambahPenjualanPage";
 import { PenjualanDetailPage } from "@/pages/PenjualanDetailPage";
 import { UbahPenjualanPage } from "@/pages/UbahPenjualanPage";
+import { PesananPenjualanPage } from "@/pages/PesananPenjualanPage";
+import { TambahPesananPenjualanPage } from "@/pages/TambahPesananPenjualanPage";
+import { UbahPesananPenjualanPage } from "@/pages/UbahPesananPenjualanPage";
+import { PesananPenjualanDetailPage } from "@/pages/PesananPenjualanDetailPage";
 import { PembelianPage } from "@/pages/PembelianPage";
 import { PembelianDetailPage } from "@/pages/PembelianDetailPage";
 import { TambahPembelianPage } from "@/pages/TambahPembelianPage";
@@ -97,6 +101,10 @@ export const router = createHashRouter([
       { path: "penjualan/tambah", element: <TambahPenjualanPage /> },
       { path: "penjualan/detail/:nomor", element: <PenjualanDetailPage /> },
       { path: "penjualan/ubah/:nomor", element: <UbahPenjualanPage /> },
+      { path: "penjualan/pesanan/tambah", element: <TambahPesananPenjualanPage /> },
+      { path: "penjualan/pesanan/ubah/:nomor", element: <UbahPesananPenjualanPage /> },
+      { path: "penjualan/pesanan/detail/:nomor", element: <PesananPenjualanDetailPage /> },
+      { path: "penjualan/pesanan", element: <PesananPenjualanPage /> },
       { path: "penjualan", element: <PenjualanPage /> },
       { path: "pembelian/tambah", element: <TambahPembelianPage /> },
       { path: "pembelian/detail/:nomor", element: <PembelianDetailPage /> },

@@ -121,7 +121,7 @@ export function PembelianPage() {
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Pembelian"
-        // description="Faktur beli dari pemasok — tercatat di database lokal."
+        description="Faktur beli dari pemasok."
         actions={
           <Button
             type="button"

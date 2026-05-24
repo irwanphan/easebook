@@ -438,7 +438,7 @@ export function KoreksiStokPage() {
         </Link>
         <PageHeader
           title="Koreksi stok"
-          // description="Catat penyesuaian stok manual: stok opname, barang rusak/hilang/ditemukan, atau reklasifikasi. Satu dokumen = satu gudang, banyak baris campuran masuk/keluar."
+          description="Catat penyesuaian stok manual: stok opname, barang rusak/hilang/ditemukan, atau reklasifikasi. Satu dokumen = satu gudang, banyak baris campuran masuk/keluar."
         />
       </div>
 

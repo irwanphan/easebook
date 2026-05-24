@@ -88,7 +88,7 @@ export function PenjualanDetailPage() {
       <div className="mx-auto flex max-w-2xl flex-col gap-6">
         <PageHeader 
           title="Faktur tidak valid" 
-          // description="Nomor faktur tidak ada di URL." 
+          description="Faktur tidak valid." 
         />
         <Button type="button" variant="ghost" className="self-start" onClick={() => navigate("/penjualan")}>
           Kembali ke daftar

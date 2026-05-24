@@ -112,7 +112,7 @@ export function PembelianDetailPage() {
         </Link>
         <PageHeader
           title="Detail faktur pembelian"
-          // description={detail ? `Nomor ${detail.nomor}` : "Memuat data faktur…"}
+          description={detail ? `Nomor ${detail.nomor}` : "Memuat data faktur…"}
           actions={
             detail ? (
               <div className="flex flex-wrap items-center gap-2">

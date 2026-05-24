@@ -80,11 +80,11 @@ export function KartuStokBarangPage() {
         </Link>
         <PageHeader
           title="Kartu stok"
-          // description={
-          //   barang
-          //     ? `${barang.kode} — ${barang.nama} · riwayat masuk/keluar tercatat di sistem.`
-          //     : `Kode ${kode || "—"} · mutasi tercatat (nama barang tidak ditemukan di katalog saat ini).`
-          // }
+          description={
+            barang
+              ? `Riwayat masuk/keluar ${barang.kode} — ${barang.nama}.`
+              : `Kode ${kode || "—"} · mutasi tercatat (nama barang tidak ditemukan di katalog saat ini).`
+          }
         />
       </div>
 

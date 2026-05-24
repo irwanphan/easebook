@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { ListFilterBar } from "@/components/ui/ListFilterBar";
 import type { PenjualanListRow } from "@/data/penjualan";
+import type { PesananPenjualanListRow } from "@/data/pesananPenjualan";
 import { TransactionGateBanner } from "@/features/activation/TransactionGateBanner";
 import { useLicenseGate } from "@/features/activation/useLicenseGate";
 import { tauriErrorMessage } from "@/lib/tauriError";
@@ -64,6 +65,10 @@ export function PenjualanPage() {
   const [tanggalSampai, setTanggalSampai] = useState(INITIAL_TANGGAL_SAMPAI);
   const [query, setQuery] = useState("");
 
+  // Jumlah pesanan aktif (status Draft / belum difakturkan) untuk ditampilkan
+  // sebagai bubble pada tombol "Pesanan".
+  const [pesananAktif, setPesananAktif] = useState(0);
+
   const refresh = useCallback(async () => {
     setLoadError(null);
     try {
@@ -77,9 +82,21 @@ export function PenjualanPage() {
     }
   }, []);
 
+  const refreshPesananAktif = useCallback(async () => {
+    try {
+      const list = await invoke<PesananPenjualanListRow[]>(
+        "pesanan_penjualan_list",
+      );
+      setPesananAktif(list.filter((r) => r.status === "Draft").length);
+    } catch {
+      setPesananAktif(0);
+    }
+  }, []);
+
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+    void refreshPesananAktif();
+  }, [refresh, refreshPesananAktif]);
 
   const rentangInvalid = useMemo(() => {
     if (!tanggalDari || !tanggalSampai) return false;
@@ -124,14 +141,25 @@ export function PenjualanPage() {
         description="Faktur jual ke pelanggan"
         actions={
           <>
-            <Button
-              type="button"
-              disabled={!canCreateTransaction}
-              onClick={() => navigate("/penjualan/pesanan")}
-            >
-              <ClipboardList className="h-4 w-4" aria-hidden />
-              Pesanan
-            </Button>
+            <div className="relative inline-flex">
+              <Button
+                type="button"
+                disabled={!canCreateTransaction}
+                onClick={() => navigate("/penjualan/pesanan")}
+              >
+                <ClipboardList className="h-4 w-4" aria-hidden />
+                Pesanan
+              </Button>
+              {pesananAktif > 0 ? (
+                <span
+                  className="pointer-events-none absolute -right-2.5 -top-2.5 inline-flex p-2.5 h-4 w-4 items-center justify-center rounded-full border-2 border-white bg-rose-600 text-xs font-bold leading-none text-white shadow-sm"
+                  aria-label={`${pesananAktif} pesanan aktif menunggu difakturkan`}
+                  title={`${pesananAktif} pesanan aktif menunggu difakturkan`}
+                >
+                  {pesananAktif > 99 ? "99+" : pesananAktif}
+                </span>
+              ) : null}
+            </div>
             <Button
               type="button"
               disabled={!canCreateTransaction}

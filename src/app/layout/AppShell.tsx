@@ -15,7 +15,9 @@ function AppShellInner() {
   const navItems = filterNav(primaryNavEntries);
 
   return (
-    <div className="flex min-h-0 flex-1 bg-zinc-100 print:bg-white">
+    <div
+      className="fixed inset-0 flex min-h-0 w-full bg-zinc-100 print:static print:inset-auto print:h-auto print:min-h-0 print:bg-white"
+    >
       <SidebarNav items={navItems} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden print:overflow-visible">
         <main className="min-h-0 flex-1 overflow-y-auto p-6 lg:p-8 print:overflow-visible print:p-0">

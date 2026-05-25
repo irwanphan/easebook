@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ClipboardList, FileText, Plus } from "lucide-react";
+import { ClipboardList, FileText, Plus, Store } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { ListFilterBar } from "@/components/ui/ListFilterBar";
 import { VerticalSeparator } from "@/components/ui/Separator";
+import { openPOSWindow } from "@/lib/posWindow";
 import type { PenjualanListRow } from "@/data/penjualan";
 import type { PesananPenjualanListRow } from "@/data/pesananPenjualan";
 import { TransactionGateBanner } from "@/features/activation/TransactionGateBanner";
@@ -142,6 +143,21 @@ export function PenjualanPage() {
         description="Faktur jual ke pelanggan"
         actions={
           <>
+            <Button
+              type="button"
+              disabled={!canCreateTransaction}
+              variant="outline"
+              onClick={() => {
+                void openPOSWindow().catch((e) => {
+                  console.error("openPOSWindow failed", e);
+                });
+              }}
+              title="Buka kasir di window baru"
+            >
+              <Store className="h-4 w-4" aria-hidden />
+              Buka POS
+            </Button>
+            <VerticalSeparator />
             <div className="relative inline-flex">
               <Button
                 type="button"

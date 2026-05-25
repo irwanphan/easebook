@@ -1,8 +1,10 @@
 import { createHashRouter, Outlet } from "react-router-dom";
 import { AppShell } from "@/app/layout/AppShell";
+import { POSShell } from "@/app/layout/POSShell";
 import { AuthProvider } from "@/features/auth/AuthContext";
 import { RequireAuth } from "@/features/auth/RequireAuth";
 import { LoginPage } from "@/pages/LoginPage";
+import { POSPage } from "@/pages/pos/POSPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { BarangJasaPage } from "@/pages/BarangJasaPage";
 import { TambahBarangJasaPage } from "@/pages/TambahBarangJasaPage";
@@ -80,7 +82,7 @@ function AuthLayout() {
   );
 }
 
-export const router = createHashRouter([
+export const mainRouter = createHashRouter([
   {
     element: <AuthLayout />,
     children: [
@@ -168,3 +170,33 @@ export const router = createHashRouter([
     ],
   },
 ]);
+
+/**
+ * Router khusus window POS. Tidak memuat AppShell utama (sidebar) — hanya
+ * shell minimal supaya kasir punya layar penuh. Tetap melewati AuthLayout +
+ * RequireAuth supaya kasir wajib login (session di-share via SQLite).
+ */
+export const posRouter = createHashRouter([
+  {
+    element: <AuthLayout />,
+    children: [
+      { path: "login", element: <LoginPage /> },
+      {
+        element: <RequireAuth />,
+        children: [
+          {
+            path: "/",
+            element: <POSShell />,
+            children: [
+              { index: true, element: <POSPage /> },
+              { path: "pos", element: <POSPage /> },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+]);
+
+/** Backward-compat: beberapa file mungkin masih import { router }. */
+export const router = mainRouter;

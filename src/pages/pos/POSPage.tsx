@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, LogOut, Store, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Button } from "@/components/ui/Button";
@@ -96,6 +96,28 @@ function TransaksiSuksesDialog({
   result: PosTransaksiResult | null;
   onClose: () => void;
 }) {
+  const confirmBtnRef = useRef<HTMLButtonElement>(null);
+
+  // Saat dialog terbuka:
+  // - Auto-focus tombol "Transaksi baru" supaya Enter natural memicu klik.
+  // - Listener Enter sebagai safety bila fokus berpindah (mis. user klik di
+  //   panel dialog). Escape sudah ditangani oleh Modal.
+  useEffect(() => {
+    if (!open) return;
+    const id = window.setTimeout(() => confirmBtnRef.current?.focus(), 0);
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        onClose();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.clearTimeout(id);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open, onClose]);
+
   return (
     <Modal
       open={open}
@@ -104,8 +126,8 @@ function TransaksiSuksesDialog({
       panelClassName="max-w-sm"
       footer={
         <div className="flex items-center justify-end">
-          <Button type="button" onClick={onClose}>
-            Transaksi baru
+          <Button ref={confirmBtnRef} type="button" onClick={onClose}>
+            Transaksi baru (Tekan Enter)
           </Button>
         </div>
       }

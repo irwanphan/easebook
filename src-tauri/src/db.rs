@@ -354,6 +354,171 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     migrate_barang_jasa_satuan(conn)?;
     migrate_transfer_kas_tables(conn)?;
     migrate_activity_log_tables(conn)?;
+    migrate_pos_tables(conn)?;
+    Ok(())
+}
+
+/// Tabel POS: metode bayar, shift kasir, pembayaran multi-tender, retur.
+fn migrate_pos_tables(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        -- Metode bayar POS. Tiap metode menunjuk ke 1 akun kas/bank di
+        -- akun_keuangan. `is_tunai` menentukan apakah dihitung sebagai
+        -- arus kas fisik (untuk rekap selisih shift).
+        CREATE TABLE IF NOT EXISTS pos_metode_bayar (
+            kode TEXT PRIMARY KEY NOT NULL COLLATE NOCASE,
+            nama TEXT NOT NULL,
+            akun_kas_kode TEXT NOT NULL REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            urutan INTEGER NOT NULL DEFAULT 0,
+            is_tunai INTEGER NOT NULL DEFAULT 0,
+            aktif INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        -- Shift kasir. Modal awal disetor kasir saat buka shift (boleh
+        -- carry-over dari shift sebelumnya). Saat tutup shift, kasir input
+        -- `uang_akhir_aktual` (kas fisik di laci) lalu sistem hitung
+        -- selisih vs ekspektasi (modal_awal + masuk tunai - keluar tunai).
+        CREATE TABLE IF NOT EXISTS pos_shift (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kode TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            kasir_username TEXT NOT NULL REFERENCES pengguna(username) ON UPDATE CASCADE,
+            gudang_kode TEXT NOT NULL REFERENCES gudang(kode) ON UPDATE CASCADE,
+            modal_awal INTEGER NOT NULL DEFAULT 0,
+            uang_akhir_aktual INTEGER,
+            uang_akhir_ekspektasi INTEGER,
+            selisih INTEGER,
+            catatan TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'Open' CHECK (status IN ('Open', 'Closed')),
+            mulai_ts INTEGER NOT NULL,
+            selesai_ts INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pos_shift_kasir ON pos_shift(kasir_username, status);
+        CREATE INDEX IF NOT EXISTS idx_pos_shift_status ON pos_shift(status, mulai_ts);
+
+        -- Multi pembayaran per faktur penjualan (mendukung split tender:
+        -- mis. tunai + transfer). Untuk faktur non-POS, tabel ini boleh
+        -- kosong; sumber kebenaran tetap di `penjualan.akun_kas_kode` +
+        -- `penjualan.total`.
+        CREATE TABLE IF NOT EXISTS penjualan_pembayaran (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            penjualan_nomor TEXT NOT NULL REFERENCES penjualan(nomor) ON DELETE CASCADE ON UPDATE CASCADE,
+            metode_kode TEXT REFERENCES pos_metode_bayar(kode) ON UPDATE CASCADE,
+            akun_kas_kode TEXT NOT NULL REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            jumlah INTEGER NOT NULL,
+            ref_no TEXT NOT NULL DEFAULT '',
+            shift_id INTEGER REFERENCES pos_shift(id) ON DELETE SET NULL ON UPDATE CASCADE,
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_penjualan_pembayaran_nomor ON penjualan_pembayaran(penjualan_nomor);
+        CREATE INDEX IF NOT EXISTS idx_penjualan_pembayaran_shift ON penjualan_pembayaran(shift_id);
+
+        -- Retur penjualan (umum, bukan eksklusif POS; tapi dibuat-dengan-POS
+        -- akan diisi shift_id). Reverse stok + reverse jurnal pendapatan +
+        -- arus kas refund via metode bayar yang dipilih.
+        CREATE TABLE IF NOT EXISTS retur_penjualan (
+            nomor TEXT PRIMARY KEY NOT NULL,
+            penjualan_nomor TEXT NOT NULL REFERENCES penjualan(nomor) ON UPDATE CASCADE,
+            tanggal TEXT NOT NULL,
+            kasir_username TEXT NOT NULL REFERENCES pengguna(username) ON UPDATE CASCADE,
+            gudang_kode TEXT NOT NULL REFERENCES gudang(kode) ON UPDATE CASCADE,
+            shift_id INTEGER REFERENCES pos_shift(id) ON DELETE SET NULL ON UPDATE CASCADE,
+            total INTEGER NOT NULL,
+            alasan TEXT NOT NULL DEFAULT '',
+            metode_refund_kode TEXT REFERENCES pos_metode_bayar(kode) ON UPDATE CASCADE,
+            akun_kas_refund TEXT REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS retur_penjualan_line (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            retur_nomor TEXT NOT NULL REFERENCES retur_penjualan(nomor) ON DELETE CASCADE ON UPDATE CASCADE,
+            barang_kode TEXT NOT NULL REFERENCES barang_jasa(kode) ON UPDATE CASCADE,
+            qty INTEGER NOT NULL,
+            satuan_tingkat INTEGER NOT NULL DEFAULT 1,
+            harga_satuan INTEGER NOT NULL,
+            subtotal INTEGER NOT NULL,
+            catatan TEXT NOT NULL DEFAULT ''
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_retur_penjualan_tgl ON retur_penjualan(tanggal);
+        CREATE INDEX IF NOT EXISTS idx_retur_penjualan_pj ON retur_penjualan(penjualan_nomor);
+        CREATE INDEX IF NOT EXISTS idx_retur_penjualan_shift ON retur_penjualan(shift_id);
+        CREATE INDEX IF NOT EXISTS idx_retur_penjualan_line_nomor ON retur_penjualan_line(retur_nomor);
+        ",
+    )?;
+
+    seed_pelanggan_walkin(conn)?;
+    seed_pos_metode_bayar(conn)?;
+    Ok(())
+}
+
+/// Pelanggan default untuk transaksi walk-in di POS. Dibutuhkan karena
+/// FK pelanggan_kode di penjualan adalah NOT NULL.
+fn seed_pelanggan_walkin(conn: &Connection) -> rusqlite::Result<()> {
+    let ts = now_ts();
+    conn.execute(
+        "INSERT OR IGNORE INTO pelanggan (kode, nama, alamat, kota, telepon, email, npwp, catatan, created_at, updated_at)
+         VALUES ('GUEST', 'Pelanggan Umum', '', '', '', '', '', 'Pelanggan default untuk transaksi POS walk-in.', ?, ?)",
+        params![ts, ts],
+    )?;
+    Ok(())
+}
+
+/// Seed metode bayar POS default. Hanya dijalankan saat tabel kosong.
+/// Memilih akun kas dari akun_keuangan: pertama yang is_akun_kas=1.
+fn seed_pos_metode_bayar(conn: &Connection) -> rusqlite::Result<()> {
+    let n: i64 = conn.query_row("SELECT COUNT(*) FROM pos_metode_bayar", [], |r| r.get(0))?;
+    if n > 0 {
+        return Ok(());
+    }
+    let akun_tunai: Option<String> = conn
+        .query_row(
+            "SELECT kode FROM akun_keuangan WHERE is_akun_kas = 1 AND lower(nama) LIKE '%tunai%' ORDER BY kode LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .ok()
+        .or_else(|| {
+            conn.query_row(
+                "SELECT kode FROM akun_keuangan WHERE is_akun_kas = 1 ORDER BY kode LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .ok()
+        });
+    let akun_bank: Option<String> = conn
+        .query_row(
+            "SELECT kode FROM akun_keuangan WHERE is_akun_kas = 1 AND lower(nama) NOT LIKE '%tunai%' ORDER BY kode LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .ok()
+        .or_else(|| akun_tunai.clone());
+
+    let ts = now_ts();
+    let pairs: Vec<(&str, &str, &Option<String>, i64, i64)> = vec![
+        ("TUNAI", "Tunai", &akun_tunai, 1, 1),
+        ("TRANSFER", "Transfer Bank", &akun_bank, 2, 0),
+        ("DEBIT", "Kartu Debit/EDC", &akun_bank, 3, 0),
+        ("QRIS", "QRIS", &akun_bank, 4, 0),
+    ];
+    for (kode, nama, akun, urutan, is_tunai) in pairs {
+        let Some(akun_kode) = akun else {
+            continue;
+        };
+        conn.execute(
+            "INSERT INTO pos_metode_bayar (kode, nama, akun_kas_kode, urutan, is_tunai, aktif, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
+            params![kode, nama, akun_kode, urutan, is_tunai, ts, ts],
+        )?;
+    }
     Ok(())
 }
 

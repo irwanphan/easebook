@@ -19,6 +19,7 @@ export const halamanAksesGroups: HalamanAksesGroup[] = [
     pages: [
       { key: "dashboard", label: "Dashboard", pathPattern: "" },
       { key: "pengaturan", label: "Pengaturan", pathPattern: "pengaturan" },
+      { key: "pos", label: "Kasir POS", pathPattern: "pos" },
     ],
   },
   {

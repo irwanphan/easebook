@@ -194,6 +194,45 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_pesanan_penjualan_status ON pesanan_penjualan(status);
         CREATE INDEX IF NOT EXISTS idx_pesanan_penjualan_line_nomor ON pesanan_penjualan_line(nomor);
 
+        -- Pesanan pembelian (Purchase Order)
+        --
+        -- Mirror dari pesanan_penjualan tapi untuk sisi pembelian. PO TIDAK
+        -- menambah stok dan TIDAK posting jurnal. Begitu barang diterima,
+        -- pesanan dikonversi menjadi faktur pembelian (stok ditambah + jurnal
+        -- diposting saat konversi). `faktur_nomor` menunjuk faktur hasil
+        -- konversi setelah status `Difakturkan`.
+        CREATE TABLE IF NOT EXISTS pesanan_pembelian (
+            nomor TEXT PRIMARY KEY NOT NULL,
+            pemasok_kode TEXT NOT NULL REFERENCES pemasok(kode) ON UPDATE CASCADE,
+            gudang_kode TEXT NOT NULL REFERENCES gudang(kode) ON UPDATE CASCADE,
+            tanggal_pesanan TEXT NOT NULL,
+            tanggal_kirim TEXT,
+            catatan TEXT NOT NULL DEFAULT '',
+            diskon_faktur INTEGER NOT NULL DEFAULT 0,
+            pajak INTEGER NOT NULL DEFAULT 0,
+            total INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'Draft',
+            faktur_nomor TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS pesanan_pembelian_line (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nomor TEXT NOT NULL REFERENCES pesanan_pembelian(nomor) ON DELETE CASCADE ON UPDATE CASCADE,
+            barang_kode TEXT NOT NULL REFERENCES barang_jasa(kode) ON UPDATE CASCADE,
+            qty INTEGER NOT NULL,
+            satuan_tingkat INTEGER NOT NULL DEFAULT 1,
+            harga_satuan INTEGER NOT NULL,
+            diskon INTEGER NOT NULL DEFAULT 0,
+            subtotal INTEGER NOT NULL,
+            catatan TEXT NOT NULL DEFAULT ''
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pesanan_pembelian_tgl ON pesanan_pembelian(tanggal_pesanan);
+        CREATE INDEX IF NOT EXISTS idx_pesanan_pembelian_status ON pesanan_pembelian(status);
+        CREATE INDEX IF NOT EXISTS idx_pesanan_pembelian_line_nomor ON pesanan_pembelian_line(nomor);
+
         CREATE TABLE IF NOT EXISTS stok_mutasi (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             waktu INTEGER NOT NULL,

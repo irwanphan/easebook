@@ -23,6 +23,10 @@ import { PembelianPage } from "@/pages/PembelianPage";
 import { PembelianDetailPage } from "@/pages/PembelianDetailPage";
 import { TambahPembelianPage } from "@/pages/TambahPembelianPage";
 import { UbahPembelianPage } from "@/pages/UbahPembelianPage";
+import { PesananPembelianPage } from "@/pages/PesananPembelianPage";
+import { TambahPesananPembelianPage } from "@/pages/TambahPesananPembelianPage";
+import { UbahPesananPembelianPage } from "@/pages/UbahPesananPembelianPage";
+import { PesananPembelianDetailPage } from "@/pages/PesananPembelianDetailPage";
 import { PengaturanPage } from "@/pages/PengaturanPage";
 import { KategoriGrupPage } from "@/pages/manajemen/KategoriGrupPage";
 import { TambahKategoriGrupPage } from "@/pages/manajemen/TambahKategoriGrupPage";
@@ -109,6 +113,10 @@ export const router = createHashRouter([
       { path: "pembelian/tambah", element: <TambahPembelianPage /> },
       { path: "pembelian/detail/:nomor", element: <PembelianDetailPage /> },
       { path: "pembelian/ubah/:nomor", element: <UbahPembelianPage /> },
+      { path: "pembelian/pesanan/tambah", element: <TambahPesananPembelianPage /> },
+      { path: "pembelian/pesanan/ubah/:nomor", element: <UbahPesananPembelianPage /> },
+      { path: "pembelian/pesanan/detail/:nomor", element: <PesananPembelianDetailPage /> },
+      { path: "pembelian/pesanan", element: <PesananPembelianPage /> },
       { path: "pembelian", element: <PembelianPage /> },
       { path: "manajemen/kategori", element: <KategoriGrupPage /> },
       { path: "manajemen/kategori/tambah", element: <TambahKategoriGrupPage /> },

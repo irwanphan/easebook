@@ -9483,3 +9483,714 @@ pub fn pesanan_penjualan_konversi_ke_faktur(
     tx.commit().map_err(|e| e.to_string())?;
     Ok(nomor_faktur)
 }
+
+// --- Pesanan pembelian (Purchase Order) ----------------------------------
+//
+// Mirror dari pesanan_penjualan untuk sisi pembelian. PO TIDAK menambah
+// stok dan TIDAK posting jurnal — efek akuntansi & inventory baru terjadi
+// saat PO dikonversi menjadi faktur pembelian.
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PesananPembelianListRow {
+    pub nomor: String,
+    pub tanggal_pesanan: String,
+    pub tanggal_kirim: Option<String>,
+    pub pemasok_kode: String,
+    pub pemasok_nama: String,
+    pub total: i64,
+    pub status: String,
+    pub faktur_nomor: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PesananPembelianDetailLine {
+    pub barang_kode: String,
+    pub barang_nama: String,
+    pub qty: i64,
+    pub satuan_tingkat: u8,
+    pub satuan_nama: String,
+    pub harga_satuan: i64,
+    pub diskon: i64,
+    pub subtotal: i64,
+    pub catatan: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PesananPembelianDetail {
+    pub nomor: String,
+    pub pemasok_kode: String,
+    pub pemasok_nama: String,
+    pub gudang_kode: String,
+    pub gudang_nama: String,
+    pub tanggal_pesanan: String,
+    pub tanggal_kirim: Option<String>,
+    pub catatan: String,
+    pub subtotal_barang: i64,
+    pub diskon_faktur: i64,
+    pub pajak: i64,
+    pub total: i64,
+    pub status: String,
+    pub faktur_nomor: Option<String>,
+    pub lines: Vec<PesananPembelianDetailLine>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PesananPembelianLineInput {
+    pub barang_kode: String,
+    pub qty: i64,
+    pub harga_satuan: i64,
+    #[serde(default)]
+    pub diskon: i64,
+    #[serde(default = "default_satuan_tingkat_line")]
+    pub satuan_tingkat: u8,
+    #[serde(default)]
+    pub catatan: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PesananPembelianInsertPayload {
+    pub pemasok_kode: String,
+    pub gudang_kode: String,
+    pub tanggal_pesanan: String,
+    #[serde(default)]
+    pub tanggal_kirim: Option<String>,
+    pub catatan: String,
+    #[serde(default)]
+    pub diskon_faktur: i64,
+    #[serde(default)]
+    pub pajak: i64,
+    pub lines: Vec<PesananPembelianLineInput>,
+}
+
+/// Payload override saat konversi pesanan pembelian → faktur pembelian.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PesananPembelianKonversiPayload {
+    pub tanggal_faktur: String,
+    pub jatuh_tempo: String,
+    pub metode_pembayaran: String,
+    #[serde(default)]
+    pub akun_kas_kode: Option<String>,
+}
+
+fn pesanan_pembelian_validate_and_total(
+    payload: &PesananPembelianInsertPayload,
+) -> Result<(NaiveDate, Option<NaiveDate>, i64, i64, i64, i64), String> {
+    let pemasok_kode = payload.pemasok_kode.trim();
+    let gudang_kode = payload.gudang_kode.trim();
+    if pemasok_kode.is_empty() {
+        return Err("Pemasok wajib dipilih.".into());
+    }
+    if gudang_kode.is_empty() {
+        return Err("Gudang wajib dipilih.".into());
+    }
+    let tgl = NaiveDate::parse_from_str(payload.tanggal_pesanan.trim(), "%Y-%m-%d")
+        .map_err(|_| "Tanggal pesanan tidak valid (YYYY-MM-DD).".to_string())?;
+    let tgl_kirim = match payload.tanggal_kirim.as_deref().map(|s| s.trim()) {
+        None | Some("") => None,
+        Some(s) => Some(
+            NaiveDate::parse_from_str(s, "%Y-%m-%d")
+                .map_err(|_| "Target tanggal terima tidak valid (YYYY-MM-DD).".to_string())?,
+        ),
+    };
+    if let Some(tk) = tgl_kirim {
+        if tk < tgl {
+            return Err("Target tanggal terima tidak boleh sebelum tanggal pesanan.".into());
+        }
+    }
+    if payload.lines.is_empty() {
+        return Err("Minimal satu baris item harus diisi.".into());
+    }
+
+    let mut sub_barang: i64 = 0;
+    for (idx, line) in payload.lines.iter().enumerate() {
+        let no = idx + 1;
+        if line.barang_kode.trim().is_empty() {
+            return Err(format!("Baris {no}: kode barang kosong."));
+        }
+        if line.qty <= 0 {
+            return Err(format!("Baris {no}: qty harus > 0."));
+        }
+        if line.harga_satuan < 0 {
+            return Err(format!("Baris {no}: harga satuan tidak valid."));
+        }
+        if line.diskon < 0 {
+            return Err(format!("Baris {no}: diskon tidak valid."));
+        }
+        if line.diskon > line.harga_satuan {
+            return Err(format!(
+                "Baris {no}: diskon per satuan tidak boleh melebihi harga satuan."
+            ));
+        }
+        let sub = pembelian_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
+        sub_barang = sub_barang
+            .checked_add(sub)
+            .ok_or_else(|| "Subtotal barang melimpahi batas.".to_string())?;
+    }
+
+    let diskon_faktur = payload.diskon_faktur.max(0);
+    let pajak = payload.pajak.max(0);
+    if diskon_faktur > sub_barang {
+        return Err("Diskon faktur tidak boleh melebihi subtotal barang.".into());
+    }
+    let total = pembelian_faktur_total(sub_barang, diskon_faktur, pajak)?;
+    Ok((tgl, tgl_kirim, sub_barang, diskon_faktur, pajak, total))
+}
+
+#[tauri::command]
+pub fn pesanan_pembelian_list(
+    state: State<DbState>,
+) -> Result<Vec<PesananPembelianListRow>, String> {
+    with_conn(&state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT p.nomor, p.tanggal_pesanan, p.tanggal_kirim, p.pemasok_kode,
+                    COALESCE(s.nama, p.pemasok_kode) AS pemasok_nama,
+                    p.total, p.status, p.faktur_nomor
+             FROM pesanan_pembelian p
+             LEFT JOIN pemasok s ON lower(s.kode) = lower(p.pemasok_kode)
+             ORDER BY p.tanggal_pesanan DESC, p.created_at DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(PesananPembelianListRow {
+                    nomor: r.get(0)?,
+                    tanggal_pesanan: r.get(1)?,
+                    tanggal_kirim: r.get(2)?,
+                    pemasok_kode: r.get(3)?,
+                    pemasok_nama: r.get(4)?,
+                    total: r.get(5)?,
+                    status: r.get(6)?,
+                    faktur_nomor: r.get(7)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    })
+}
+
+#[tauri::command]
+pub fn pesanan_pembelian_detail(
+    state: State<DbState>,
+    nomor: String,
+) -> Result<PesananPembelianDetail, String> {
+    let nomor = nomor.trim().to_string();
+    if nomor.is_empty() {
+        return Err("Nomor pesanan tidak valid.".into());
+    }
+    with_conn_app(&state, |conn| {
+        let header = conn
+            .query_row(
+                "SELECT pemasok_kode, gudang_kode, tanggal_pesanan, tanggal_kirim, catatan,
+                        diskon_faktur, pajak, total, status, faktur_nomor
+                 FROM pesanan_pembelian WHERE nomor = ?",
+                params![&nomor],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, Option<String>>(3)?,
+                        r.get::<_, String>(4)?,
+                        r.get::<_, i64>(5)?,
+                        r.get::<_, i64>(6)?,
+                        r.get::<_, i64>(7)?,
+                        r.get::<_, String>(8)?,
+                        r.get::<_, Option<String>>(9)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        let (
+            pemasok_kode,
+            gudang_kode,
+            tanggal_pesanan,
+            tanggal_kirim,
+            catatan,
+            diskon_faktur,
+            pajak,
+            total,
+            status,
+            faktur_nomor,
+        ) = header.ok_or_else(|| "Pesanan pembelian tidak ditemukan.".to_string())?;
+
+        let pemasok_nama: String = conn
+            .query_row(
+                "SELECT nama FROM pemasok WHERE lower(kode) = lower(?)",
+                params![&pemasok_kode],
+                |r| r.get(0),
+            )
+            .unwrap_or_else(|_| pemasok_kode.clone());
+        let gudang_nama: String = conn
+            .query_row(
+                "SELECT nama FROM gudang WHERE lower(kode) = lower(?)",
+                params![&gudang_kode],
+                |r| r.get(0),
+            )
+            .unwrap_or_else(|_| gudang_kode.clone());
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT l.barang_kode, COALESCE(b.nama, l.barang_kode) AS barang_nama,
+                        l.qty, l.satuan_tingkat, l.harga_satuan, l.diskon, l.subtotal, l.catatan
+                 FROM pesanan_pembelian_line l
+                 LEFT JOIN barang_jasa b ON lower(b.kode) = lower(l.barang_kode)
+                 WHERE l.nomor = ?
+                 ORDER BY l.id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![&nomor], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, u8>(3)?,
+                    r.get::<_, i64>(4)?,
+                    r.get::<_, i64>(5)?,
+                    r.get::<_, i64>(6)?,
+                    r.get::<_, String>(7)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| e.to_string())?;
+
+        let mut lines: Vec<PesananPembelianDetailLine> = Vec::with_capacity(rows.len());
+        let mut subtotal_barang: i64 = 0;
+        for (kode_b, nama_b, qty, satuan_tingkat, harga, diskon, sub, catatan_line) in rows {
+            let satuan_nama = barang_satuan_nama(conn, &kode_b, satuan_tingkat)
+                .unwrap_or_else(|_| String::new());
+            subtotal_barang = subtotal_barang.saturating_add(sub);
+            lines.push(PesananPembelianDetailLine {
+                barang_kode: kode_b,
+                barang_nama: nama_b,
+                qty,
+                satuan_tingkat,
+                satuan_nama,
+                harga_satuan: harga,
+                diskon,
+                subtotal: sub,
+                catatan: catatan_line,
+            });
+        }
+
+        Ok(PesananPembelianDetail {
+            nomor,
+            pemasok_kode,
+            pemasok_nama,
+            gudang_kode,
+            gudang_nama,
+            tanggal_pesanan,
+            tanggal_kirim,
+            catatan,
+            subtotal_barang,
+            diskon_faktur,
+            pajak,
+            total,
+            status,
+            faktur_nomor,
+            lines,
+        })
+    })
+}
+
+#[tauri::command]
+pub fn pesanan_pembelian_insert(
+    app: tauri::AppHandle,
+    state: State<DbState>,
+    payload: PesananPembelianInsertPayload,
+) -> Result<String, String> {
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    crate::activation::assert_can_create_transaction(&app, &conn)?;
+
+    let (tgl, tgl_kirim, _sub, diskon_faktur, pajak, total) =
+        pesanan_pembelian_validate_and_total(&payload)?;
+    let pemasok_kode = payload.pemasok_kode.trim();
+    let gudang_kode = payload.gudang_kode.trim();
+    let catatan = payload.catatan.trim();
+    let nomor = format!("PO-{}", Utc::now().timestamp_millis());
+    let ts = now_ts();
+    let tanggal_str = tgl.format("%Y-%m-%d").to_string();
+    let tanggal_kirim_str = tgl_kirim.map(|d| d.format("%Y-%m-%d").to_string());
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "INSERT INTO pesanan_pembelian (nomor, pemasok_kode, gudang_kode, tanggal_pesanan,
+            tanggal_kirim, catatan, diskon_faktur, pajak, total, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
+            &nomor,
+            pemasok_kode,
+            gudang_kode,
+            tanggal_str,
+            tanggal_kirim_str.as_deref(),
+            catatan,
+            diskon_faktur,
+            pajak,
+            total,
+            PESANAN_STATUS_DRAFT,
+            ts,
+            ts
+        ],
+    )
+    .map_err(|e| {
+        if e.to_string().contains("FOREIGN KEY") {
+            "Pemasok atau gudang tidak ditemukan.".into()
+        } else if e.to_string().contains("UNIQUE") {
+            "Nomor pesanan bentrok — coba simpan lagi.".into()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    for line in &payload.lines {
+        let kode_b = line.barang_kode.trim();
+        let sub = pembelian_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
+        tx.execute(
+            "INSERT INTO pesanan_pembelian_line (nomor, barang_kode, qty, satuan_tingkat,
+                harga_satuan, diskon, subtotal, catatan)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &nomor,
+                kode_b,
+                line.qty,
+                line.satuan_tingkat,
+                line.harga_satuan,
+                line.diskon,
+                sub,
+                line.catatan.trim()
+            ],
+        )
+        .map_err(|e| {
+            if e.to_string().contains("FOREIGN KEY") {
+                "Salah satu kode barang tidak ditemukan.".into()
+            } else {
+                e.to_string()
+            }
+        })?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(nomor)
+}
+
+#[tauri::command]
+pub fn pesanan_pembelian_update(
+    state: State<DbState>,
+    nomor: String,
+    payload: PesananPembelianInsertPayload,
+) -> Result<(), String> {
+    let nomor = nomor.trim().to_string();
+    if nomor.is_empty() {
+        return Err("Nomor pesanan tidak valid.".into());
+    }
+    let (tgl, tgl_kirim, _sub, diskon_faktur, pajak, total) =
+        pesanan_pembelian_validate_and_total(&payload)?;
+    let pemasok_kode = payload.pemasok_kode.trim();
+    let gudang_kode = payload.gudang_kode.trim();
+    let catatan = payload.catatan.trim();
+    let tanggal_str = tgl.format("%Y-%m-%d").to_string();
+    let tanggal_kirim_str = tgl_kirim.map(|d| d.format("%Y-%m-%d").to_string());
+    let ts = now_ts();
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let (status, faktur_nomor): (String, Option<String>) = tx
+        .query_row(
+            "SELECT status, faktur_nomor FROM pesanan_pembelian WHERE nomor = ?",
+            params![&nomor],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|_| "Pesanan pembelian tidak ditemukan.".to_string())?;
+    if status != PESANAN_STATUS_DRAFT {
+        let lanjutan = match status.as_str() {
+            PESANAN_STATUS_DIFAKTURKAN => faktur_nomor
+                .map(|n| format!(" (faktur {n})"))
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
+        return Err(format!(
+            "Pesanan sudah berstatus {status}{lanjutan} dan tidak dapat diubah lagi."
+        ));
+    }
+
+    tx.execute(
+        "UPDATE pesanan_pembelian SET pemasok_kode = ?, gudang_kode = ?, tanggal_pesanan = ?,
+            tanggal_kirim = ?, catatan = ?, diskon_faktur = ?, pajak = ?, total = ?, updated_at = ?
+         WHERE nomor = ?",
+        params![
+            pemasok_kode,
+            gudang_kode,
+            tanggal_str,
+            tanggal_kirim_str.as_deref(),
+            catatan,
+            diskon_faktur,
+            pajak,
+            total,
+            ts,
+            &nomor
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "DELETE FROM pesanan_pembelian_line WHERE nomor = ?",
+        params![&nomor],
+    )
+    .map_err(|e| e.to_string())?;
+
+    for line in &payload.lines {
+        let kode_b = line.barang_kode.trim();
+        let sub = pembelian_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
+        tx.execute(
+            "INSERT INTO pesanan_pembelian_line (nomor, barang_kode, qty, satuan_tingkat,
+                harga_satuan, diskon, subtotal, catatan)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &nomor,
+                kode_b,
+                line.qty,
+                line.satuan_tingkat,
+                line.harga_satuan,
+                line.diskon,
+                sub,
+                line.catatan.trim()
+            ],
+        )
+        .map_err(|e| {
+            if e.to_string().contains("FOREIGN KEY") {
+                "Salah satu kode barang tidak ditemukan.".into()
+            } else {
+                e.to_string()
+            }
+        })?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pesanan_pembelian_delete(state: State<DbState>, nomor: String) -> Result<(), String> {
+    let nomor = nomor.trim().to_string();
+    if nomor.is_empty() {
+        return Err("Nomor pesanan tidak valid.".into());
+    }
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let status: String = tx
+        .query_row(
+            "SELECT status FROM pesanan_pembelian WHERE nomor = ?",
+            params![&nomor],
+            |r| r.get(0),
+        )
+        .map_err(|_| "Pesanan pembelian tidak ditemukan.".to_string())?;
+    if status == PESANAN_STATUS_DIFAKTURKAN {
+        return Err(
+            "Pesanan sudah difakturkan — silakan batalkan faktur pembeliannya dulu jika ingin menghapus pesanan.".into(),
+        );
+    }
+    tx.execute("DELETE FROM pesanan_pembelian WHERE nomor = ?", params![&nomor])
+        .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pesanan_pembelian_batalkan(state: State<DbState>, nomor: String) -> Result<(), String> {
+    let nomor = nomor.trim().to_string();
+    if nomor.is_empty() {
+        return Err("Nomor pesanan tidak valid.".into());
+    }
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let status: String = tx
+        .query_row(
+            "SELECT status FROM pesanan_pembelian WHERE nomor = ?",
+            params![&nomor],
+            |r| r.get(0),
+        )
+        .map_err(|_| "Pesanan pembelian tidak ditemukan.".to_string())?;
+    if status == PESANAN_STATUS_DIFAKTURKAN {
+        return Err("Pesanan sudah difakturkan dan tidak dapat dibatalkan.".into());
+    }
+    if status == PESANAN_STATUS_DIBATALKAN {
+        return Err("Pesanan sudah dibatalkan sebelumnya.".into());
+    }
+    let ts = now_ts();
+    tx.execute(
+        "UPDATE pesanan_pembelian SET status = ?, updated_at = ? WHERE nomor = ?",
+        params![PESANAN_STATUS_DIBATALKAN, ts, &nomor],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pesanan_pembelian_konversi_ke_faktur(
+    app: tauri::AppHandle,
+    state: State<DbState>,
+    nomor: String,
+    payload: PesananPembelianKonversiPayload,
+) -> Result<String, String> {
+    let nomor = nomor.trim().to_string();
+    if nomor.is_empty() {
+        return Err("Nomor pesanan tidak valid.".into());
+    }
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    crate::activation::assert_can_create_transaction(&app, &conn)?;
+
+    let tgl_faktur = NaiveDate::parse_from_str(payload.tanggal_faktur.trim(), "%Y-%m-%d")
+        .map_err(|_| "Tanggal faktur tidak valid (YYYY-MM-DD).".to_string())?;
+    let tgl_jt = NaiveDate::parse_from_str(payload.jatuh_tempo.trim(), "%Y-%m-%d")
+        .map_err(|_| "Jatuh tempo tidak valid (YYYY-MM-DD).".to_string())?;
+    if tgl_jt < tgl_faktur {
+        return Err("Jatuh tempo tidak boleh sebelum tanggal faktur.".into());
+    }
+    let metode = payload.metode_pembayaran.trim();
+    if metode.is_empty() {
+        return Err("Metode pembayaran wajib dipilih.".into());
+    }
+    let tanggal_faktur = tgl_faktur.format("%Y-%m-%d").to_string();
+    let jatuh_tempo = tgl_jt.format("%Y-%m-%d").to_string();
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let (pemasok_kode, gudang_kode, diskon_faktur, pajak, total, status): (
+        String,
+        String,
+        i64,
+        i64,
+        i64,
+        String,
+    ) = tx
+        .query_row(
+            "SELECT pemasok_kode, gudang_kode, diskon_faktur, pajak, total, status
+             FROM pesanan_pembelian WHERE nomor = ?",
+            params![&nomor],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+        )
+        .map_err(|_| "Pesanan pembelian tidak ditemukan.".to_string())?;
+    if status == PESANAN_STATUS_DIFAKTURKAN {
+        return Err("Pesanan sudah difakturkan sebelumnya.".into());
+    }
+    if status == PESANAN_STATUS_DIBATALKAN {
+        return Err("Pesanan sudah dibatalkan — tidak bisa difakturkan.".into());
+    }
+
+    let akun_kas_kode = pembelian_normalize_akun_kas(&payload.akun_kas_kode);
+
+    let mut stmt = tx
+        .prepare(
+            "SELECT barang_kode, qty, satuan_tingkat, harga_satuan, diskon
+             FROM pesanan_pembelian_line WHERE nomor = ? ORDER BY id ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let lines: Vec<(String, i64, u8, i64, i64)> = stmt
+        .query_map(params![&nomor], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, u8>(2)?,
+                r.get::<_, i64>(3)?,
+                r.get::<_, i64>(4)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())?;
+    drop(stmt);
+    if lines.is_empty() {
+        return Err("Pesanan tidak punya baris item.".into());
+    }
+
+    // Bikin faktur pembelian (mirror logika `pembelian_insert`).
+    let nomor_faktur = format!("FB-{}", Utc::now().timestamp_millis());
+    let ts = now_ts();
+
+    tx.execute(
+        "INSERT INTO pembelian (nomor, pemasok_kode, gudang_kode, tanggal_faktur, jatuh_tempo,
+            metode_pembayaran, diskon_faktur, pajak, akun_kas_kode, total, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Dipesan', ?, ?)",
+        params![
+            &nomor_faktur,
+            &pemasok_kode,
+            &gudang_kode,
+            &tanggal_faktur,
+            &jatuh_tempo,
+            metode,
+            diskon_faktur,
+            pajak,
+            akun_kas_kode.as_deref(),
+            total,
+            ts,
+            ts
+        ],
+    )
+    .map_err(|e| {
+        if e.to_string().contains("FOREIGN KEY") {
+            "Pemasok, gudang, atau akun kas tidak ditemukan.".into()
+        } else if e.to_string().contains("UNIQUE") {
+            "Nomor faktur bentrok — coba lagi.".into()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    for (kode_b, qty, satuan_tingkat, harga_satuan, diskon) in &lines {
+        let sub = pembelian_line_subtotal(*qty, *harga_satuan, *diskon)?;
+        tx.execute(
+            "INSERT INTO pembelian_line (nomor, barang_kode, qty, satuan_tingkat, harga_satuan, diskon, subtotal)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &nomor_faktur,
+                kode_b.trim(),
+                qty,
+                satuan_tingkat,
+                harga_satuan,
+                diskon,
+                sub
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        pembelian_tx_apply_barang_stok(
+            &tx,
+            &nomor_faktur,
+            kode_b.trim(),
+            *qty,
+            *satuan_tingkat,
+            &gudang_kode,
+            &tanggal_faktur,
+            ts,
+            ts,
+        )?;
+    }
+
+    pembelian_tx_post_jurnal(
+        &tx,
+        &tanggal_faktur,
+        &nomor_faktur,
+        &pemasok_kode,
+        total,
+        akun_kas_kode.as_deref(),
+        ts,
+    )?;
+
+    tx.execute(
+        "UPDATE pesanan_pembelian SET status = ?, faktur_nomor = ?, updated_at = ? WHERE nomor = ?",
+        params![PESANAN_STATUS_DIFAKTURKAN, &nomor_faktur, ts, &nomor],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(nomor_faktur)
+}

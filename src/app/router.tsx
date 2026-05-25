@@ -30,10 +30,13 @@ import { PesananPembelianDetailPage } from "@/pages/PesananPembelianDetailPage";
 import { PengaturanPage } from "@/pages/PengaturanPage";
 import { KategoriGrupPage } from "@/pages/manajemen/KategoriGrupPage";
 import { TambahKategoriGrupPage } from "@/pages/manajemen/TambahKategoriGrupPage";
+import { UbahKategoriGrupPage } from "@/pages/manajemen/UbahKategoriGrupPage";
 import { MerekPage } from "@/pages/manajemen/MerekPage";
 import { TambahMerekPage } from "@/pages/manajemen/TambahMerekPage";
+import { UbahMerekPage } from "@/pages/manajemen/UbahMerekPage";
 import { GudangPage } from "@/pages/manajemen/GudangPage";
 import { TambahGudangPage } from "@/pages/manajemen/TambahGudangPage";
+import { UbahGudangPage } from "@/pages/manajemen/UbahGudangPage";
 import { PenggunaPage } from "@/pages/manajemen/PenggunaPage";
 import { TambahPenggunaPage } from "@/pages/manajemen/TambahPenggunaPage";
 import { UbahPenggunaPage } from "@/pages/manajemen/UbahPenggunaPage";
@@ -120,10 +123,13 @@ export const router = createHashRouter([
       { path: "pembelian", element: <PembelianPage /> },
       { path: "manajemen/kategori", element: <KategoriGrupPage /> },
       { path: "manajemen/kategori/tambah", element: <TambahKategoriGrupPage /> },
+      { path: "manajemen/kategori/ubah/:kode", element: <UbahKategoriGrupPage /> },
       { path: "manajemen/merek", element: <MerekPage /> },
       { path: "manajemen/merek/tambah", element: <TambahMerekPage /> },
+      { path: "manajemen/merek/ubah/:kode", element: <UbahMerekPage /> },
       { path: "manajemen/gudang", element: <GudangPage /> },
       { path: "manajemen/gudang/tambah", element: <TambahGudangPage /> },
+      { path: "manajemen/gudang/ubah/:kode", element: <UbahGudangPage /> },
       { path: "manajemen/pelanggan/tambah", element: <TambahPelangganPage /> },
       { path: "manajemen/pelanggan/ubah/:kode", element: <UbahPelangganPage /> },
       { path: "manajemen/pelanggan", element: <PelangganPage /> },

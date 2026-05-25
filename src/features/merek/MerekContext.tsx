@@ -15,8 +15,10 @@ type MerekContextValue = {
   loading: boolean;
   refresh: () => Promise<void>;
   addItem: (row: MerekRow) => Promise<void>;
+  updateItem: (kode: string, row: Omit<MerekRow, "kode">) => Promise<void>;
   removeItem: (kode: string) => Promise<void>;
   kodeExists: (kode: string) => Promise<boolean>;
+  getByKode: (kode: string) => MerekRow | undefined;
 };
 
 const MerekContext = createContext<MerekContextValue | null>(null);
@@ -49,6 +51,17 @@ export function MerekProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const updateItem = useCallback(
+    async (kode: string, row: Omit<MerekRow, "kode">) => {
+      await invoke("merek_update", {
+        kode,
+        row: { nama: row.nama, deskripsi: row.deskripsi },
+      });
+      await refresh();
+    },
+    [refresh],
+  );
+
   const removeItem = useCallback(
     async (kode: string) => {
       await invoke("merek_delete", { kode });
@@ -57,9 +70,15 @@ export function MerekProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const getByKode = useCallback(
+    (kode: string) =>
+      items.find((row) => row.kode.toLowerCase() === kode.toLowerCase()),
+    [items],
+  );
+
   const value = useMemo(
-    () => ({ items, loading, refresh, addItem, removeItem, kodeExists }),
-    [items, loading, refresh, addItem, removeItem, kodeExists],
+    () => ({ items, loading, refresh, addItem, updateItem, removeItem, kodeExists, getByKode }),
+    [items, loading, refresh, addItem, updateItem, removeItem, kodeExists, getByKode],
   );
 
   return <MerekContext.Provider value={value}>{children}</MerekContext.Provider>;

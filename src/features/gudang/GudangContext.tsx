@@ -15,8 +15,10 @@ type GudangContextValue = {
   loading: boolean;
   refresh: () => Promise<void>;
   addItem: (row: GudangRow) => Promise<void>;
+  updateItem: (kode: string, row: Omit<GudangRow, "kode">) => Promise<void>;
   removeItem: (kode: string) => Promise<void>;
   kodeExists: (kode: string) => Promise<boolean>;
+  getByKode: (kode: string) => GudangRow | undefined;
 };
 
 const GudangContext = createContext<GudangContextValue | null>(null);
@@ -58,6 +60,25 @@ export function GudangProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const updateItem = useCallback(
+    async (kode: string, row: Omit<GudangRow, "kode">) => {
+      await invoke("gudang_update", {
+        kode,
+        row: {
+          nama: row.nama,
+          alamat: row.alamat,
+          lokasi: row.lokasi,
+          pic: row.pic,
+          nomorKontak: row.nomorKontak,
+          luasM2: row.luasM2,
+          kapasitasPenyimpanan: row.kapasitasPenyimpanan,
+        },
+      });
+      await refresh();
+    },
+    [refresh],
+  );
+
   const removeItem = useCallback(
     async (kode: string) => {
       await invoke("gudang_delete", { kode });
@@ -66,9 +87,15 @@ export function GudangProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const getByKode = useCallback(
+    (kode: string) =>
+      items.find((row) => row.kode.toLowerCase() === kode.toLowerCase()),
+    [items],
+  );
+
   const value = useMemo(
-    () => ({ items, loading, refresh, addItem, removeItem, kodeExists }),
-    [items, loading, refresh, addItem, removeItem, kodeExists],
+    () => ({ items, loading, refresh, addItem, updateItem, removeItem, kodeExists, getByKode }),
+    [items, loading, refresh, addItem, updateItem, removeItem, kodeExists, getByKode],
   );
 
   return <GudangContext.Provider value={value}>{children}</GudangContext.Provider>;

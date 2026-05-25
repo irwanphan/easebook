@@ -77,10 +77,13 @@ export const halamanAksesGroups: HalamanAksesGroup[] = [
     pages: [
       { key: "mj-kategori", label: "Kategori / grup barang", pathPattern: "manajemen/kategori" },
       { key: "mj-kategori-tambah", label: "Tambah kategori", pathPattern: "manajemen/kategori/tambah" },
+      { key: "mj-kategori-ubah", label: "Ubah kategori", pathPattern: "manajemen/kategori/ubah/:kode" },
       { key: "mj-merk", label: "Merek", pathPattern: "manajemen/merek" },
       { key: "mj-merk-tambah", label: "Tambah merek", pathPattern: "manajemen/merek/tambah" },
+      { key: "mj-merk-ubah", label: "Ubah merek", pathPattern: "manajemen/merek/ubah/:kode" },
       { key: "mj-gudang", label: "Gudang", pathPattern: "manajemen/gudang" },
       { key: "mj-gudang-tambah", label: "Tambah gudang", pathPattern: "manajemen/gudang/tambah" },
+      { key: "mj-gudang-ubah", label: "Ubah gudang", pathPattern: "manajemen/gudang/ubah/:kode" },
       { key: "mj-pelanggan", label: "Pelanggan", pathPattern: "manajemen/pelanggan" },
       { key: "mj-pelanggan-tambah", label: "Tambah pelanggan", pathPattern: "manajemen/pelanggan/tambah" },
       { key: "mj-pelanggan-ubah", label: "Ubah pelanggan", pathPattern: "manajemen/pelanggan/ubah/:kode" },

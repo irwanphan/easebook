@@ -146,6 +146,41 @@ pub fn kategori_delete(state: State<DbState>, kode: String) -> Result<(), String
     })
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KategoriUpdate {
+    pub nama: String,
+    pub deskripsi: String,
+}
+
+#[tauri::command]
+pub fn kategori_update(
+    state: State<DbState>,
+    kode: String,
+    row: KategoriUpdate,
+) -> Result<(), String> {
+    let kode = kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode wajib diisi.".into());
+    }
+    if row.nama.trim().is_empty() {
+        return Err("Nama wajib diisi.".into());
+    }
+    let ts = now_ts();
+    with_conn_app(&state, |conn| {
+        let n = conn
+            .execute(
+                "UPDATE kategori SET nama = ?, deskripsi = ?, updated_at = ? WHERE kode = ? COLLATE NOCASE",
+                params![row.nama.trim(), row.deskripsi.trim(), ts, kode],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Kategori tidak ditemukan.".into());
+        }
+        Ok(())
+    })
+}
+
 // --- Merek ---
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -235,6 +270,41 @@ pub fn merek_delete(state: State<DbState>, kode: String) -> Result<(), String> {
             .execute(
                 "DELETE FROM merek WHERE kode = ? COLLATE NOCASE",
                 params![kode],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Merek tidak ditemukan.".into());
+        }
+        Ok(())
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MerekUpdate {
+    pub nama: String,
+    pub deskripsi: String,
+}
+
+#[tauri::command]
+pub fn merek_update(
+    state: State<DbState>,
+    kode: String,
+    row: MerekUpdate,
+) -> Result<(), String> {
+    let kode = kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode wajib diisi.".into());
+    }
+    if row.nama.trim().is_empty() {
+        return Err("Nama wajib diisi.".into());
+    }
+    let ts = now_ts();
+    with_conn_app(&state, |conn| {
+        let n = conn
+            .execute(
+                "UPDATE merek SET nama = ?, deskripsi = ?, updated_at = ? WHERE kode = ? COLLATE NOCASE",
+                params![row.nama.trim(), row.deskripsi.trim(), ts, kode],
             )
             .map_err(|e| e.to_string())?;
         if n == 0 {
@@ -419,6 +489,66 @@ pub fn gudang_delete(state: State<DbState>, kode: String) -> Result<(), String> 
             .execute(
                 "DELETE FROM gudang WHERE kode = ? COLLATE NOCASE",
                 params![kode],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Gudang tidak ditemukan.".into());
+        }
+        Ok(())
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GudangUpdate {
+    pub nama: String,
+    pub alamat: String,
+    pub lokasi: String,
+    pub pic: String,
+    pub nomor_kontak: String,
+    pub luas_m2: f64,
+    pub kapasitas_penyimpanan: String,
+}
+
+#[tauri::command]
+pub fn gudang_update(
+    state: State<DbState>,
+    kode: String,
+    row: GudangUpdate,
+) -> Result<(), String> {
+    let kode = kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode wajib diisi.".into());
+    }
+    if row.nama.trim().is_empty() || row.alamat.trim().is_empty() {
+        return Err("Nama dan alamat wajib diisi.".into());
+    }
+    if row.pic.trim().is_empty() || row.nomor_kontak.trim().is_empty() {
+        return Err("PIC dan nomor kontak wajib diisi.".into());
+    }
+    if row.luas_m2 <= 0.0 {
+        return Err("Luas harus lebih dari 0.".into());
+    }
+    if row.kapasitas_penyimpanan.trim().is_empty() {
+        return Err("Kapasitas penyimpanan wajib diisi.".into());
+    }
+    let ts = now_ts();
+    with_conn_app(&state, |conn| {
+        let n = conn
+            .execute(
+                "UPDATE gudang SET nama = ?, alamat = ?, lokasi = ?, pic = ?, nomor_kontak = ?, luas_m2 = ?, kapasitas_penyimpanan = ?, updated_at = ?
+                 WHERE kode = ? COLLATE NOCASE",
+                params![
+                    row.nama.trim(),
+                    row.alamat.trim(),
+                    row.lokasi.trim(),
+                    row.pic.trim(),
+                    row.nomor_kontak.trim(),
+                    row.luas_m2,
+                    row.kapasitas_penyimpanan.trim(),
+                    ts,
+                    kode,
+                ],
             )
             .map_err(|e| e.to_string())?;
         if n == 0 {

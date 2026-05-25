@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { ListFilterBar } from "@/components/ui/ListFilterBar";
+import { VerticalSeparator } from "@/components/ui/Separator";
 import type { PenjualanListRow } from "@/data/penjualan";
 import type { PesananPenjualanListRow } from "@/data/pesananPenjualan";
 import { TransactionGateBanner } from "@/features/activation/TransactionGateBanner";
@@ -145,6 +146,7 @@ export function PenjualanPage() {
               <Button
                 type="button"
                 disabled={!canCreateTransaction}
+                variant="secondary"
                 onClick={() => navigate("/penjualan/pesanan")}
               >
                 <ClipboardList className="h-4 w-4" aria-hidden />
@@ -160,6 +162,7 @@ export function PenjualanPage() {
                 </span>
               ) : null}
             </div>
+            <VerticalSeparator />
             <Button
               type="button"
               disabled={!canCreateTransaction}

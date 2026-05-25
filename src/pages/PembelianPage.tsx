@@ -152,7 +152,7 @@ export function PembelianPage() {
               </Button>
               {pesananAktif > 0 ? (
                 <span
-                  className="pointer-events-none absolute -right-1.5 -top-1.5 inline-flex min-w-[1.25rem] items-center justify-center rounded-full border-2 border-white bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-sm"
+                  className="pointer-events-none absolute -right-1.5 -top-1.5 inline-flex min-w-[1.25rem] items-center justify-center rounded-full border-2 border-white bg-rose-600 p-2.5 h-4 w-4 text-xs font-bold leading-none text-white shadow-sm"
                   aria-label={`${pesananAktif} pesanan aktif menunggu difakturkan`}
                   title={`${pesananAktif} pesanan aktif menunggu difakturkan`}
                 >

@@ -260,7 +260,8 @@ export function PesananPenjualanDetailPage() {
                 {dapatDiubah ? (
                   <Button
                     type="button"
-                    variant="secondary"
+                    variant="outline"
+                    className="bg-white"
                     onClick={() =>
                       navigate(
                         `/penjualan/pesanan/ubah/${encodeURIComponent(detail.nomor)}`,
@@ -275,6 +276,7 @@ export function PesananPenjualanDetailPage() {
                   <Button
                     type="button"
                     variant="outline"
+                    className="bg-white"
                     onClick={() => setBatalkanOpen(true)}
                   >
                     <Ban className="h-4 w-4" aria-hidden />
@@ -284,8 +286,7 @@ export function PesananPenjualanDetailPage() {
                 {dapatDihapus ? (
                   <Button
                     type="button"
-                    variant="outline"
-                    className="!border-rose-200 !text-rose-600 hover:!bg-rose-50"
+                    variant="danger"
                     onClick={() => setHapusOpen(true)}
                   >
                     <Trash2 className="h-4 w-4" aria-hidden />

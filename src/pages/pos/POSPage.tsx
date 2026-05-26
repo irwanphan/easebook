@@ -25,8 +25,10 @@ function POSTopBar({
 
   return (
     <header className="flex shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-6 py-2.5">
-      <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-brand-500 text-white">
-        <Store className="h-4.5 w-4.5" aria-hidden />
+      <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-green-100 text-amber-600 border border-green-200">
+        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-cyan-50 text-amber-600 ring-1 ring-inset ring-green-400">
+          <Store className="h-4.5 w-4.5" aria-hidden />
+        </span>
       </span>
       <div className="leading-tight">
         <p className="text-xs uppercase tracking-wider text-zinc-500">EasyBook</p>

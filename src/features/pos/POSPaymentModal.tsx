@@ -8,6 +8,7 @@ import { usePOS } from "@/features/pos/POSContext";
 import { useAuth } from "@/features/auth/AuthContext";
 import { formatRupiah, parseRupiahInput } from "@/lib/format";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
 
 const inputClass =
   "w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
@@ -242,7 +243,7 @@ export function POSPaymentModal({ open, onClose, onSuccess }: POSPaymentModalPro
                 return (
                   <li key={l.uid} className="rounded-xl border border-zinc-200 p-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <select
+                      <TokoSelect
                         className={inputClass + " max-w-[180px]"}
                         value={l.metodeKode}
                         onChange={(e) => updateLine(l.uid, { metodeKode: e.target.value })}
@@ -252,31 +253,31 @@ export function POSPaymentModal({ open, onClose, onSuccess }: POSPaymentModalPro
                             {m.nama}
                           </option>
                         ))}
-                      </select>
-                      <input
+                      </TokoSelect>
+                      <TokoInput
                         inputMode="numeric"
                         placeholder="Nominal"
-                        className={inputClass + " max-w-[180px] text-right font-semibold"}
+                        className="max-w-[180px] text-right font-semibold"
                         value={l.jumlahText}
                         onChange={(e) => updateLine(l.uid, { jumlahText: e.target.value })}
                       />
                       {!metode?.isTunai ? (
-                        <input
+                        <TokoInput
                           placeholder="Ref. transfer/EDC"
-                          className={inputClass + " flex-1 min-w-[140px]"}
+                          className="flex-1 min-w-[140px]"
                           value={l.refNo}
                           onChange={(e) => updateLine(l.uid, { refNo: e.target.value })}
                         />
                       ) : null}
                       {lines.length > 1 ? (
-                        <button
+                        <Button
                           type="button"
+                          variant="danger"
                           onClick={() => removeLine(l.uid)}
-                          className="rounded-md p-1 text-zinc-400 transition hover:bg-rose-50 hover:text-rose-600"
                           aria-label="Hapus baris"
                         >
                           <Trash2 className="h-4 w-4" />
-                        </button>
+                        </Button>
                       ) : null}
                     </div>
                     {metode?.isTunai ? (

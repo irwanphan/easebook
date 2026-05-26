@@ -143,10 +143,10 @@ export function PenjualanPage() {
         description="Faktur jual ke pelanggan"
         actions={
           <>
-            <Button
+            <button
               type="button"
               disabled={!canCreateTransaction}
-              variant="outline"
+              className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-1.5 text-sm font-semibold transition cursor-pointer bg-cyan-200/60 text-cyan-700 hover:bg-cyan-200 ring-1 ring-inset ring-slate-600"
               onClick={() => {
                 void openPOSWindow().catch((e) => {
                   console.error("openPOSWindow failed", e);
@@ -154,9 +154,11 @@ export function PenjualanPage() {
               }}
               title="Buka kasir di window baru"
             >
-              <Store className="h-4 w-4" aria-hidden />
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-cyan-50 text-amber-600 ring-1 ring-inset ring-green-400">
+                <Store className="h-4 w-4" aria-hidden />
+              </span>
               Buka POS
-            </Button>
+            </button>
             <VerticalSeparator />
             <div className="relative inline-flex">
               <Button

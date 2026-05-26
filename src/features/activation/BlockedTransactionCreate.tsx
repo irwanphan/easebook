@@ -10,7 +10,7 @@ type Props = {
   backLabel: string;
 };
 
-export function BlockedTransactionCreate({ title, description, backHref, backLabel }: Props) {
+export function BlockedTransactionCreate({ title, description: _description, backHref, backLabel }: Props) {
   const { license, loading } = useLicenseGate();
 
   if (loading) {

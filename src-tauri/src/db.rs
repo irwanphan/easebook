@@ -355,6 +355,75 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     migrate_transfer_kas_tables(conn)?;
     migrate_activity_log_tables(conn)?;
     migrate_pos_tables(conn)?;
+    migrate_produksi_tables(conn)?;
+    Ok(())
+}
+
+/// Tabel produksi: konversi bahan baku → barang jadi + biaya produksi.
+///
+/// Model akuntansi yang dipakai:
+/// - Stok bahan baku berkurang dengan nilai HPP saat ini (event PRODUKSI_KELUAR).
+/// - Stok barang jadi bertambah dengan nilai HPP baru yang ditentukan saat
+///   dokumen ini diselesaikan (event PRODUKSI_MASUK; subtotal disimpan di
+///   `produksi_hasil.subtotal_nilai` dan dibaca oleh modul HPP).
+/// - Saldo neraca akun "Persediaan" netto hanya bertambah sebesar
+///   `biaya_produksi`; sisanya konversi bentuk yang tidak mengubah total
+///   nilai persediaan.
+/// - Jurnal saat status `Selesai`:
+///     D Persediaan          biaya_produksi (+/- selisih bila HPP output di-override)
+///       K Akun lawan         biaya_produksi
+///       K/D Laba Rugi 5010   selisih (bila output ≠ input + biaya)
+fn migrate_produksi_tables(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS produksi (
+            nomor TEXT PRIMARY KEY NOT NULL,
+            tanggal TEXT NOT NULL,
+            gudang_bb_kode TEXT NOT NULL REFERENCES gudang(kode) ON UPDATE CASCADE,
+            gudang_hasil_kode TEXT NOT NULL REFERENCES gudang(kode) ON UPDATE CASCADE,
+            status TEXT NOT NULL DEFAULT 'Menunggu' CHECK (status IN ('Menunggu', 'Selesai', 'Dibatalkan')),
+            biaya_produksi INTEGER NOT NULL DEFAULT 0,
+            akun_biaya_kode TEXT REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            catatan TEXT NOT NULL DEFAULT '',
+            dibuat_oleh TEXT NOT NULL DEFAULT '',
+            jurnal_id INTEGER REFERENCES jurnal_umum(id) ON DELETE SET NULL ON UPDATE CASCADE,
+            tanggal_selesai TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_produksi_tgl ON produksi(tanggal);
+        CREATE INDEX IF NOT EXISTS idx_produksi_status ON produksi(status);
+
+        CREATE TABLE IF NOT EXISTS produksi_bahan_baku (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            produksi_nomor TEXT NOT NULL REFERENCES produksi(nomor) ON DELETE CASCADE ON UPDATE CASCADE,
+            barang_kode TEXT NOT NULL REFERENCES barang_jasa(kode) ON UPDATE CASCADE,
+            qty INTEGER NOT NULL,
+            satuan_tingkat INTEGER NOT NULL DEFAULT 1,
+            hpp_per_unit INTEGER NOT NULL DEFAULT 0,
+            subtotal_nilai INTEGER NOT NULL DEFAULT 0,
+            catatan TEXT NOT NULL DEFAULT ''
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_produksi_bb_nomor ON produksi_bahan_baku(produksi_nomor);
+        CREATE INDEX IF NOT EXISTS idx_produksi_bb_barang ON produksi_bahan_baku(barang_kode);
+
+        CREATE TABLE IF NOT EXISTS produksi_hasil (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            produksi_nomor TEXT NOT NULL REFERENCES produksi(nomor) ON DELETE CASCADE ON UPDATE CASCADE,
+            barang_kode TEXT NOT NULL REFERENCES barang_jasa(kode) ON UPDATE CASCADE,
+            qty INTEGER NOT NULL,
+            satuan_tingkat INTEGER NOT NULL DEFAULT 1,
+            hpp_per_unit INTEGER NOT NULL,
+            subtotal_nilai INTEGER NOT NULL,
+            catatan TEXT NOT NULL DEFAULT ''
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_produksi_hasil_nomor ON produksi_hasil(produksi_nomor);
+        CREATE INDEX IF NOT EXISTS idx_produksi_hasil_barang ON produksi_hasil(barang_kode);
+        ",
+    )?;
     Ok(())
 }
 

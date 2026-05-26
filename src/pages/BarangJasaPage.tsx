@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { BookOpenCheck, FileText, LineChart, PackagePlus, Pencil, SendToBack, Warehouse } from "lucide-react";
+import { BookOpenCheck, Factory, FileText, LineChart, PackagePlus, Pencil, SendToBack, Warehouse } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -12,6 +12,7 @@ import {
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { useKategoriGrup } from "@/features/kategori-grup/KategoriGrupContext";
 import { formatSatuanTingkatRingkasan } from "@/data/barangJasa";
+import { VerticalSeparator } from "@/components/ui/Separator";
 
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -118,7 +119,12 @@ export function BarangJasaPage() {
               <SendToBack className="h-4 w-4" aria-hidden />
               Mutasi antar gudang
             </Button>
-            <Button type="button" variant="secondary" onClick={() => navigate("/barang-jasa/koreksi-stok")}>
+            <Button type="button" variant="secondary" onClick={() => navigate("/barang-jasa/produksi")}>
+              <Factory className="h-4 w-4" aria-hidden />
+              Daftar Produksi
+            </Button>
+            <VerticalSeparator />
+            <Button type="button" onClick={() => navigate("/barang-jasa/koreksi-stok")}>
               <BookOpenCheck className="h-4 w-4" aria-hidden />
               Koreksi stok
             </Button>

@@ -13,6 +13,10 @@ import { KartuStokBarangPage } from "@/pages/KartuStokBarangPage";
 import { BarangStokPerGudangPage } from "@/pages/BarangStokPerGudangPage";
 import { MutasiAntarGudangPage } from "@/pages/MutasiAntarGudangPage";
 import { KoreksiStokPage } from "@/pages/KoreksiStokPage";
+import { ProduksiPage } from "@/pages/ProduksiPage";
+import { TambahProduksiPage } from "@/pages/TambahProduksiPage";
+import { UbahProduksiPage } from "@/pages/UbahProduksiPage";
+import { ProduksiDetailPage } from "@/pages/ProduksiDetailPage";
 import { PenjualanPage } from "@/pages/PenjualanPage";
 import { TambahPenjualanPage } from "@/pages/TambahPenjualanPage";
 import { PenjualanDetailPage } from "@/pages/PenjualanDetailPage";
@@ -102,6 +106,10 @@ export const mainRouter = createHashRouter([
       { path: "barang-jasa/per-gudang", element: <BarangStokPerGudangPage /> },
       { path: "barang-jasa/mutasi-antar-gudang", element: <MutasiAntarGudangPage /> },
       { path: "barang-jasa/koreksi-stok", element: <KoreksiStokPage /> },
+      { path: "barang-jasa/produksi/tambah", element: <TambahProduksiPage /> },
+      { path: "barang-jasa/produksi/ubah/:nomor", element: <UbahProduksiPage /> },
+      { path: "barang-jasa/produksi/detail/:nomor", element: <ProduksiDetailPage /> },
+      { path: "barang-jasa/produksi", element: <ProduksiPage /> },
       { path: "barang-jasa", element: <BarangJasaPage /> },
       { path: "laporan/pergerakan-stok", element: <LaporanPergerakanStokPage /> },
       { path: "laporan/mutasi-antar-gudang", element: <LaporanMutasiAntarGudangPage /> },

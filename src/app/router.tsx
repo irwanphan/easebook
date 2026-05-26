@@ -77,6 +77,7 @@ import { LaporanMutasiAntarGudangPage } from "@/pages/laporan/LaporanMutasiAntar
 import { LaporanHppPage } from "@/pages/laporan/LaporanHppPage";
 import { LaporanHppDetailPage } from "@/pages/laporan/LaporanHppDetailPage";
 import { ProfilPenggunaPage } from "@/pages/ProfilPenggunaPage";
+import { PengaturanAksesCepatPage } from "@/pages/PengaturanAksesCepatPage";
 
 function AuthLayout() {
   return (
@@ -100,6 +101,7 @@ export const mainRouter = createHashRouter([
             children: [
       { index: true, element: <DashboardPage /> },
       { path: "profil", element: <ProfilPenggunaPage /> },
+      { path: "profil/akses-cepat", element: <PengaturanAksesCepatPage /> },
       { path: "barang-jasa/tambah", element: <TambahBarangJasaPage /> },
       { path: "barang-jasa/ubah/:kode", element: <UbahBarangJasaPage /> },
       { path: "barang-jasa/kartu-stok/:kode", element: <KartuStokBarangPage /> },

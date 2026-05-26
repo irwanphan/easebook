@@ -9,6 +9,8 @@ import { MerekProvider } from "@/features/merek/MerekContext";
 import { GudangProvider } from "@/features/gudang/GudangContext";
 import { PelangganProvider } from "@/features/pelanggan/PelangganContext";
 import { PemasokProvider } from "@/features/pemasok/PemasokContext";
+import { QuickAccessProvider } from "@/features/quick-access/QuickAccessContext";
+import { QuickAccessFab } from "@/features/quick-access/QuickAccessFab";
 
 function AppShellInner() {
   const { filterNav } = useAuth();
@@ -26,6 +28,7 @@ function AppShellInner() {
           </PageAccessGuard>
         </main>
       </div>
+      <QuickAccessFab />
     </div>
   );
 }
@@ -38,7 +41,9 @@ export function AppShell() {
           <GudangProvider>
             <PelangganProvider>
               <PemasokProvider>
-                <AppShellInner />
+                <QuickAccessProvider>
+                  <AppShellInner />
+                </QuickAccessProvider>
               </PemasokProvider>
             </PelangganProvider>
           </GudangProvider>

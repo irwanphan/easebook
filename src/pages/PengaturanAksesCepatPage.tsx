@@ -85,7 +85,7 @@ export function PengaturanAksesCepatPage() {
           title="Akses cepat"
           description="Atur tombol melayang (FAB) di pojok kanan bawah untuk membuka halaman favorit Anda."
         />
-        <Button type="button" variant="outline" onClick={() => navigate("/profil")}>
+        <Button type="button" variant="outline" className="bg-white" onClick={() => navigate("/profil")}>
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Kembali ke profil
         </Button>
@@ -100,7 +100,7 @@ export function PengaturanAksesCepatPage() {
         </div>
       ) : null}
 
-      <Card className="p-5 sm:p-6">
+      <Card className="">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
             <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-brand-100 text-brand-700">
@@ -114,7 +114,7 @@ export function PengaturanAksesCepatPage() {
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <SwitchToggle
               checked={settings.enabled}
               onChange={(v) => {
@@ -139,9 +139,9 @@ export function PengaturanAksesCepatPage() {
         </div>
       </Card>
 
-      <Card className="overflow-hidden p-0">
-        <div className="border-b border-zinc-100 px-5 py-4 sm:px-6">
-          <div className="flex items-baseline justify-between gap-3">
+      <Card className="overflow-hidden">
+        <div className="border-b border-zinc-100">
+          <div className="flex items-baseline justify-between gap-3 mb-3">
             <h2 className="text-sm font-semibold text-zinc-900">Menu akses cepat saya</h2>
             <span className="text-xs text-zinc-500">
               {selectedActions.length} dari maksimum {maxItems}
@@ -164,7 +164,7 @@ export function PengaturanAksesCepatPage() {
               const isFirst = idx === 0;
               const isLast = idx === selectedActions.length - 1;
               return (
-                <li key={action.id} className="flex items-center gap-3 px-5 py-3 sm:px-6">
+                <li key={action.id} className="flex items-center gap-3 py-3">
                   <span
                     className={`inline-flex h-10 w-10 items-center justify-center rounded-full text-white ${TONE_PILL_CLASS[action.tone]}`}
                   >
@@ -216,7 +216,7 @@ export function PengaturanAksesCepatPage() {
       </Card>
 
       <Card className="overflow-hidden p-0">
-        <div className="border-b border-zinc-100 px-5 py-4 sm:px-6">
+        <div className="border-b border-zinc-100 mb-3">
           <h2 className="text-sm font-semibold text-zinc-900">Aksi tersedia</h2>
           <p className="mt-1 text-sm text-zinc-500">
             Klik "Tambahkan" untuk memasukkannya ke menu akses cepat Anda.
@@ -233,7 +233,7 @@ export function PengaturanAksesCepatPage() {
               const granted = hasAccess(action.accessKey);
               const isFull = selectedIds.length >= maxItems;
               return (
-                <li key={action.id} className="flex items-center gap-3 px-5 py-3 sm:px-6">
+                <li key={action.id} className="flex items-center gap-3 py-3">
                   <span
                     className={`inline-flex h-10 w-10 items-center justify-center rounded-full text-white ${TONE_PILL_CLASS[action.tone]}`}
                   >

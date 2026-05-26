@@ -166,7 +166,7 @@ export function ProfilPenggunaPage() {
       <button
         type="button"
         onClick={() => navigate("/profil/akses-cepat")}
-        className="group flex w-full items-center gap-4 rounded-2xl border border-zinc-200 bg-white p-5 text-left shadow-sm transition hover:border-brand-300 hover:bg-brand-50/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+        className="group flex w-full items-center gap-4 rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-brand-300 hover:bg-brand-50/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
       >
         <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700">
           <Zap className="h-6 w-6" aria-hidden />
@@ -174,8 +174,7 @@ export function ProfilPenggunaPage() {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-zinc-900">Pengaturan akses cepat</p>
           <p className="mt-0.5 text-sm text-zinc-500">
-            Atur tombol melayang (FAB) di pojok kanan bawah — pilih menu pintas atau matikan
-            kalau tidak diperlukan.
+            Atur tombol melayang (FAB) di pojok kanan bawah.
           </p>
         </div>
         <ChevronRight className="h-5 w-5 text-zinc-400 transition group-hover:translate-x-0.5 group-hover:text-brand-600" aria-hidden />

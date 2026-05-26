@@ -71,7 +71,7 @@ function POSTopBar({
         ) : null}
         <Button
           type="button"
-          variant="ghost"
+          variant="danger"
           className="h-8 text-xs"
           onClick={() => {
             void getCurrentWindow().close().catch(() => {

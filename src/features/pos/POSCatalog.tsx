@@ -55,7 +55,7 @@ function ProductCard({
       className={`group flex flex-col gap-2 rounded-xl border border-zinc-200 bg-white p-3 text-left shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 ${
         disabled
           ? "cursor-not-allowed opacity-60"
-          : "hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md active:translate-y-0"
+          : "cursor-pointer hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md active:translate-y-0"
       }`}
     >
       <div className="aspect-[4/3] w-full overflow-hidden rounded-lg bg-zinc-100">
@@ -221,7 +221,7 @@ export function POSCatalog({ gudangKode }: POSCatalogProps) {
             key={t.kode}
             type="button"
             onClick={() => setKategoriKode(t.kode)}
-            className={`group inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+            className={`group inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition cursor-pointer ${
               kategoriKode === t.kode
                 ? "border-brand-500 bg-brand-500 text-white shadow-sm"
                 : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50"

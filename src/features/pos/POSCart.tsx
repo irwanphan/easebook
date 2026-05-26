@@ -33,7 +33,7 @@ function CartLineCard({
         <button
           type="button"
           onClick={onRemove}
-          className="rounded-md p-1 text-zinc-400 transition hover:bg-rose-50 hover:text-rose-600"
+          className="rounded-md p-1 text-zinc-400 transition hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
           aria-label="Hapus baris"
         >
           <Trash2 className="h-4 w-4" />
@@ -44,7 +44,7 @@ function CartLineCard({
           <button
             type="button"
             onClick={onDec}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-600 transition hover:bg-white hover:text-zinc-900"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-600 transition hover:bg-white hover:text-zinc-900 cursor-pointer"
             aria-label="Kurangi"
             disabled={line.qty <= 1}
           >
@@ -56,7 +56,7 @@ function CartLineCard({
           <button
             type="button"
             onClick={onInc}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-600 transition hover:bg-white hover:text-zinc-900"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-600 transition hover:bg-white hover:text-zinc-900 cursor-pointer"
             aria-label="Tambah"
           >
             <Plus className="h-3.5 w-3.5" />
@@ -102,7 +102,7 @@ export function POSCart({ onProcessPayment, onOpenCustomerPicker }: POSCartProps
           <button
             type="button"
             onClick={clearCart}
-            className="text-xs font-medium text-zinc-500 hover:text-rose-600 hover:underline"
+            className="text-xs font-medium text-zinc-500 hover:text-rose-600 hover:underline cursor-pointer"
           >
             Kosongkan
           </button>
@@ -114,7 +114,7 @@ export function POSCart({ onProcessPayment, onOpenCustomerPicker }: POSCartProps
         <button
           type="button"
           onClick={onOpenCustomerPicker}
-          className="flex w-full items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50/60 px-3 py-2.5 text-left transition hover:bg-zinc-50"
+          className="flex w-full items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50/60 px-3 py-2.5 text-left transition hover:bg-zinc-50 cursor-pointer"
         >
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-50 text-brand-600">
             <UserRound className="h-4 w-4" />
@@ -133,7 +133,7 @@ export function POSCart({ onProcessPayment, onOpenCustomerPicker }: POSCartProps
                 e.stopPropagation();
                 resetPelanggan();
               }}
-              className="rounded-md p-1 text-zinc-400 hover:bg-rose-50 hover:text-rose-600"
+              className="rounded-md p-1 text-zinc-400 hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
             >
               <X className="h-4 w-4" />
             </span>

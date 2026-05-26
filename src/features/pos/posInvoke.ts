@@ -11,6 +11,7 @@ import type {
   PosShiftEventLogFilter,
   PosShiftEventLogRow,
 } from "@/data/posShiftEventLog";
+import type { PosKonfigurasi, PosKonfigurasiSetPayload } from "@/data/posKonfigurasi";
 
 export function metodeBayarList(hanyaAktif = false) {
   return invoke<PosMetodeBayar[]>("pos_metode_bayar_list", { hanyaAktif });
@@ -36,9 +37,18 @@ export function shiftOpen(payload: {
 export function shiftClose(payload: {
   id: number;
   uangAkhirAktual: number;
+  kembalikanKeUtama?: number;
   catatan?: string;
 }) {
   return invoke<PosShiftRekap>("pos_shift_close", { payload });
+}
+
+export function posKonfigurasiGet() {
+  return invoke<PosKonfigurasi>("pos_konfigurasi_get");
+}
+
+export function posKonfigurasiSet(payload: PosKonfigurasiSetPayload) {
+  return invoke<PosKonfigurasi>("pos_konfigurasi_set", { payload });
 }
 
 export function shiftChangeGudang(payload: { id: number; gudangKode: string }) {

@@ -105,7 +105,7 @@ function POSTopBar({
             Gudang 
             <span className="font-semibold text-zinc-900">{shift.gudangNama || shift.gudangKode}</span>
           </span>
-          <VerticalSeparator />
+          <VerticalSeparator /> 
           <div className="flex flex-col">
             <span className="rounded-md font-semibold text-emerald-700">
               Shift terbuka

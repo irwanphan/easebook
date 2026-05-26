@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { TabsBar } from "@/components/ui/TabsBar";
 import { AktivasiSection } from "@/features/activation/AktivasiSection";
 import { useLicenseGate } from "@/features/activation/useLicenseGate";
+import { PosKonfigurasiForm } from "@/features/pengaturan/PosKonfigurasiForm";
 import type { InformasiPerusahaan } from "@/features/pengaturan/informasiPerusahaanStorage";
 import {
   loadInformasiPerusahaan,
@@ -16,6 +17,7 @@ import {
   loadPengaturanTransaksi,
   persistPengaturanTransaksi,
 } from "@/features/pengaturan/pengaturanTransaksiStorage";
+import { TokoInput } from "@/components/ui/TokoInput";
 
 const PENGATURAN_TABS = [
   { id: "perusahaan", label: "Informasi perusahaan" },
@@ -133,13 +135,12 @@ export function PengaturanPage() {
 
               <div>
                 <FieldLabel htmlFor="p-nama">Nama perusahaan</FieldLabel>
-                <input
+                <TokoInput
                   id="p-nama"
                   name="namaPerusahaan"
                   value={perusahaan.namaPerusahaan}
                   onChange={(e) => updatePerusahaan({ namaPerusahaan: e.target.value })}
                   placeholder="Nama legal atau nama dagang"
-                  className={inputClass}
                   autoComplete="organization"
                 />
               </div>
@@ -192,58 +193,81 @@ export function PengaturanPage() {
           ) : null}
 
           {activeTab === "transaksi" ? (
-            <form onSubmit={handleSimpanTransaksi} className="space-y-5">
-              {error ? (
-                <div
-                  role="alert"
-                  className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
-                >
-                  {error}
-                </div>
-              ) : null}
-              {savedHint ? (
-                <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-                  {savedHint}
-                </p>
-              ) : null}
+            <div className="space-y-8">
+              {/* Section: PPN */}
+              <section className="space-y-5">
+                <header>
+                  <h2 className="text-base font-semibold text-zinc-900">Pajak</h2>
+                  <p className="mt-0.5 text-sm text-zinc-500">
+                    Tarif default untuk faktur pembelian & penjualan.
+                  </p>
+                </header>
 
-              <div>
-                <FieldLabel htmlFor="p-ppn">Nilai PPN (%)</FieldLabel>
-                <p className="mt-1 text-sm text-zinc-500">
-                  Tarif Pajak Pertambahan Nilai default untuk perhitungan pajak pada faktur pembelian dan
-                  penjualan.
-                </p>
-                <div className="relative mt-2 max-w-xs">
-                  <input
-                    id="p-ppn"
-                    name="ppnPersen"
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={0.01}
-                    value={transaksi.ppnPersen}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      const n = raw === "" ? 0 : Number.parseFloat(raw);
-                      setTransaksi({ ppnPersen: Number.isFinite(n) ? n : 0 });
-                      setSavedHint(null);
-                      setError(null);
-                    }}
-                    className={`${inputClass} mt-0 pr-10`}
-                  />
-                  <span
-                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-zinc-400"
-                    aria-hidden
-                  >
-                    %
-                  </span>
-                </div>
-              </div>
+                <form onSubmit={handleSimpanTransaksi} className="space-y-5">
+                  {error ? (
+                    <div
+                      role="alert"
+                      className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+                    >
+                      {error}
+                    </div>
+                  ) : null}
+                  {savedHint ? (
+                    <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                      {savedHint}
+                    </p>
+                  ) : null}
 
-              <div className="flex justify-end border-t border-zinc-100 pt-5">
-                <Button type="submit">Simpan</Button>
-              </div>
-            </form>
+                  <div>
+                    <FieldLabel htmlFor="p-ppn">Nilai PPN (%)</FieldLabel>
+                    <p className="mt-1 text-sm text-zinc-500">
+                      Tarif Pajak Pertambahan Nilai default untuk perhitungan pajak pada faktur pembelian
+                      dan penjualan.
+                    </p>
+                    <div className="relative mt-2 max-w-xs">
+                      <TokoInput
+                        id="p-ppn"
+                        name="ppnPersen"
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={0.01}
+                        value={transaksi.ppnPersen}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          const n = raw === "" ? 0 : Number.parseFloat(raw);
+                          setTransaksi({ ppnPersen: Number.isFinite(n) ? n : 0 });
+                          setSavedHint(null);
+                          setError(null);
+                        }}
+                        className="mt-0 pr-10"
+                      />
+                      <span
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-zinc-400"
+                        aria-hidden
+                      >
+                        %
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button type="submit">Simpan PPN</Button>
+                  </div>
+                </form>
+              </section>
+
+              {/* Section: POS */}
+              <section className="space-y-5 border-t border-zinc-100 pt-6">
+                <header>
+                  <h2 className="text-base font-semibold text-zinc-900">POS — Kas kasir</h2>
+                  <p className="mt-0.5 text-sm text-zinc-500">
+                    Akun-akun kas yang dipakai untuk jurnal buka & tutup shift kasir.
+                  </p>
+                </header>
+                <PosKonfigurasiForm />
+              </section>
+            </div>
           ) : null}
 
           {activeTab === "operasional" ? (

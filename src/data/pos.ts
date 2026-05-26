@@ -23,6 +23,20 @@ export type PosShift = {
   status: "Open" | "Closed";
   mulaiTs: number;
   selesaiTs: number | null;
+  /** Snapshot akun kas saat shift dibuka — tidak berubah meski settings POS
+   *  diubah belakangan. Bisa null bila shift legacy dibuat sebelum fitur ini. */
+  kasUtamaKode: string | null;
+  kasUtamaNama: string | null;
+  kasKasirKode: string | null;
+  kasKasirNama: string | null;
+  akunSelisihKasKode: string | null;
+  akunSelisihKasNama: string | null;
+  /** Jumlah yang ditransfer balik ke Kas Utama saat tutup shift. */
+  kembalikanKeUtama: number;
+  /** ID jurnal otomatis modal awal (post saat buka shift). */
+  jurnalOpenId: number | null;
+  /** ID jurnal otomatis penutupan (selisih + pengembalian). */
+  jurnalCloseId: number | null;
 };
 
 export type PosShiftRekapMetode = {

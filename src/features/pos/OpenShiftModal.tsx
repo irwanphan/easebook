@@ -1,10 +1,21 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { AlertTriangle, LogOut } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/features/auth/AuthContext";
 import { useGudang } from "@/features/gudang/GudangContext";
-import { shiftCarryModal, shiftOpen } from "@/features/pos/posInvoke";
+import {
+  posKonfigurasiGet,
+  shiftCarryModal,
+  shiftOpen,
+} from "@/features/pos/posInvoke";
 import { usePOS } from "@/features/pos/POSContext";
+import {
+  isPosKonfigurasiLengkap,
+  POS_KONFIGURASI_DEFAULT,
+  type PosKonfigurasi,
+} from "@/data/posKonfigurasi";
 import { formatRupiah, parseRupiahInput } from "@/lib/format";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
@@ -29,8 +40,11 @@ export function OpenShiftModal({ open, onClose, forceOpen = false }: OpenShiftMo
   const [carryDefault, setCarryDefault] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [posConfig, setPosConfig] = useState<PosKonfigurasi>(POS_KONFIGURASI_DEFAULT);
+  const [configLoading, setConfigLoading] = useState(true);
 
   const username = session?.username ?? "";
+  const konfigurasiLengkap = isPosKonfigurasiLengkap(posConfig);
 
   useEffect(() => {
     if (!open || !username) return;
@@ -50,6 +64,27 @@ export function OpenShiftModal({ open, onClose, forceOpen = false }: OpenShiftMo
       cancelled = true;
     };
   }, [open, username, modalAwalText]);
+
+  // Pre-check konfigurasi POS supaya bisa kasih pesan jelas + escape hatch
+  // sebelum user mencoba membuka shift.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setConfigLoading(true);
+    void (async () => {
+      try {
+        const cfg = await posKonfigurasiGet();
+        if (!cancelled) setPosConfig(cfg);
+      } catch {
+        // diam — backend tetap akan menolak saat submit
+      } finally {
+        if (!cancelled) setConfigLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -97,12 +132,30 @@ export function OpenShiftModal({ open, onClose, forceOpen = false }: OpenShiftMo
       panelClassName="max-w-md"
       footer={
         <div className="flex flex-wrap items-center justify-end gap-2">
+          {forceOpen ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                void getCurrentWindow().close().catch(() => {});
+              }}
+              disabled={submitting}
+              title="Tutup window POS"
+            >
+              <LogOut className="h-4 w-4" aria-hidden />
+              Tutup window
+            </Button>
+          ) : null}
           {!forceOpen && onClose ? (
             <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
               Batal
             </Button>
           ) : null}
-          <Button type="submit" form="form-open-shift" disabled={submitting}>
+          <Button
+            type="submit"
+            form="form-open-shift"
+            disabled={submitting || configLoading || !konfigurasiLengkap}
+          >
             {submitting ? "Membuka…" : "Buka shift"}
           </Button>
         </div>
@@ -115,6 +168,20 @@ export function OpenShiftModal({ open, onClose, forceOpen = false }: OpenShiftMo
             className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
           >
             {error}
+          </div>
+        ) : null}
+
+        {!configLoading && !konfigurasiLengkap ? (
+          <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <div className="space-y-1">
+              <p className="font-semibold">Pengaturan POS belum lengkap</p>
+              <p className="text-xs leading-relaxed">
+                Akun <strong>Kas Operasional Utama</strong> dan <strong>Kas Kasir</strong> wajib dipilih sebelum
+                membuka shift. Buka <strong>Pengaturan → Transaksi → POS</strong> di window utama,
+                lengkapi pengaturan, lalu buka POS lagi.
+              </p>
+            </div>
           </div>
         ) : null}
 
@@ -137,6 +204,13 @@ export function OpenShiftModal({ open, onClose, forceOpen = false }: OpenShiftMo
             ))}
           </select>
         </div>
+
+        {konfigurasiLengkap && posConfig.kasUtamaNama && posConfig.kasKasirNama ? (
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50/60 px-3 py-2 text-xs leading-relaxed text-zinc-700">
+            Saat shift dibuka, jurnal otomatis: <strong>D</strong> {posConfig.kasKasirNama},{" "}
+            <strong>K</strong> {posConfig.kasUtamaNama}, sebesar modal awal.
+          </div>
+        ) : null}
 
         <div>
           <label htmlFor="sh-modal" className="block text-sm font-medium text-zinc-700">

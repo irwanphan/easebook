@@ -2,9 +2,7 @@ import type { FormEvent, ReactNode } from "react";
 import type { AkunKeuanganRow, JurnalKonfigurasi } from "@/data/keuangan";
 import { Button } from "@/components/ui/Button";
 import { isJurnalKonfigurasiComplete, JURNAL_KONFIGURASI_FIELDS } from "@/features/keuangan/jurnalKonfigurasi";
-
-const inputClass =
-  "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
+import { TokoSelect } from "@/components/ui/TokoInput";
 
 export type JurnalKonfigurasiFormProps = {
   config: JurnalKonfigurasi | null;
@@ -34,7 +32,7 @@ export function JurnalKonfigurasiForm({
         <div key={key}>
           <label className="block text-sm font-medium text-zinc-700">{label}</label>
           {hint ? <p className="mt-0.5 text-xs text-zinc-500">{hint}</p> : null}
-          <select
+          <TokoSelect
             value={config?.[key] ?? ""}
             onChange={(e) => {
               if (!config) return;
@@ -43,7 +41,6 @@ export function JurnalKonfigurasiForm({
                 [key]: e.target.value ? e.target.value : null,
               });
             }}
-            className={inputClass}
             disabled={fieldsDisabled || saving}
           >
             <option value="">— Pilih akun —</option>
@@ -52,7 +49,7 @@ export function JurnalKonfigurasiForm({
                 {a.kode} — {a.nama}
               </option>
             ))}
-          </select>
+          </TokoSelect>
         </div>
       ))}
 

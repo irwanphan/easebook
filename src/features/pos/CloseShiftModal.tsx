@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { ArrowRight, PiggyBank } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { shiftClose, shiftRekap } from "@/features/pos/posInvoke";
@@ -21,6 +22,7 @@ export function CloseShiftModal({ open, onClose }: CloseShiftModalProps) {
   const [rekap, setRekap] = useState<PosShiftRekap | null>(null);
   const [loading, setLoading] = useState(false);
   const [uangText, setUangText] = useState("");
+  const [kembaliText, setKembaliText] = useState("");
   const [catatan, setCatatan] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +38,7 @@ export function CloseShiftModal({ open, onClose }: CloseShiftModalProps) {
         if (!cancelled) {
           setRekap(r);
           setUangText(String(r.uangAkhirEkspektasi || 0));
+          setKembaliText("0");
         }
       } catch (e) {
         if (!cancelled) setError(tauriErrorMessage(e));
@@ -49,20 +52,28 @@ export function CloseShiftModal({ open, onClose }: CloseShiftModalProps) {
   }, [open, shift]);
 
   const uangAkhir = useMemo(() => parseRupiahInput(uangText), [uangText]);
+  const kembalikan = useMemo(() => parseRupiahInput(kembaliText), [kembaliText]);
   const selisih = useMemo(
     () => uangAkhir - (rekap?.uangAkhirEkspektasi ?? 0),
     [uangAkhir, rekap?.uangAkhirEkspektasi],
   );
+  const sisaDiLaci = Math.max(0, uangAkhir - kembalikan);
+  const kembalikanInvalid = kembalikan < 0 || kembalikan > uangAkhir;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!shift) return;
+    if (kembalikanInvalid) {
+      setError("Jumlah yang dikembalikan harus 0 sampai uang fisik di laci.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
       await shiftClose({
         id: shift.id,
         uangAkhirAktual: uangAkhir,
+        kembalikanKeUtama: kembalikan,
         catatan: catatan.trim(),
       });
       await refreshShift();
@@ -186,6 +197,108 @@ export function CloseShiftModal({ open, onClose }: CloseShiftModalProps) {
                 </span>
               </div>
             </div>
+
+            {/* Pengembalian ke Kas Utama */}
+            <div>
+              <label htmlFor="cs-kembali" className="block text-sm font-medium text-zinc-700">
+                Kembalikan ke {shift?.kasUtamaNama ? <span className="text-zinc-900">{shift.kasUtamaNama}</span> : "Kas Operasional Utama"}
+              </label>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                Berapa rupiah yang ingin dipindahkan dari laci kasir balik ke kas operasional. Sisanya stay di laci sebagai modal awal shift berikutnya.
+              </p>
+              <input
+                id="cs-kembali"
+                inputMode="numeric"
+                className={inputClass}
+                value={kembaliText}
+                onChange={(e) => setKembaliText(e.target.value)}
+              />
+              <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    className="rounded-md border border-zinc-200 bg-white px-2 py-0.5 font-medium text-zinc-700 hover:bg-zinc-50 cursor-pointer"
+                    onClick={() => setKembaliText("0")}
+                  >
+                    Biarkan di laci
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md border border-zinc-200 bg-white px-2 py-0.5 font-medium text-zinc-700 hover:bg-zinc-50 cursor-pointer"
+                    onClick={() => setKembaliText(String(uangAkhir))}
+                  >
+                    Kembalikan semua
+                  </button>
+                  {rekap?.shift?.modalAwal ? (
+                    <button
+                      type="button"
+                      className="rounded-md border border-zinc-200 bg-white px-2 py-0.5 font-medium text-zinc-700 hover:bg-zinc-50 cursor-pointer"
+                      onClick={() =>
+                        setKembaliText(String(Math.max(0, uangAkhir - rekap.shift.modalAwal)))
+                      }
+                      title="Sisakan jumlah = modal awal shift, kembalikan selebihnya"
+                    >
+                      Sisakan = modal awal
+                    </button>
+                  ) : null}
+                </div>
+                <span
+                  className={`font-semibold ${
+                    kembalikanInvalid ? "text-rose-700" : "text-zinc-700"
+                  }`}
+                >
+                  Sisa di laci: {formatRupiah(sisaDiLaci)}
+                </span>
+              </div>
+            </div>
+
+            {/* Ringkasan jurnal yang akan terbentuk */}
+            {(selisih !== 0 || kembalikan > 0) && shift?.kasKasirKode ? (
+              <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-3">
+                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-sky-900">
+                  <PiggyBank className="h-3.5 w-3.5" aria-hidden />
+                  Jurnal yang akan dibentuk
+                </p>
+                <ul className="mt-2 space-y-1.5 text-xs text-sky-900">
+                  {selisih > 0 ? (
+                    <li className="flex items-center gap-1.5">
+                      <span className="rounded-md bg-white px-1.5 py-0.5 font-medium ring-1 ring-inset ring-sky-200">
+                        D {shift.kasKasirNama || shift.kasKasirKode}
+                      </span>
+                      <ArrowRight className="h-3 w-3" aria-hidden />
+                      <span className="rounded-md bg-white px-1.5 py-0.5 font-medium ring-1 ring-inset ring-sky-200">
+                        K {shift.akunSelisihKasNama || shift.akunSelisihKasKode || "Akun Selisih Kas"}
+                      </span>
+                      <span className="ml-auto font-semibold">{formatRupiah(selisih)}</span>
+                    </li>
+                  ) : null}
+                  {selisih < 0 ? (
+                    <li className="flex items-center gap-1.5">
+                      <span className="rounded-md bg-white px-1.5 py-0.5 font-medium ring-1 ring-inset ring-sky-200">
+                        D {shift.akunSelisihKasNama || shift.akunSelisihKasKode || "Akun Selisih Kas"}
+                      </span>
+                      <ArrowRight className="h-3 w-3" aria-hidden />
+                      <span className="rounded-md bg-white px-1.5 py-0.5 font-medium ring-1 ring-inset ring-sky-200">
+                        K {shift.kasKasirNama || shift.kasKasirKode}
+                      </span>
+                      <span className="ml-auto font-semibold">{formatRupiah(-selisih)}</span>
+                    </li>
+                  ) : null}
+                  {kembalikan > 0 ? (
+                    <li className="flex items-center gap-1.5">
+                      <span className="rounded-md bg-white px-1.5 py-0.5 font-medium ring-1 ring-inset ring-sky-200">
+                        D {shift.kasUtamaNama || shift.kasUtamaKode || "Kas Utama"}
+                      </span>
+                      <ArrowRight className="h-3 w-3" aria-hidden />
+                      <span className="rounded-md bg-white px-1.5 py-0.5 font-medium ring-1 ring-inset ring-sky-200">
+                        K {shift.kasKasirNama || shift.kasKasirKode}
+                      </span>
+                      <span className="ml-auto font-semibold">{formatRupiah(kembalikan)}</span>
+                    </li>
+                  ) : null}
+                </ul>
+              </div>
+            ) : null}
 
             <div>
               <label htmlFor="cs-catatan" className="block text-sm font-medium text-zinc-700">

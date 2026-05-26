@@ -10597,6 +10597,173 @@ pub fn pos_metode_bayar_delete(state: State<DbState>, kode: String) -> Result<()
     })
 }
 
+// --- Konfigurasi POS (kas operasional & kas kasir) ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PosKonfigurasiRow {
+    pub kas_utama_kode: Option<String>,
+    pub kas_utama_nama: Option<String>,
+    pub kas_kasir_kode: Option<String>,
+    pub kas_kasir_nama: Option<String>,
+    pub akun_selisih_kas_kode: Option<String>,
+    pub akun_selisih_kas_nama: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PosKonfigurasiSetPayload {
+    pub kas_utama_kode: Option<String>,
+    pub kas_kasir_kode: Option<String>,
+    pub akun_selisih_kas_kode: Option<String>,
+}
+
+fn pos_konfigurasi_ensure_row(conn: &Connection, ts: i64) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR IGNORE INTO pos_konfigurasi (id, created_at, updated_at) VALUES (1, ?, ?)",
+        params![ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn pos_konfigurasi_load(conn: &Connection) -> Result<PosKonfigurasiRow, String> {
+    conn.query_row(
+        "SELECT pk.kas_utama_kode, COALESCE(a1.nama, ''),
+                pk.kas_kasir_kode, COALESCE(a2.nama, ''),
+                pk.akun_selisih_kas_kode, COALESCE(a3.nama, '')
+         FROM pos_konfigurasi pk
+         LEFT JOIN akun_keuangan a1 ON lower(a1.kode) = lower(pk.kas_utama_kode)
+         LEFT JOIN akun_keuangan a2 ON lower(a2.kode) = lower(pk.kas_kasir_kode)
+         LEFT JOIN akun_keuangan a3 ON lower(a3.kode) = lower(pk.akun_selisih_kas_kode)
+         WHERE pk.id = 1",
+        [],
+        |r| {
+            let kas_utama: Option<String> = r.get(0)?;
+            let kas_utama_nama: String = r.get(1)?;
+            let kas_kasir: Option<String> = r.get(2)?;
+            let kas_kasir_nama: String = r.get(3)?;
+            let akun_sel: Option<String> = r.get(4)?;
+            let akun_sel_nama: String = r.get(5)?;
+            Ok(PosKonfigurasiRow {
+                kas_utama_kode: kas_utama,
+                kas_utama_nama: if kas_utama_nama.is_empty() {
+                    None
+                } else {
+                    Some(kas_utama_nama)
+                },
+                kas_kasir_kode: kas_kasir,
+                kas_kasir_nama: if kas_kasir_nama.is_empty() {
+                    None
+                } else {
+                    Some(kas_kasir_nama)
+                },
+                akun_selisih_kas_kode: akun_sel,
+                akun_selisih_kas_nama: if akun_sel_nama.is_empty() {
+                    None
+                } else {
+                    Some(akun_sel_nama)
+                },
+            })
+        },
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn pos_konfigurasi_get(state: State<DbState>) -> Result<PosKonfigurasiRow, String> {
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    pos_konfigurasi_ensure_row(&tx, ts)?;
+    let row = pos_konfigurasi_load(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(row)
+}
+
+/// Set konfigurasi kas POS.
+///
+/// Efek samping: bila `kas_kasir_kode` di-set, **semua metode bayar dengan
+/// `is_tunai = 1` akan otomatis dipindahkan ke akun kas yang sama** (relasi
+/// terkunci). Ini menjamin pembayaran tunai pada POS dan faktur penjualan
+/// non-POS yang menggunakan metode bayar tunai konsisten masuk ke Kas Kasir.
+#[tauri::command]
+pub fn pos_konfigurasi_set(
+    state: State<DbState>,
+    payload: PosKonfigurasiSetPayload,
+) -> Result<PosKonfigurasiRow, String> {
+    let kas_utama = payload
+        .kas_utama_kode
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty());
+    let kas_kasir = payload
+        .kas_kasir_kode
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty());
+    let akun_selisih = payload
+        .akun_selisih_kas_kode
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty());
+
+    if let (Some(a), Some(b)) = (&kas_utama, &kas_kasir) {
+        if a.eq_ignore_ascii_case(b) {
+            return Err(
+                "Kas Utama dan Kas Kasir tidak boleh akun yang sama (harus dua akun terpisah)."
+                    .into(),
+            );
+        }
+    }
+
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    pos_konfigurasi_ensure_row(&tx, ts)?;
+
+    for kode_opt in [&kas_utama, &kas_kasir, &akun_selisih] {
+        if let Some(kode) = kode_opt {
+            let n: i64 = tx
+                .query_row(
+                    "SELECT COUNT(*) FROM akun_keuangan WHERE lower(kode) = lower(?)",
+                    params![kode],
+                    |r| r.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            if n == 0 {
+                return Err(format!("Akun '{kode}' tidak ditemukan."));
+            }
+        }
+    }
+
+    tx.execute(
+        "UPDATE pos_konfigurasi
+         SET kas_utama_kode = ?, kas_kasir_kode = ?, akun_selisih_kas_kode = ?, updated_at = ?
+         WHERE id = 1",
+        params![kas_utama, kas_kasir, akun_selisih, ts],
+    )
+    .map_err(|e| {
+        if e.to_string().contains("FOREIGN KEY") {
+            "Salah satu akun yang dipilih tidak valid.".into()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    // Sinkron pos_metode_bayar tunai → kas_kasir_kode (hubungan terkunci).
+    if let Some(kas_kasir_kode) = &kas_kasir {
+        tx.execute(
+            "UPDATE pos_metode_bayar
+             SET akun_kas_kode = ?, updated_at = ?
+             WHERE is_tunai = 1 AND lower(akun_kas_kode) <> lower(?)",
+            params![kas_kasir_kode, ts, kas_kasir_kode],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    let row = pos_konfigurasi_load(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(row)
+}
+
 // --- Shift kasir ---
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -10616,19 +10783,42 @@ pub struct PosShiftRow {
     pub status: String,
     pub mulai_ts: i64,
     pub selesai_ts: Option<i64>,
+    pub kas_utama_kode: Option<String>,
+    pub kas_utama_nama: Option<String>,
+    pub kas_kasir_kode: Option<String>,
+    pub kas_kasir_nama: Option<String>,
+    pub akun_selisih_kas_kode: Option<String>,
+    pub akun_selisih_kas_nama: Option<String>,
+    pub kembalikan_ke_utama: i64,
+    pub jurnal_open_id: Option<i64>,
+    pub jurnal_close_id: Option<i64>,
 }
 
 fn pos_shift_row_from_id(conn: &Connection, id: i64) -> Result<PosShiftRow, String> {
     conn.query_row(
         "SELECT s.id, s.kode, s.kasir_username, COALESCE(p.nama_lengkap, ''), s.gudang_kode, COALESCE(g.nama, ''),
                 s.modal_awal, s.uang_akhir_aktual, s.uang_akhir_ekspektasi, s.selisih,
-                s.catatan, s.status, s.mulai_ts, s.selesai_ts
+                s.catatan, s.status, s.mulai_ts, s.selesai_ts,
+                s.kas_utama_kode, COALESCE(au.nama, ''),
+                s.kas_kasir_kode, COALESCE(ak.nama, ''),
+                s.akun_selisih_kas_kode, COALESCE(asx.nama, ''),
+                COALESCE(s.kembalikan_ke_utama, 0),
+                s.jurnal_open_id, s.jurnal_close_id
          FROM pos_shift s
          LEFT JOIN pengguna p ON lower(p.username) = lower(s.kasir_username)
          LEFT JOIN gudang g ON lower(g.kode) = lower(s.gudang_kode)
+         LEFT JOIN akun_keuangan au ON lower(au.kode) = lower(s.kas_utama_kode)
+         LEFT JOIN akun_keuangan ak ON lower(ak.kode) = lower(s.kas_kasir_kode)
+         LEFT JOIN akun_keuangan asx ON lower(asx.kode) = lower(s.akun_selisih_kas_kode)
          WHERE s.id = ?",
         params![id],
         |r| {
+            let kas_utama_kode: Option<String> = r.get(14)?;
+            let kas_utama_nama: String = r.get(15)?;
+            let kas_kasir_kode: Option<String> = r.get(16)?;
+            let kas_kasir_nama: String = r.get(17)?;
+            let akun_sel_kode: Option<String> = r.get(18)?;
+            let akun_sel_nama: String = r.get(19)?;
             Ok(PosShiftRow {
                 id: r.get(0)?,
                 kode: r.get(1)?,
@@ -10644,6 +10834,15 @@ fn pos_shift_row_from_id(conn: &Connection, id: i64) -> Result<PosShiftRow, Stri
                 status: r.get(11)?,
                 mulai_ts: r.get(12)?,
                 selesai_ts: r.get(13)?,
+                kas_utama_kode,
+                kas_utama_nama: if kas_utama_nama.is_empty() { None } else { Some(kas_utama_nama) },
+                kas_kasir_kode,
+                kas_kasir_nama: if kas_kasir_nama.is_empty() { None } else { Some(kas_kasir_nama) },
+                akun_selisih_kas_kode: akun_sel_kode,
+                akun_selisih_kas_nama: if akun_sel_nama.is_empty() { None } else { Some(akun_sel_nama) },
+                kembalikan_ke_utama: r.get(20)?,
+                jurnal_open_id: r.get(21)?,
+                jurnal_close_id: r.get(22)?,
             })
         },
     )
@@ -10749,11 +10948,40 @@ pub fn pos_shift_open(
         return Err("Kasir ini masih memiliki shift terbuka. Tutup shift sebelumnya dulu.".into());
     }
 
+    // Load pengaturan POS — snapshot ke shift agar shift lama tetap konsisten
+    // bila settings nanti diganti.
+    pos_konfigurasi_ensure_row(&tx, ts)?;
+    let cfg = pos_konfigurasi_load(&tx)?;
+    let kas_utama_kode = cfg
+        .kas_utama_kode
+        .clone()
+        .ok_or_else(|| "Kas Operasional Utama belum di-set. Buka Pengaturan → Transaksi → POS dan tentukan dulu.".to_string())?;
+    let kas_kasir_kode = cfg
+        .kas_kasir_kode
+        .clone()
+        .ok_or_else(|| "Kas Kasir belum di-set. Buka Pengaturan → Transaksi → POS dan tentukan dulu.".to_string())?;
+    let akun_selisih_kode = cfg.akun_selisih_kas_kode.clone();
+
     let kode = format!("SH-{}", Utc::now().timestamp_millis());
     tx.execute(
-        "INSERT INTO pos_shift (kode, kasir_username, gudang_kode, modal_awal, catatan, status, mulai_ts, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'Open', ?, ?, ?)",
-        params![kode, kasir, gudang, payload.modal_awal, payload.catatan.trim(), ts, ts, ts],
+        "INSERT INTO pos_shift
+            (kode, kasir_username, gudang_kode, modal_awal, catatan, status, mulai_ts,
+             kas_utama_kode, kas_kasir_kode, akun_selisih_kas_kode,
+             created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'Open', ?, ?, ?, ?, ?, ?)",
+        params![
+            kode,
+            kasir,
+            gudang,
+            payload.modal_awal,
+            payload.catatan.trim(),
+            ts,
+            kas_utama_kode,
+            kas_kasir_kode,
+            akun_selisih_kode,
+            ts,
+            ts
+        ],
     )
     .map_err(|e| {
         if e.to_string().contains("FOREIGN KEY") {
@@ -10763,12 +10991,53 @@ pub fn pos_shift_open(
         }
     })?;
     let id = tx.last_insert_rowid();
+
+    // Post jurnal modal awal: D Kas Kasir, K Kas Utama.
+    let mut jurnal_open_id: Option<i64> = None;
+    if payload.modal_awal > 0 {
+        let tanggal = Utc::now().format("%Y-%m-%d").to_string();
+        let referensi = kode.clone();
+        let catatan = format!("Modal awal shift {}", &kode);
+        tx.execute(
+            "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
+             VALUES (?, 'POS_SHIFT_OPEN', ?, ?, ?, ?)",
+            params![tanggal, referensi, catatan, ts, ts],
+        )
+        .map_err(|e| e.to_string())?;
+        let jid = tx.last_insert_rowid();
+        // Debit Kas Kasir
+        tx.execute(
+            "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+             VALUES (?, ?, ?, 0, '')",
+            params![jid, &kas_kasir_kode, payload.modal_awal],
+        )
+        .map_err(|e| e.to_string())?;
+        akun_kas_apply_saldo_delta(&tx, &kas_kasir_kode, payload.modal_awal, 0, ts)?;
+        // Kredit Kas Utama
+        tx.execute(
+            "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+             VALUES (?, ?, 0, ?, '')",
+            params![jid, &kas_utama_kode, payload.modal_awal],
+        )
+        .map_err(|e| e.to_string())?;
+        akun_kas_apply_saldo_delta(&tx, &kas_utama_kode, 0, payload.modal_awal, ts)?;
+        jurnal_open_id = Some(jid);
+        tx.execute(
+            "UPDATE pos_shift SET jurnal_open_id = ?, updated_at = ? WHERE id = ?",
+            params![jid, ts, id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
     let row = pos_shift_row_from_id(&tx, id)?;
 
     let payload_json = serde_json::json!({
         "gudangKode": row.gudang_kode,
         "gudangNama": row.gudang_nama,
         "modalAwal": row.modal_awal,
+        "kasUtamaKode": kas_utama_kode,
+        "kasKasirKode": kas_kasir_kode,
+        "jurnalId": jurnal_open_id,
     })
     .to_string();
     pos_shift_log_event(&tx, id, pos_shift_event::OPENED, &kasir, &payload_json)?;
@@ -11016,6 +11285,11 @@ pub fn pos_shift_rekap(state: State<DbState>, id: i64) -> Result<PosShiftRekap, 
 pub struct PosShiftClosePayload {
     pub id: i64,
     pub uang_akhir_aktual: i64,
+    /// Jumlah yang ditransfer balik ke Kas Operasional Utama. Sisanya
+    /// (`uang_akhir_aktual - kembalikan_ke_utama`) tetap di laci sebagai
+    /// modal awal shift berikutnya. Default 0 = semua stay di laci.
+    #[serde(default)]
+    pub kembalikan_ke_utama: i64,
     #[serde(default)]
     pub catatan: String,
 }
@@ -11028,15 +11302,34 @@ pub fn pos_shift_close(
     if payload.uang_akhir_aktual < 0 {
         return Err("Uang akhir aktual tidak boleh negatif.".into());
     }
+    if payload.kembalikan_ke_utama < 0 {
+        return Err("Jumlah yang dikembalikan ke Kas Utama tidak boleh negatif.".into());
+    }
+    if payload.kembalikan_ke_utama > payload.uang_akhir_aktual {
+        return Err("Jumlah yang dikembalikan ke Kas Utama tidak boleh melebihi uang di laci.".into());
+    }
     let ts = now_ts();
     let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-    let status: String = tx
+    let (status, kas_utama_snap, kas_kasir_snap, akun_selisih_snap): (
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = tx
         .query_row(
-            "SELECT status FROM pos_shift WHERE id = ?",
+            "SELECT status, kas_utama_kode, kas_kasir_kode, akun_selisih_kas_kode
+             FROM pos_shift WHERE id = ?",
             params![payload.id],
-            |r| r.get(0),
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                ))
+            },
         )
         .map_err(|e| {
             if matches!(e, rusqlite::Error::QueryReturnedNoRows) {
@@ -11053,9 +11346,33 @@ pub fn pos_shift_close(
     let ekspektasi = rekap.uang_akhir_ekspektasi;
     let selisih = payload.uang_akhir_aktual - ekspektasi;
 
+    // Validasi akun untuk jurnal — wajib bila ada selisih atau pengembalian.
+    let need_jurnal = selisih != 0 || payload.kembalikan_ke_utama > 0;
+    if need_jurnal {
+        if kas_kasir_snap.is_none() {
+            return Err(
+                "Shift ini dibuka tanpa akun Kas Kasir. Tidak dapat membuat jurnal penutupan."
+                    .into(),
+            );
+        }
+        if selisih != 0 && akun_selisih_snap.is_none() {
+            return Err(
+                "Akun Selisih Kas belum di-set di Pengaturan POS. Tidak bisa membentuk jurnal selisih."
+                    .into(),
+            );
+        }
+        if payload.kembalikan_ke_utama > 0 && kas_utama_snap.is_none() {
+            return Err(
+                "Shift ini dibuka tanpa akun Kas Utama. Tidak bisa menransfer balik."
+                    .into(),
+            );
+        }
+    }
+
     tx.execute(
         "UPDATE pos_shift
          SET uang_akhir_aktual = ?, uang_akhir_ekspektasi = ?, selisih = ?,
+             kembalikan_ke_utama = ?,
              catatan = CASE WHEN ? = '' THEN catatan ELSE ? END,
              status = 'Closed', selesai_ts = ?, updated_at = ?
          WHERE id = ?",
@@ -11063,6 +11380,7 @@ pub fn pos_shift_close(
             payload.uang_akhir_aktual,
             ekspektasi,
             selisih,
+            payload.kembalikan_ke_utama,
             payload.catatan.trim(),
             payload.catatan.trim(),
             ts,
@@ -11072,6 +11390,84 @@ pub fn pos_shift_close(
     )
     .map_err(|e| e.to_string())?;
 
+    // Post jurnal kompound penutupan: selisih (lebih/kurang) + transfer balik ke Kas Utama.
+    let mut jurnal_close_id: Option<i64> = None;
+    if need_jurnal {
+        let kas_kasir = kas_kasir_snap.as_ref().expect("checked above");
+        let tanggal = Utc::now().format("%Y-%m-%d").to_string();
+        let referensi = rekap.shift.kode.clone();
+        let catatan = format!("Tutup shift {} (selisih + pengembalian)", &referensi);
+        tx.execute(
+            "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
+             VALUES (?, 'POS_SHIFT_CLOSE', ?, ?, ?, ?)",
+            params![tanggal, referensi, catatan, ts, ts],
+        )
+        .map_err(|e| e.to_string())?;
+        let jid = tx.last_insert_rowid();
+
+        if selisih > 0 {
+            // Kelebihan kas: D Kas Kasir, K Akun Selisih Kas
+            let akun_sel = akun_selisih_snap.as_ref().expect("checked above");
+            tx.execute(
+                "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+                 VALUES (?, ?, ?, 0, 'Selisih kas lebih')",
+                params![jid, kas_kasir, selisih],
+            )
+            .map_err(|e| e.to_string())?;
+            akun_kas_apply_saldo_delta(&tx, kas_kasir, selisih, 0, ts)?;
+            tx.execute(
+                "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+                 VALUES (?, ?, 0, ?, 'Selisih kas lebih')",
+                params![jid, akun_sel, selisih],
+            )
+            .map_err(|e| e.to_string())?;
+            akun_kas_apply_saldo_delta(&tx, akun_sel, 0, selisih, ts)?;
+        } else if selisih < 0 {
+            // Kekurangan kas: D Akun Selisih Kas, K Kas Kasir
+            let akun_sel = akun_selisih_snap.as_ref().expect("checked above");
+            let amt = -selisih;
+            tx.execute(
+                "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+                 VALUES (?, ?, ?, 0, 'Selisih kas kurang')",
+                params![jid, akun_sel, amt],
+            )
+            .map_err(|e| e.to_string())?;
+            akun_kas_apply_saldo_delta(&tx, akun_sel, amt, 0, ts)?;
+            tx.execute(
+                "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+                 VALUES (?, ?, 0, ?, 'Selisih kas kurang')",
+                params![jid, kas_kasir, amt],
+            )
+            .map_err(|e| e.to_string())?;
+            akun_kas_apply_saldo_delta(&tx, kas_kasir, 0, amt, ts)?;
+        }
+
+        if payload.kembalikan_ke_utama > 0 {
+            let kas_utama = kas_utama_snap.as_ref().expect("checked above");
+            tx.execute(
+                "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+                 VALUES (?, ?, ?, 0, 'Pengembalian ke Kas Utama')",
+                params![jid, kas_utama, payload.kembalikan_ke_utama],
+            )
+            .map_err(|e| e.to_string())?;
+            akun_kas_apply_saldo_delta(&tx, kas_utama, payload.kembalikan_ke_utama, 0, ts)?;
+            tx.execute(
+                "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+                 VALUES (?, ?, 0, ?, 'Pengembalian ke Kas Utama')",
+                params![jid, kas_kasir, payload.kembalikan_ke_utama],
+            )
+            .map_err(|e| e.to_string())?;
+            akun_kas_apply_saldo_delta(&tx, kas_kasir, 0, payload.kembalikan_ke_utama, ts)?;
+        }
+
+        tx.execute(
+            "UPDATE pos_shift SET jurnal_close_id = ?, updated_at = ? WHERE id = ?",
+            params![jid, ts, payload.id],
+        )
+        .map_err(|e| e.to_string())?;
+        jurnal_close_id = Some(jid);
+    }
+
     let final_rekap = pos_shift_rekap_compute(&tx, payload.id)?;
 
     let kasir_username = final_rekap.shift.kasir_username.clone();
@@ -11079,6 +11475,8 @@ pub fn pos_shift_close(
         "uangAkhirAktual": payload.uang_akhir_aktual,
         "uangAkhirEkspektasi": ekspektasi,
         "selisih": selisih,
+        "kembalikanKeUtama": payload.kembalikan_ke_utama,
+        "jurnalId": jurnal_close_id,
     })
     .to_string();
     pos_shift_log_event(
@@ -11106,10 +11504,18 @@ pub fn pos_shift_list(
         let mut sql = String::from(
             "SELECT s.id, s.kode, s.kasir_username, COALESCE(p.nama_lengkap, ''), s.gudang_kode, COALESCE(g.nama, ''),
                     s.modal_awal, s.uang_akhir_aktual, s.uang_akhir_ekspektasi, s.selisih,
-                    s.catatan, s.status, s.mulai_ts, s.selesai_ts
+                    s.catatan, s.status, s.mulai_ts, s.selesai_ts,
+                    s.kas_utama_kode, COALESCE(au.nama, ''),
+                    s.kas_kasir_kode, COALESCE(ak.nama, ''),
+                    s.akun_selisih_kas_kode, COALESCE(asx.nama, ''),
+                    COALESCE(s.kembalikan_ke_utama, 0),
+                    s.jurnal_open_id, s.jurnal_close_id
              FROM pos_shift s
              LEFT JOIN pengguna p ON lower(p.username) = lower(s.kasir_username)
              LEFT JOIN gudang g ON lower(g.kode) = lower(s.gudang_kode)
+             LEFT JOIN akun_keuangan au ON lower(au.kode) = lower(s.kas_utama_kode)
+             LEFT JOIN akun_keuangan ak ON lower(ak.kode) = lower(s.kas_kasir_kode)
+             LEFT JOIN akun_keuangan asx ON lower(asx.kode) = lower(s.akun_selisih_kas_kode)
              WHERE 1=1",
         );
         let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -11137,6 +11543,12 @@ pub fn pos_shift_list(
         let mut stmt = conn.prepare(&sql)?;
         let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
         let rows = stmt.query_map(params_refs.as_slice(), |r| {
+            let kas_utama_kode: Option<String> = r.get(14)?;
+            let kas_utama_nama: String = r.get(15)?;
+            let kas_kasir_kode: Option<String> = r.get(16)?;
+            let kas_kasir_nama: String = r.get(17)?;
+            let akun_sel_kode: Option<String> = r.get(18)?;
+            let akun_sel_nama: String = r.get(19)?;
             Ok(PosShiftRow {
                 id: r.get(0)?,
                 kode: r.get(1)?,
@@ -11152,6 +11564,15 @@ pub fn pos_shift_list(
                 status: r.get(11)?,
                 mulai_ts: r.get(12)?,
                 selesai_ts: r.get(13)?,
+                kas_utama_kode,
+                kas_utama_nama: if kas_utama_nama.is_empty() { None } else { Some(kas_utama_nama) },
+                kas_kasir_kode,
+                kas_kasir_nama: if kas_kasir_nama.is_empty() { None } else { Some(kas_kasir_nama) },
+                akun_selisih_kas_kode: akun_sel_kode,
+                akun_selisih_kas_nama: if akun_sel_nama.is_empty() { None } else { Some(akun_sel_nama) },
+                kembalikan_ke_utama: r.get(20)?,
+                jurnal_open_id: r.get(21)?,
+                jurnal_close_id: r.get(22)?,
             })
         })?;
         rows.collect()

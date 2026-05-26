@@ -357,6 +357,65 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     migrate_pos_tables(conn)?;
     migrate_produksi_tables(conn)?;
     migrate_pos_shift_event_log(conn)?;
+    migrate_pos_konfigurasi(conn)?;
+    migrate_pos_shift_jurnal_columns(conn)?;
+    Ok(())
+}
+
+/// Pengaturan kas POS — kas operasional utama (sumber modal), kas kasir
+/// (laci/till), dan akun penampung selisih kas saat tutup shift.
+fn migrate_pos_konfigurasi(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS pos_konfigurasi (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            kas_utama_kode TEXT REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            kas_kasir_kode TEXT REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            akun_selisih_kas_kode TEXT REFERENCES akun_keuangan(kode) ON UPDATE CASCADE,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        ",
+    )?;
+    Ok(())
+}
+
+/// Tambah kolom snapshot pengaturan POS + tautan jurnal otomatis ke
+/// `pos_shift`. Idempotent — kolom hanya ditambah bila belum ada.
+fn migrate_pos_shift_jurnal_columns(conn: &Connection) -> rusqlite::Result<()> {
+    let existing: std::collections::HashSet<String> = {
+        let mut stmt = conn.prepare("PRAGMA table_info(pos_shift)")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(1))?;
+        let mut out = std::collections::HashSet::new();
+        for row in rows {
+            out.insert(row?);
+        }
+        out
+    };
+
+    let alters: &[(&str, &str)] = &[
+        ("kas_utama_kode", "ALTER TABLE pos_shift ADD COLUMN kas_utama_kode TEXT"),
+        ("kas_kasir_kode", "ALTER TABLE pos_shift ADD COLUMN kas_kasir_kode TEXT"),
+        (
+            "akun_selisih_kas_kode",
+            "ALTER TABLE pos_shift ADD COLUMN akun_selisih_kas_kode TEXT",
+        ),
+        ("jurnal_open_id", "ALTER TABLE pos_shift ADD COLUMN jurnal_open_id INTEGER"),
+        (
+            "jurnal_close_id",
+            "ALTER TABLE pos_shift ADD COLUMN jurnal_close_id INTEGER",
+        ),
+        (
+            "kembalikan_ke_utama",
+            "ALTER TABLE pos_shift ADD COLUMN kembalikan_ke_utama INTEGER NOT NULL DEFAULT 0",
+        ),
+    ];
+
+    for (col, sql) in alters {
+        if !existing.contains(*col) {
+            conn.execute(sql, [])?;
+        }
+    }
     Ok(())
 }
 

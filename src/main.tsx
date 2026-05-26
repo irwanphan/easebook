@@ -3,7 +3,12 @@ import ReactDOM from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
 import { mainRouter, posRouter } from "./app/router";
 import { currentWindowLabel, POS_WINDOW_LABEL } from "./lib/posWindow";
+import { installProductionHardening } from "./lib/productionHardening";
 import "./index.css";
+
+if (import.meta.env.PROD) {
+  installProductionHardening();
+}
 
 const router = currentWindowLabel() === POS_WINDOW_LABEL ? posRouter : mainRouter;
 

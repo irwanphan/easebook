@@ -274,7 +274,7 @@ export function ProduksiForm({ mode, nomor, initial }: ProduksiFormProps) {
         </div>
       ) : null}
 
-      <Card className="p-5 sm:p-6">
+      <Card className="">
         <h2 className="text-sm font-semibold text-zinc-900">Informasi produksi</h2>
         <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <TokoInput
@@ -353,7 +353,7 @@ export function ProduksiForm({ mode, nomor, initial }: ProduksiFormProps) {
         totalHint="Estimasi berdasarkan HPP saat ini. Nilai final ditentukan saat 'Tandai Selesai'."
       />
 
-      <Card className="p-5 sm:p-6">
+      <Card className="">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-sm font-semibold text-zinc-900">Biaya produksi</h2>
@@ -548,13 +548,13 @@ function LinesCard({
   }, [barangs]);
 
   return (
-    <Card className="overflow-hidden p-0">
-      <div className="flex flex-col gap-4 border-b border-zinc-100 px-5 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-6">
-        <div>
+    <Card className="w-full overflow-hidden p-0">
+      <div className="flex flex-col gap-3 border-b border-zinc-100 bg-zinc-50/40 pb-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold text-zinc-900">{title}</h2>
           <p className="mt-1 text-sm text-zinc-500">{description}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2 self-start sm:self-auto">
           {extraHeader}
           <Button
             type="button"

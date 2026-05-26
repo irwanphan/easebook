@@ -1,5 +1,13 @@
-import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, LogOut, Store, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  CheckCircle2,
+  LayoutGrid,
+  LogOut,
+  Printer,
+  Store,
+  Warehouse,
+  X,
+} from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -9,19 +17,72 @@ import { OpenShiftModal } from "@/features/pos/OpenShiftModal";
 import { CloseShiftModal } from "@/features/pos/CloseShiftModal";
 import { POSCatalog } from "@/features/pos/POSCatalog";
 import { POSCart } from "@/features/pos/POSCart";
+import { POSChangeGudangModal } from "@/features/pos/POSChangeGudangModal";
 import { POSCustomerPicker } from "@/features/pos/POSCustomerPicker";
 import { POSPaymentModal } from "@/features/pos/POSPaymentModal";
+import {
+  POSSettingsMenu,
+  type POSSettingsSection,
+} from "@/features/pos/POSSettingsMenu";
 import { usePOS } from "@/features/pos/POSContext";
 import type { PosTransaksiResult } from "@/data/pos";
 import { formatJamMenit, formatRupiah } from "@/lib/format";
 
 function POSTopBar({
   onCloseShift,
+  onChangeGudang,
 }: {
   onCloseShift: () => void;
+  onChangeGudang: () => void;
 }) {
   const { session, logout } = useAuth();
   const { shift, jumlahItem } = usePOS();
+
+  // Menu pengaturan POS — deklaratif. Tambah pengaturan baru = tambah entry
+  // di `sections` (Open/Closed Principle).
+  const settingsSections = useMemo<POSSettingsSection[]>(() => {
+    if (!shift) return [];
+    const cartTidakKosong = jumlahItem > 0;
+    return [
+      {
+        id: "sesi-shift",
+        title: "Sesi shift",
+        items: [
+          {
+            id: "ganti-gudang",
+            icon: Warehouse,
+            label: "Ganti gudang aktif",
+            description: `Sekarang: ${shift.gudangNama || shift.gudangKode}`,
+            onClick: onChangeGudang,
+            disabled: cartTidakKosong,
+            disabledReason: cartTidakKosong
+              ? "Kosongkan keranjang dulu sebelum ganti gudang."
+              : undefined,
+          },
+        ],
+      },
+      {
+        id: "akan-datang",
+        title: "Akan datang",
+        items: [
+          {
+            id: "printer-multi",
+            icon: Printer,
+            label: "Printer multi-destinasi",
+            description: "Cetak ke kasir, gudang, customer service",
+            comingSoon: true,
+          },
+          {
+            id: "layout-katalog",
+            icon: LayoutGrid,
+            label: "Tampilan katalog",
+            description: "Layout grid/list, ukuran kartu",
+            comingSoon: true,
+          },
+        ],
+      },
+    ];
+  }, [shift, jumlahItem, onChangeGudang]);
 
   return (
     <header className="flex shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-6 py-2.5">
@@ -39,15 +100,21 @@ function POSTopBar({
 
       {shift ? (
         <div className="flex items-center gap-3 text-xs">
-          <span className="rounded-md bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">
-            Shift terbuka
+          {/* <span className="font-mono text-zinc-500">{shift.kode}</span> */}
+          <span className="flex flex-col text-zinc-600">
+            Gudang 
+            <span className="font-semibold text-zinc-900">{shift.gudangNama || shift.gudangKode}</span>
           </span>
-          <span className="font-mono text-zinc-500">{shift.kode}</span>
-          <span className="text-zinc-600">
-            Gudang <span className="font-semibold text-zinc-900">{shift.gudangNama || shift.gudangKode}</span>
-          </span>
-          <span className="text-zinc-500">sejak {formatJamMenit(shift.mulaiTs)}</span>
-          <span className="text-zinc-500">• Modal {formatRupiah(shift.modalAwal)}</span>
+          <VerticalSeparator />
+          <div className="flex flex-col">
+            <span className="rounded-md font-semibold text-emerald-700">
+              Shift terbuka
+            </span>
+            <div className="flex items-center gap-1">
+              <span className="text-zinc-500">sejak {formatJamMenit(shift.mulaiTs)}</span>
+              <span className="text-zinc-500">• Modal {formatRupiah(shift.modalAwal)}</span>
+            </div>
+          </div>
         </div>
       ) : (
         <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">
@@ -59,6 +126,7 @@ function POSTopBar({
         <span className="hidden md:inline">
           Kasir <span className="font-semibold text-zinc-900">{session?.namaLengkap ?? session?.username ?? "—"}</span>
         </span>
+        {shift ? <POSSettingsMenu sections={settingsSections} /> : null}
         {shift ? (
           <Button
             type="button"
@@ -163,11 +231,15 @@ export function POSPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [closeShiftOpen, setCloseShiftOpen] = useState(false);
+  const [changeGudangOpen, setChangeGudangOpen] = useState(false);
   const [sukses, setSukses] = useState<PosTransaksiResult | null>(null);
 
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
-      <POSTopBar onCloseShift={() => setCloseShiftOpen(true)} />
+      <POSTopBar
+        onCloseShift={() => setCloseShiftOpen(true)}
+        onChangeGudang={() => setChangeGudangOpen(true)}
+      />
 
       <div className="flex min-h-0 flex-1">
         {shift ? (
@@ -196,6 +268,12 @@ export function POSPage() {
 
       {/* Modal Tutup Shift */}
       <CloseShiftModal open={closeShiftOpen} onClose={() => setCloseShiftOpen(false)} />
+
+      {/* Modal Ganti Gudang */}
+      <POSChangeGudangModal
+        open={changeGudangOpen}
+        onClose={() => setChangeGudangOpen(false)}
+      />
 
       {/* Modal pilih pelanggan */}
       <POSCustomerPicker open={pickerOpen} onClose={() => setPickerOpen(false)} />

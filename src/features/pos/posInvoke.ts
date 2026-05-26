@@ -37,6 +37,10 @@ export function shiftClose(payload: {
   return invoke<PosShiftRekap>("pos_shift_close", { payload });
 }
 
+export function shiftChangeGudang(payload: { id: number; gudangKode: string }) {
+  return invoke<PosShift>("pos_shift_change_gudang", { payload });
+}
+
 export function shiftRekap(id: number) {
   return invoke<PosShiftRekap>("pos_shift_rekap", { id });
 }

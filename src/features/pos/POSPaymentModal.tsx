@@ -282,22 +282,21 @@ export function POSPaymentModal({ open, onClose, onSuccess }: POSPaymentModalPro
                     </div>
                     {metode?.isTunai ? (
                       <div className="mt-2 flex flex-wrap gap-2">
-                        <button
+                        <Button
                           type="button"
                           onClick={() => applyQuickCash(l.uid, total)}
-                          className="rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
                         >
                           Pas ({formatRupiah(total)})
-                        </button>
+                        </Button>
                         {QUICK_CASH_DENOMS.filter((n) => n >= total).slice(0, 4).map((n) => (
-                          <button
+                          <Button
                             key={n}
                             type="button"
                             onClick={() => applyQuickCash(l.uid, n)}
                             className="rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
                           >
                             {formatRupiah(n)}
-                          </button>
+                          </Button>
                         ))}
                       </div>
                     ) : null}

@@ -10,7 +10,7 @@ import {
 import type { PosCartLine, PosCatalogItem, PosShift } from "@/data/pos";
 import { POS_PELANGGAN_DEFAULT_KODE } from "@/data/pos";
 import { useAuth } from "@/features/auth/AuthContext";
-import { shiftActiveFor } from "@/features/pos/posInvoke";
+import { shiftActiveFor, shiftChangeGudang } from "@/features/pos/posInvoke";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
 type PelangganRef = {
@@ -25,6 +25,12 @@ type POSContextValue = {
   shiftError: string | null;
   refreshShift: () => Promise<void>;
   setShift: (s: PosShift | null) => void;
+  /**
+   * Ganti gudang aktif pada shift terbuka. Hanya boleh dipanggil saat
+   * keranjang kosong (cart.length === 0). Backend juga akan menolak bila
+   * shift sudah memiliki transaksi terkait.
+   */
+  changeGudang: (gudangKode: string) => Promise<PosShift>;
 
   /** Pelanggan terpilih (default walk-in GUEST). */
   pelanggan: PelangganRef;
@@ -108,6 +114,22 @@ export function POSProvider({ children }: { children: ReactNode }) {
   const setShift = useCallback((s: PosShift | null) => {
     setShiftState(s);
   }, []);
+
+  const changeGudang = useCallback(
+    async (gudangKode: string) => {
+      const current = shift;
+      if (!current) {
+        throw new Error("Tidak ada shift aktif.");
+      }
+      const next = await shiftChangeGudang({
+        id: current.id,
+        gudangKode,
+      });
+      setShiftState(next);
+      return next;
+    },
+    [shift],
+  );
 
   const setPelanggan = useCallback((p: PelangganRef) => {
     setPelangganState({ kode: p.kode, nama: p.nama });
@@ -205,6 +227,7 @@ export function POSProvider({ children }: { children: ReactNode }) {
       shiftError,
       refreshShift,
       setShift,
+      changeGudang,
       pelanggan,
       setPelanggan,
       resetPelanggan,
@@ -230,6 +253,7 @@ export function POSProvider({ children }: { children: ReactNode }) {
       shiftError,
       refreshShift,
       setShift,
+      changeGudang,
       pelanggan,
       setPelanggan,
       resetPelanggan,

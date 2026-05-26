@@ -10768,6 +10768,86 @@ pub fn pos_shift_open(
     Ok(row)
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PosShiftChangeGudangPayload {
+    pub id: i64,
+    pub gudang_kode: String,
+}
+
+/// Mengganti gudang aktif pada shift yang masih terbuka.
+///
+/// Aturan akuntansi:
+/// - Shift harus berstatus `Open`.
+/// - Transaksi-transaksi yang sudah commit sebelumnya **tidak terpengaruh**:
+///   setiap `penjualan` POS sudah menyimpan `gudang_kode` per-baris pada
+///   mutasi stok dan jurnal saat transaksi dibuat, sehingga aman.
+/// - Penggantian gudang hanya memengaruhi katalog & transaksi *berikutnya*
+///   yang dibuat dari shift ini.
+/// - Pengosongan keranjang (cart) tidak ditangani di sini — itu state UI dan
+///   dijamin di sisi front-end (tombol "Ganti gudang" disable selama keranjang
+///   tidak kosong).
+#[tauri::command]
+pub fn pos_shift_change_gudang(
+    state: State<DbState>,
+    payload: PosShiftChangeGudangPayload,
+) -> Result<PosShiftRow, String> {
+    let gudang = payload.gudang_kode.trim().to_string();
+    if gudang.is_empty() {
+        return Err("Gudang baru wajib diisi.".into());
+    }
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let (status, current_gudang): (String, String) = tx
+        .query_row(
+            "SELECT status, gudang_kode FROM pos_shift WHERE id = ?",
+            params![payload.id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Shift tidak ditemukan.".to_string())?;
+
+    if status != "Open" {
+        return Err("Shift sudah ditutup. Tidak dapat mengganti gudang.".into());
+    }
+    if current_gudang.eq_ignore_ascii_case(&gudang) {
+        return Err("Gudang baru sama dengan gudang aktif saat ini.".into());
+    }
+
+    let gudang_exists: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM gudang WHERE lower(kode) = lower(?)",
+            params![gudang],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if gudang_exists == 0 {
+        return Err("Gudang tujuan tidak ditemukan.".into());
+    }
+
+    let ts = now_ts();
+    let n = tx
+        .execute(
+            "UPDATE pos_shift SET gudang_kode = ?, updated_at = ? WHERE id = ?",
+            params![gudang, ts, payload.id],
+        )
+        .map_err(|e| {
+            if e.to_string().contains("FOREIGN KEY") {
+                "Gudang tujuan tidak ditemukan.".into()
+            } else {
+                e.to_string()
+            }
+        })?;
+    if n == 0 {
+        return Err("Shift tidak ditemukan.".into());
+    }
+    let row = pos_shift_row_from_id(&tx, payload.id)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(row)
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PosShiftRekapMetode {

@@ -156,6 +156,7 @@ pub fn run() {
             master_commands::pos_shift_active_for,
             master_commands::pos_shift_carry_modal,
             master_commands::pos_shift_open,
+            master_commands::pos_shift_change_gudang,
             master_commands::pos_shift_close,
             master_commands::pos_shift_rekap,
             master_commands::pos_shift_list,

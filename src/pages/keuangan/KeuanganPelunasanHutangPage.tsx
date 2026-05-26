@@ -10,6 +10,7 @@ import { PelunasanHutangModal } from "@/features/keuangan/PelunasanHutangModal";
 import type { BuatPelunasanHutangLocationState, HutangBelumLunasRow } from "@/data/pelunasanHutang";
 import { tauriErrorMessage } from "@/lib/tauriError";
 import { TokoSelect } from "@/components/ui/TokoInput";
+import { VerticalSeparator } from "@/components/ui/Separator";
 
 function todayLocalISODate(): string {
   const d = new Date();
@@ -120,6 +121,23 @@ export function KeuanganPelunasanHutangPage() {
       <PageHeader
         title="Pelunasan hutang"
         description="Faktur pembelian kredit (belum dibayar tunai). Catat pembayaran ke supplier untuk melunasi hutang dagang."
+        actions={
+          <>
+            <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/pelunasan-hutang/daftar")}>
+              <List className="h-4 w-4" aria-hidden />
+              Daftar pelunasan hutang
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
+              <RefreshCcw className="h-4 w-4" aria-hidden />
+              {loading ? "Memuat…" : "Refresh"}
+            </Button>
+            <VerticalSeparator />
+            <Button type="button" onClick={() => openPelunasanBaru()} disabled={loading || rows.length === 0}>
+              <Plus className="h-4 w-4" aria-hidden />
+              Buat pelunasan
+            </Button>
+          </>
+        }
       />
 
       {error ? (
@@ -129,46 +147,9 @@ export function KeuanganPelunasanHutangPage() {
       ) : null}
 
       <Card className="overflow-hidden p-0">
-        <div className="flex flex-col gap-4 border-b border-zinc-100 p-6 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-zinc-900">Hutang belum lunas</h2>
-            <p className="mt-1 text-sm text-zinc-500">
-              {loading
-                ? "Memuat…"
-                : rows.length === 0
-                  ? "Tidak ada hutang terbuka."
-                  : filteredRows.length === 0
-                    ? rowsByPemasok.length === 0
-                      ? filterPemasokKode
-                        ? "Tidak ada hutang untuk pemasok ini."
-                        : filter === "jatuh_tempo"
-                          ? `Tidak ada faktur jatuh tempo (${rows.length} hutang lain masih dalam tempo).`
-                          : "Tidak ada faktur sesuai filter."
-                      : filter === "jatuh_tempo"
-                        ? `Tidak ada faktur jatuh tempo untuk filter ini (${rowsByPemasok.length} faktur masih dalam tempo).`
-                        : "Tidak ada faktur sesuai filter."
-                    : `${filteredRows.length} faktur ditampilkan · total ${formatRupiah(totalHutang)}`}
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <Button type="button" onClick={() => openPelunasanBaru()} disabled={loading || rows.length === 0}>
-              <Plus className="h-4 w-4" aria-hidden />
-              Buat pelunasan
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/pelunasan-hutang/daftar")}>
-              <List className="h-4 w-4" aria-hidden />
-              Daftar pelunasan hutang
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
-              <RefreshCcw className="h-4 w-4" aria-hidden />
-              {loading ? "Memuat…" : "Refresh"}
-            </Button>
-          </div>
-        </div>
-
         <div className="border-b border-zinc-100 px-6 pb-5">
-          <div className="grid gap-4 sm:grid-cols-2 lg:max-w-3xl">
-            <div>
+          <div className="grid gap-4 sm:grid-cols-3 lg:max-w-3xl">
+          <div>
               <label htmlFor="ph-pemasok" className="block text-sm font-medium text-zinc-700">
                 Pemasok
               </label>
@@ -199,6 +180,26 @@ export function KeuanganPelunasanHutangPage() {
                 <option value="semua">Semua hutang belum lunas</option>
                 <option value="jatuh_tempo">Hanya jatuh tempo lewat ({jatuhTempoCount})</option>
               </TokoSelect>
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-900">Hutang belum lunas</h2>
+              <p className="mt-1 text-sm text-zinc-500">
+                {loading
+                  ? "Memuat…"
+                  : rows.length === 0
+                    ? "Tidak ada hutang terbuka."
+                    : filteredRows.length === 0
+                      ? rowsByPemasok.length === 0
+                        ? filterPemasokKode
+                          ? "Tidak ada hutang untuk pemasok ini."
+                          : filter === "jatuh_tempo"
+                            ? `Tidak ada faktur jatuh tempo (${rows.length} hutang lain masih dalam tempo).`
+                            : "Tidak ada faktur sesuai filter."
+                        : filter === "jatuh_tempo"
+                          ? `Tidak ada faktur jatuh tempo untuk filter ini (${rowsByPemasok.length} faktur masih dalam tempo).`
+                          : "Tidak ada faktur sesuai filter."
+                      : `${filteredRows.length} faktur ditampilkan · total ${formatRupiah(totalHutang)}`}
+              </p>
             </div>
           </div>
         </div>

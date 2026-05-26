@@ -158,7 +158,7 @@ export function ListFilterBar({
   const hasSelects = Boolean(selects && selects.length > 0);
 
   return (
-    <div className="flex flex-col gap-3 border-b border-zinc-100 p-6">
+    <div className="flex flex-col gap-3 border-b border-zinc-100 mb-3 pb-3">
       <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
         {hasDate && dateRange ? (
           <div className="grid flex-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:max-w-md">

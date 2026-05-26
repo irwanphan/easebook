@@ -132,7 +132,7 @@ export function KeuanganTransferPage() {
       ) : null}
 
       <Card className="overflow-hidden p-0">
-        <div className="flex flex-col gap-4 border-b border-zinc-100 p-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-4 border-b border-zinc-100 pb-3 mb-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="grid gap-4 sm:grid-cols-2 lg:max-w-xl">
             <div>
               <label htmlFor="trf-dari" className="block text-sm font-medium text-zinc-700">

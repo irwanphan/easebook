@@ -184,7 +184,7 @@ export function UbahTransferKasPage() {
         <div className="flex flex-wrap justify-end gap-3">
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             onClick={() => navigate("/keuangan/transfer")}
             disabled={submitting}
           >

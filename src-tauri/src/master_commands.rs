@@ -10764,8 +10764,49 @@ pub fn pos_shift_open(
     })?;
     let id = tx.last_insert_rowid();
     let row = pos_shift_row_from_id(&tx, id)?;
+
+    let payload_json = serde_json::json!({
+        "gudangKode": row.gudang_kode,
+        "gudangNama": row.gudang_nama,
+        "modalAwal": row.modal_awal,
+    })
+    .to_string();
+    pos_shift_log_event(&tx, id, pos_shift_event::OPENED, &kasir, &payload_json)?;
+
     tx.commit().map_err(|e| e.to_string())?;
     Ok(row)
+}
+
+/// Konstanta jenis kejadian pada audit log shift POS. Tambah varian baru
+/// di sini dan tulis payload sesuai kontrak (lihat doc helper di bawah).
+pub mod pos_shift_event {
+    pub const OPENED: &str = "POS_SHIFT_OPENED";
+    pub const CLOSED: &str = "POS_SHIFT_CLOSED";
+    pub const GUDANG_CHANGED: &str = "POS_SHIFT_GUDANG_CHANGED";
+}
+
+/// Sisipkan satu entry audit log untuk shift POS.
+///
+/// `payload_json` harus berupa string JSON valid yang berisi detail kejadian:
+/// - `POS_SHIFT_OPENED`        → `{"gudangKode","gudangNama","modalAwal"}`
+/// - `POS_SHIFT_CLOSED`        → `{"uangAkhirAktual","uangAkhirEkspektasi","selisih"}`
+/// - `POS_SHIFT_GUDANG_CHANGED`→ `{"fromGudangKode","fromGudangNama","toGudangKode","toGudangNama"}`
+///
+/// Helper tidak mem-validate skema payload; pemanggil bertanggung jawab.
+fn pos_shift_log_event(
+    tx: &Connection,
+    shift_id: i64,
+    event_type: &str,
+    actor_username: &str,
+    payload_json: &str,
+) -> Result<(), String> {
+    tx.execute(
+        "INSERT INTO pos_shift_event_log (shift_id, event_type, actor_username, payload, created_at)
+         VALUES (?, ?, ?, ?, ?)",
+        params![shift_id, event_type, actor_username, payload_json, now_ts()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -10799,11 +10840,14 @@ pub fn pos_shift_change_gudang(
     let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-    let (status, current_gudang): (String, String) = tx
+    let (status, current_gudang, kasir_username, current_gudang_nama): (String, String, String, String) = tx
         .query_row(
-            "SELECT status, gudang_kode FROM pos_shift WHERE id = ?",
+            "SELECT s.status, s.gudang_kode, s.kasir_username, COALESCE(g.nama, '')
+             FROM pos_shift s
+             LEFT JOIN gudang g ON lower(g.kode) = lower(s.gudang_kode)
+             WHERE s.id = ?",
             params![payload.id],
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?)),
         )
         .optional()
         .map_err(|e| e.to_string())?
@@ -10816,16 +10860,18 @@ pub fn pos_shift_change_gudang(
         return Err("Gudang baru sama dengan gudang aktif saat ini.".into());
     }
 
-    let gudang_exists: i64 = tx
+    let target_gudang_nama: Option<String> = tx
         .query_row(
-            "SELECT COUNT(*) FROM gudang WHERE lower(kode) = lower(?)",
+            "SELECT nama FROM gudang WHERE lower(kode) = lower(?)",
             params![gudang],
             |r| r.get(0),
         )
+        .optional()
         .map_err(|e| e.to_string())?;
-    if gudang_exists == 0 {
-        return Err("Gudang tujuan tidak ditemukan.".into());
-    }
+    let target_gudang_nama = match target_gudang_nama {
+        Some(v) => v,
+        None => return Err("Gudang tujuan tidak ditemukan.".into()),
+    };
 
     let ts = now_ts();
     let n = tx
@@ -10844,6 +10890,22 @@ pub fn pos_shift_change_gudang(
         return Err("Shift tidak ditemukan.".into());
     }
     let row = pos_shift_row_from_id(&tx, payload.id)?;
+
+    let payload_json = serde_json::json!({
+        "fromGudangKode": current_gudang,
+        "fromGudangNama": current_gudang_nama,
+        "toGudangKode": row.gudang_kode,
+        "toGudangNama": target_gudang_nama,
+    })
+    .to_string();
+    pos_shift_log_event(
+        &tx,
+        payload.id,
+        pos_shift_event::GUDANG_CHANGED,
+        &kasir_username,
+        &payload_json,
+    )?;
+
     tx.commit().map_err(|e| e.to_string())?;
     Ok(row)
 }
@@ -11011,6 +11073,22 @@ pub fn pos_shift_close(
     .map_err(|e| e.to_string())?;
 
     let final_rekap = pos_shift_rekap_compute(&tx, payload.id)?;
+
+    let kasir_username = final_rekap.shift.kasir_username.clone();
+    let payload_json = serde_json::json!({
+        "uangAkhirAktual": payload.uang_akhir_aktual,
+        "uangAkhirEkspektasi": ekspektasi,
+        "selisih": selisih,
+    })
+    .to_string();
+    pos_shift_log_event(
+        &tx,
+        payload.id,
+        pos_shift_event::CLOSED,
+        &kasir_username,
+        &payload_json,
+    )?;
+
     tx.commit().map_err(|e| e.to_string())?;
     Ok(final_rekap)
 }
@@ -11077,6 +11155,106 @@ pub fn pos_shift_list(
             })
         })?;
         rows.collect()
+    })
+}
+
+// --- Audit log shift POS ---
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PosShiftEventLogRow {
+    pub id: i64,
+    pub shift_id: i64,
+    pub shift_kode: String,
+    pub kasir_username: String,
+    pub kasir_nama: String,
+    pub event_type: String,
+    pub actor_username: String,
+    pub actor_nama: String,
+    /// JSON string detail event. Frontend yang format per `event_type`.
+    pub payload: String,
+    pub created_at: i64,
+}
+
+/// Daftar entry audit log untuk shift POS, terbaru dulu.
+///
+/// Filter (semua opsional):
+/// - `dari`/`sampai`: range tanggal (YYYY-MM-DD) berdasarkan `created_at`.
+/// - `event_type`: filter ke salah satu jenis event (mis. `POS_SHIFT_GUDANG_CHANGED`).
+/// - `actor_username`: filter ke kasir tertentu.
+/// - `limit`: default 500, max 5000.
+#[tauri::command]
+pub fn pos_shift_event_log_list(
+    state: State<DbState>,
+    dari: Option<String>,
+    sampai: Option<String>,
+    event_type: Option<String>,
+    actor_username: Option<String>,
+    limit: Option<i64>,
+) -> Result<Vec<PosShiftEventLogRow>, String> {
+    let limit = limit.unwrap_or(500).clamp(1, 5000);
+    with_conn(&state, |conn| {
+        let mut sql = String::from(
+            "SELECT l.id, l.shift_id, COALESCE(s.kode, ''),
+                    COALESCE(s.kasir_username, ''), COALESCE(pk.nama_lengkap, ''),
+                    l.event_type, l.actor_username, COALESCE(pa.nama_lengkap, ''),
+                    l.payload, l.created_at
+             FROM pos_shift_event_log l
+             LEFT JOIN pos_shift s ON s.id = l.shift_id
+             LEFT JOIN pengguna pk ON lower(pk.username) = lower(s.kasir_username)
+             LEFT JOIN pengguna pa ON lower(pa.username) = lower(l.actor_username)
+             WHERE 1=1",
+        );
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        if let Some(d) = dari.as_ref().filter(|s| !s.trim().is_empty()) {
+            let na = NaiveDate::parse_from_str(d.trim(), "%Y-%m-%d").map_err(|_| {
+                rusqlite::Error::ToSqlConversionFailure("Tanggal dari tidak valid.".into())
+            })?;
+            let ts_start = na.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp();
+            sql.push_str(" AND l.created_at >= ?");
+            params_vec.push(Box::new(ts_start));
+        }
+        if let Some(d) = sampai.as_ref().filter(|s| !s.trim().is_empty()) {
+            let na = NaiveDate::parse_from_str(d.trim(), "%Y-%m-%d").map_err(|_| {
+                rusqlite::Error::ToSqlConversionFailure("Tanggal sampai tidak valid.".into())
+            })?;
+            let ts_end = na.and_hms_opt(23, 59, 59).unwrap().and_utc().timestamp();
+            sql.push_str(" AND l.created_at <= ?");
+            params_vec.push(Box::new(ts_end));
+        }
+        if let Some(et) = event_type.as_ref().filter(|s| !s.trim().is_empty()) {
+            sql.push_str(" AND l.event_type = ?");
+            params_vec.push(Box::new(et.trim().to_string()));
+        }
+        if let Some(u) = actor_username.as_ref().filter(|s| !s.trim().is_empty()) {
+            sql.push_str(" AND lower(l.actor_username) = lower(?)");
+            params_vec.push(Box::new(u.trim().to_string()));
+        }
+        sql.push_str(" ORDER BY l.created_at DESC, l.id DESC LIMIT ?");
+        params_vec.push(Box::new(limit));
+
+        let mut stmt = conn.prepare(&sql)?;
+        let params_refs: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|b| b.as_ref()).collect();
+        let rows = stmt.query_map(params_refs.as_slice(), |r| {
+            Ok(PosShiftEventLogRow {
+                id: r.get(0)?,
+                shift_id: r.get(1)?,
+                shift_kode: r.get(2)?,
+                kasir_username: r.get(3)?,
+                kasir_nama: r.get(4)?,
+                event_type: r.get(5)?,
+                actor_username: r.get(6)?,
+                actor_nama: r.get(7)?,
+                payload: r.get(8)?,
+                created_at: r.get(9)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
     })
 }
 

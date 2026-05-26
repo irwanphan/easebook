@@ -356,6 +356,34 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     migrate_activity_log_tables(conn)?;
     migrate_pos_tables(conn)?;
     migrate_produksi_tables(conn)?;
+    migrate_pos_shift_event_log(conn)?;
+    Ok(())
+}
+
+/// Audit log untuk peristiwa pada shift POS — buka shift, tutup shift,
+/// ganti gudang, dan ke depan: konfigurasi printer, dsb.
+///
+/// Skema sengaja dibuat generik (`event_type` + `payload` JSON) agar
+/// menambah jenis kejadian baru tidak memerlukan perubahan skema —
+/// cukup tambah konstanta event_type baru dan tulis payload yang sesuai.
+fn migrate_pos_shift_event_log(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS pos_shift_event_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            shift_id INTEGER NOT NULL REFERENCES pos_shift(id) ON DELETE CASCADE ON UPDATE CASCADE,
+            event_type TEXT NOT NULL,
+            actor_username TEXT NOT NULL,
+            payload TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pos_shift_event_log_shift ON pos_shift_event_log(shift_id);
+        CREATE INDEX IF NOT EXISTS idx_pos_shift_event_log_type ON pos_shift_event_log(event_type);
+        CREATE INDEX IF NOT EXISTS idx_pos_shift_event_log_actor ON pos_shift_event_log(actor_username);
+        CREATE INDEX IF NOT EXISTS idx_pos_shift_event_log_ts ON pos_shift_event_log(created_at);
+        ",
+    )?;
     Ok(())
 }
 

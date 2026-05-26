@@ -7,6 +7,10 @@ import type {
   PosShiftRekap,
   PosTransaksiResult,
 } from "@/data/pos";
+import type {
+  PosShiftEventLogFilter,
+  PosShiftEventLogRow,
+} from "@/data/posShiftEventLog";
 
 export function metodeBayarList(hanyaAktif = false) {
   return invoke<PosMetodeBayar[]>("pos_metode_bayar_list", { hanyaAktif });
@@ -39,6 +43,18 @@ export function shiftClose(payload: {
 
 export function shiftChangeGudang(payload: { id: number; gudangKode: string }) {
   return invoke<PosShift>("pos_shift_change_gudang", { payload });
+}
+
+export function shiftEventLogList(filter: PosShiftEventLogFilter = {}) {
+  const eventType =
+    filter.eventType && filter.eventType.length > 0 ? filter.eventType : undefined;
+  return invoke<PosShiftEventLogRow[]>("pos_shift_event_log_list", {
+    dari: filter.dari ?? null,
+    sampai: filter.sampai ?? null,
+    eventType: eventType ?? null,
+    actorUsername: filter.actorUsername ?? null,
+    limit: filter.limit ?? null,
+  });
 }
 
 export function shiftRekap(id: number) {

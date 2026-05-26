@@ -86,6 +86,11 @@ export const halamanAksesGroups: HalamanAksesGroup[] = [
         label: "Mutasi antar gudang",
         pathPattern: "laporan/mutasi-antar-gudang",
       },
+      {
+        key: "lap-log-shift-pos",
+        label: "Log shift POS",
+        pathPattern: "laporan/log-shift-pos",
+      },
     ],
   },
   {

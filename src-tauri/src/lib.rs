@@ -160,6 +160,7 @@ pub fn run() {
             master_commands::pos_shift_close,
             master_commands::pos_shift_rekap,
             master_commands::pos_shift_list,
+            master_commands::pos_shift_event_log_list,
             master_commands::pos_catalog_list,
             master_commands::pos_transaksi_create,
             master_commands::produksi_list,

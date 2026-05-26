@@ -97,7 +97,7 @@ export function QuickAccessFab() {
                 type="button"
                 role="menuitem"
                 onClick={() => void runAction(action)}
-                className={`group inline-flex h-11 items-center gap-2.5 rounded-full px-4 text-sm font-semibold shadow-lg shadow-zinc-900/10 ring-1 ring-black/5 transition-transform hover:scale-[1.02] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-white ${TONE_PILL_CLASS[action.tone]}`}
+                className={`group inline-flex h-11 items-center gap-2.5 rounded-full px-4 text-sm font-semibold shadow-lg shadow-zinc-900/10 ring-1 ring-black/5 transition-transform hover:scale-[1.02] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-white cursor-pointer ${TONE_PILL_CLASS[action.tone]}`}
               >
                 <span>{action.label}</span>
                 <span
@@ -118,7 +118,7 @@ export function QuickAccessFab() {
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={() => setOpen((v) => !v)}
-        className={`pointer-events-auto inline-flex h-14 w-14 items-center justify-center rounded-full bg-brand-600 text-white shadow-xl shadow-brand-900/20 ring-1 ring-black/10 transition-all hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2 ${
+        className={`pointer-events-auto inline-flex h-14 w-14 items-center justify-center rounded-full bg-brand-600 text-white shadow-xl shadow-brand-900/20 ring-1 ring-black/10 transition-all hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2 cursor-pointer ${
           open ? "rotate-45" : ""
         }`}
       >

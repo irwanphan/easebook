@@ -610,15 +610,15 @@ export function PesananPembelianForm({
                         </span>
                       </td>
                       <td className="px-2 py-2 text-center">
-                        <button
+                        <Button
                           type="button"
                           onClick={() => removeLine(row.id)}
-                          className="mt-1.5 inline-flex rounded-lg p-2 text-zinc-400 transition hover:bg-rose-50 hover:text-rose-600"
+                          variant="danger"
                           aria-label="Hapus baris"
                           disabled={busy || lines.length <= 1}
                         >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                          <Trash2 className="h-4 w-4" aria-hidden />
+                        </Button>
                       </td>
                     </tr>
                   );
@@ -679,7 +679,8 @@ export function PesananPembelianForm({
         <div className="flex flex-wrap justify-end gap-3">
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
+            className="bg-white"
             onClick={() => navigate(cancelHref)}
             disabled={busy}
           >

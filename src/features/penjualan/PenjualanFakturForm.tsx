@@ -696,7 +696,7 @@ export function PenjualanFakturForm({ mode, nomor, cancelHref, onSuccess }: Penj
         </Card>
 
         <div className="flex flex-wrap justify-end gap-3">
-          <Button type="button" variant="outline" className="bg-white" onClick={() => navigate(cancelHref)} disabled={busy}>
+          <Button type="button" variant="outline" onClick={() => navigate(cancelHref)} disabled={busy}>
             Batal
           </Button>
           <Button type="submit" disabled={busy}>

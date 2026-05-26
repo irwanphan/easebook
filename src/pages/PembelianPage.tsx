@@ -12,6 +12,7 @@ import type { PesananPembelianListRow } from "@/data/pesananPembelian";
 import { TransactionGateBanner } from "@/features/activation/TransactionGateBanner";
 import { useLicenseGate } from "@/features/activation/useLicenseGate";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { VerticalSeparator } from "@/components/ui/Separator";
 
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -161,6 +162,7 @@ export function PembelianPage() {
                 </span>
               ) : null}
             </div>
+            <VerticalSeparator />
             <Button
               type="button"
               disabled={!canCreateTransaction}

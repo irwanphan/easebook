@@ -85,7 +85,7 @@ export function PengaturanAksesCepatPage() {
           title="Akses cepat"
           description="Atur tombol melayang (FAB) di pojok kanan bawah untuk membuka halaman favorit Anda."
         />
-        <Button type="button" variant="outline" className="bg-white" onClick={() => navigate("/profil")}>
+        <Button type="button" variant="outline" onClick={() => navigate("/profil")}>
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Kembali ke profil
         </Button>

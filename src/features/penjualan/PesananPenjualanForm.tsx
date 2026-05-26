@@ -704,7 +704,6 @@ export function PesananPenjualanForm({
           <Button
             type="button"
             variant="outline"
-            className="bg-white"
             onClick={() => navigate(cancelHref)}
             disabled={busy}
           >

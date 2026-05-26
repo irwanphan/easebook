@@ -339,7 +339,7 @@ export function PenerimaanForm({ cancelHref, onSuccess }: PenerimaanFormProps) {
         </Card>
 
         <div className="flex flex-wrap justify-end gap-3">
-          <Button type="button" variant="outline" className="bg-white" onClick={() => navigate(cancelHref)} disabled={submitting}>
+          <Button type="button" variant="outline" onClick={() => navigate(cancelHref)} disabled={submitting}>
             <X className="h-4 w-4" aria-hidden />
             Batal
           </Button>

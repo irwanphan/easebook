@@ -680,7 +680,6 @@ export function PesananPembelianForm({
           <Button
             type="button"
             variant="outline"
-            className="bg-white"
             onClick={() => navigate(cancelHref)}
             disabled={busy}
           >

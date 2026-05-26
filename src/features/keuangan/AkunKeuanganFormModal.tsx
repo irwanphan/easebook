@@ -180,7 +180,7 @@ export function AkunKeuanganFormModal({
       }}
       footer={
         <div className="flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="outline" className="bg-white" disabled={submitting} onClick={onClose}>
+          <Button type="button" variant="outline" disabled={submitting} onClick={onClose}>
             <X className="h-4 w-4" aria-hidden />
             Batal
           </Button>

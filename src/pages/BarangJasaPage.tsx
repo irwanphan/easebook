@@ -115,15 +115,15 @@ export function BarangJasaPage() {
               <Warehouse className="h-4 w-4" aria-hidden />
               Lihat per gudang
             </Button>
-            <Button type="button" variant="secondary" onClick={() => navigate("/barang-jasa/mutasi-antar-gudang")}>
-              <SendToBack className="h-4 w-4" aria-hidden />
-              Mutasi antar gudang
-            </Button>
             <Button type="button" variant="secondary" onClick={() => navigate("/barang-jasa/produksi")}>
               <Factory className="h-4 w-4" aria-hidden />
               Daftar Produksi
             </Button>
             <VerticalSeparator />
+            <Button type="button" onClick={() => navigate("/barang-jasa/mutasi-antar-gudang")}>
+              <SendToBack className="h-4 w-4" aria-hidden />
+              Mutasi antar gudang
+            </Button>
             <Button type="button" onClick={() => navigate("/barang-jasa/koreksi-stok")}>
               <BookOpenCheck className="h-4 w-4" aria-hidden />
               Koreksi stok

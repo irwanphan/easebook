@@ -640,7 +640,7 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
         </Card>
 
         <div className="flex flex-wrap justify-end gap-3">
-          <Button type="button" variant="outline" className="bg-white" onClick={() => navigate(cancelHref)}>
+          <Button type="button" variant="outline" onClick={() => navigate(cancelHref)}>
             Batal
           </Button>
           <Button type="submit" disabled={masterLoading || hydrating || saving}>

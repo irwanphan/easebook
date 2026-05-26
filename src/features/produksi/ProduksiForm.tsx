@@ -464,7 +464,6 @@ export function ProduksiForm({ mode, nomor, initial }: ProduksiFormProps) {
         <Button
           type="button"
           variant="outline"
-          className="bg-white"
           onClick={() => navigate("/barang-jasa/produksi")}
           disabled={submitting}
         >

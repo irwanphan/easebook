@@ -131,7 +131,6 @@ export function ProduksiDetailPage() {
           <Button
             type="button"
             variant="outline"
-            className="bg-white"
             onClick={() => navigate("/barang-jasa/produksi")}
           >
             <ArrowLeft className="h-4 w-4" aria-hidden />

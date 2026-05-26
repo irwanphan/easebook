@@ -795,7 +795,7 @@ export function KoreksiStokPage() {
         <div className="flex flex-wrap justify-end gap-3">
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             onClick={() => navigate("/barang-jasa")}
           >
             Batal

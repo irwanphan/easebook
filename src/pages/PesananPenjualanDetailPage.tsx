@@ -261,7 +261,6 @@ export function PesananPenjualanDetailPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="bg-white"
                     onClick={() =>
                       navigate(
                         `/penjualan/pesanan/ubah/${encodeURIComponent(detail.nomor)}`,
@@ -276,7 +275,6 @@ export function PesananPenjualanDetailPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="bg-white"
                     onClick={() => setBatalkanOpen(true)}
                   >
                     <Ban className="h-4 w-4" aria-hidden />

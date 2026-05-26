@@ -107,7 +107,7 @@ export function TransferKasModal({ open, onClose, onSuccess }: TransferKasModalP
       panelClassName="max-w-2xl"
       footer={
         <div className="flex flex-wrap justify-end gap-3">
-          <Button type="button" variant="outline" className="bg-white" onClick={onClose} disabled={submitting}>
+          <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
             <X className="h-4 w-4" aria-hidden />
             Batal
           </Button>

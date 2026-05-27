@@ -18,9 +18,7 @@ import {
 } from "@/data/posKonfigurasi";
 import { formatRupiah, parseRupiahInput } from "@/lib/format";
 import { tauriErrorMessage } from "@/lib/tauriError";
-
-const inputClass =
-  "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
+import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
 
 type OpenShiftModalProps = {
   open: boolean;
@@ -52,10 +50,7 @@ export function OpenShiftModal({ open, onClose, forceOpen = false }: OpenShiftMo
     void (async () => {
       try {
         const carry = await shiftCarryModal(username);
-        if (!cancelled) {
-          setCarryDefault(carry);
-          if (!modalAwalText) setModalAwalText(String(carry || ""));
-        }
+        if (!cancelled) setCarryDefault(carry);
       } catch (e) {
         if (!cancelled) setError(tauriErrorMessage(e));
       }
@@ -63,7 +58,7 @@ export function OpenShiftModal({ open, onClose, forceOpen = false }: OpenShiftMo
     return () => {
       cancelled = true;
     };
-  }, [open, username, modalAwalText]);
+  }, [open, username]);
 
   // Pre-check konfigurasi POS supaya bisa kasih pesan jelas + escape hatch
   // sebelum user mencoba membuka shift.
@@ -189,9 +184,8 @@ export function OpenShiftModal({ open, onClose, forceOpen = false }: OpenShiftMo
           <label htmlFor="sh-gudang" className="block text-sm font-medium text-zinc-700">
             Gudang
           </label>
-          <select
+          <TokoSelect
             id="sh-gudang"
-            className={inputClass}
             value={gudangKode}
             onChange={(e) => setGudangKode(e.target.value)}
             disabled={gudangLoading || gudangItems.length === 0}
@@ -202,24 +196,23 @@ export function OpenShiftModal({ open, onClose, forceOpen = false }: OpenShiftMo
                 {g.kode} — {g.nama}
               </option>
             ))}
-          </select>
+          </TokoSelect>
         </div>
 
-        {konfigurasiLengkap && posConfig.kasUtamaNama && posConfig.kasKasirNama ? (
+        {/* {konfigurasiLengkap && posConfig.kasUtamaNama && posConfig.kasKasirNama ? (
           <div className="rounded-xl border border-zinc-200 bg-zinc-50/60 px-3 py-2 text-xs leading-relaxed text-zinc-700">
             Saat shift dibuka, jurnal otomatis: <strong>D</strong> {posConfig.kasKasirNama},{" "}
             <strong>K</strong> {posConfig.kasUtamaNama}, sebesar modal awal.
           </div>
-        ) : null}
+        ) : null} */}
 
         <div>
           <label htmlFor="sh-modal" className="block text-sm font-medium text-zinc-700">
             Modal awal (kas tunai di laci)
           </label>
-          <input
+          <TokoInput
             id="sh-modal"
             inputMode="numeric"
-            className={inputClass}
             value={modalAwalText}
             onChange={(e) => setModalAwalText(e.target.value)}
             placeholder="0"
@@ -231,7 +224,7 @@ export function OpenShiftModal({ open, onClose, forceOpen = false }: OpenShiftMo
               <button
                 type="button"
                 onClick={() => setModalAwalText(String(carryDefault))}
-                className="text-brand-600 hover:underline"
+                className="text-brand-600 hover:underline cursor-pointer mt-1"
               >
                 Pakai saldo shift terakhir ({formatRupiah(carryDefault)})
               </button>
@@ -243,9 +236,8 @@ export function OpenShiftModal({ open, onClose, forceOpen = false }: OpenShiftMo
           <label htmlFor="sh-catatan" className="block text-sm font-medium text-zinc-700">
             Catatan (opsional)
           </label>
-          <input
+          <TokoInput
             id="sh-catatan"
-            className={inputClass}
             value={catatan}
             onChange={(e) => setCatatan(e.target.value)}
             placeholder="mis. shift pagi, kasir lapor jam 08.00"

@@ -45,6 +45,10 @@ export type AkunKeuanganFormModalProps = {
   mode: "create" | "edit";
   editingRow: AkunKeuanganRow | null;
   rows: AkunKeuanganRow[];
+  /** Nilai awal untuk flag "akun kas" saat mode `create`. Default: false.
+   *  Dipakai mis. saat form dibuka dari halaman Akun Kas → user biasanya
+   *  ingin langsung menandai akun barunya sebagai akun kas. */
+  defaultIsAkunKas?: boolean;
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 };
@@ -54,6 +58,7 @@ export function AkunKeuanganFormModal({
   mode,
   editingRow,
   rows,
+  defaultIsAkunKas = false,
   onClose,
   onSaved,
 }: AkunKeuanganFormModalProps) {
@@ -88,9 +93,9 @@ export function AkunKeuanganFormModal({
       setKolomNorm("D");
       setKelompokLr("");
       setSubKelompok("");
-      setIsAkunKas(false);
+      setIsAkunKas(defaultIsAkunKas);
     }
-  }, [open, mode, editingRow]);
+  }, [open, mode, editingRow, defaultIsAkunKas]);
 
   const indukOptions = useMemo(() => {
     if (mode === "edit" && editingRow) {

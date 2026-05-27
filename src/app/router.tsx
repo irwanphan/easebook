@@ -70,6 +70,7 @@ import { KeuanganTransferPage } from "@/pages/keuangan/KeuanganTransferPage";
 import { TransferKasDetailPage } from "@/pages/keuangan/TransferKasDetailPage";
 import { UbahTransferKasPage } from "@/pages/keuangan/UbahTransferKasPage";
 import { DaftarAkunPage } from "@/pages/keuangan/DaftarAkunPage";
+import { AkunKasPage } from "@/pages/keuangan/AkunKasPage";
 import { JurnalUmumPage } from "@/pages/keuangan/JurnalUmumPage";
 import { KonfigurasiAkunJurnalPage } from "@/pages/keuangan/KonfigurasiAkunJurnalPage";
 import { LaporanPergerakanStokPage } from "@/pages/laporan/LaporanPergerakanStokPage";
@@ -171,7 +172,7 @@ export const mainRouter = createHashRouter([
       { path: "keuangan/transfer/ubah/:nomor", element: <UbahTransferKasPage /> },
       { path: "keuangan/transfer", element: <KeuanganTransferPage /> },
       { path: "keuangan/daftar-akun", element: <DaftarAkunPage /> },
-      { path: "keuangan/akun-kas", element: <DaftarAkunPage /> },
+      { path: "keuangan/akun-kas", element: <AkunKasPage /> },
       { path: "keuangan/konfigurasi-akun-jurnal", element: <KonfigurasiAkunJurnalPage /> },
       { path: "keuangan/jurnal-umum", element: <JurnalUmumPage /> },
       { path: "pengaturan", element: <PengaturanPage /> },

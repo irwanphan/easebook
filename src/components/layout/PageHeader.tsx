@@ -16,7 +16,7 @@ export function PageHeader({ title, description, actions }: PageHeaderProps) {
         ) : null}
       </div>
       <div className="flex flex-wrap items-center gap-2 justify-end">
-        {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
     </header>
   );

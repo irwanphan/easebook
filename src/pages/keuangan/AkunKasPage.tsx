@@ -133,11 +133,10 @@ export function AkunKasPage() {
         description="Saldo terkini untuk semua akun yang ditandai sebagai akun kas (kas tunai, bank, e-wallet, dll.)."
         actions={
           <>
-            <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/kas-awal")}>
+            <Button type="button" onClick={() => navigate("/keuangan/kas-awal")}>
               <PiggyBank className="h-4 w-4" aria-hidden />
               Atur kas awal
             </Button>
-            <VerticalSeparator />
             <Button type="button" onClick={openCreate}>
               <Plus className="h-4 w-4" aria-hidden />
               Tambah akun kas

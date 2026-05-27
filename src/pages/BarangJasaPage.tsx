@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { BookOpenCheck, Factory, FileText, LineChart, PackagePlus, Pencil, SendToBack, Warehouse } from "lucide-react";
+import { BookOpenCheck, CirclePile, Factory, FileText, LineChart, PackagePlus, Pencil, SendToBack, Warehouse } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -122,7 +122,11 @@ export function BarangJasaPage() {
             <VerticalSeparator />
             <Button type="button" onClick={() => navigate("/barang-jasa/mutasi-antar-gudang")}>
               <SendToBack className="h-4 w-4" aria-hidden />
-              Mutasi antar gudang
+              Mutasi
+            </Button>
+            <Button type="button" onClick={() => navigate("/barang-jasa/mutasi-antar-gudang")}>
+              <CirclePile className="h-4 w-4" aria-hidden />
+              Atur stok awal
             </Button>
             <Button type="button" onClick={() => navigate("/barang-jasa/koreksi-stok")}>
               <BookOpenCheck className="h-4 w-4" aria-hidden />

@@ -359,6 +359,24 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     migrate_pos_shift_event_log(conn)?;
     migrate_pos_konfigurasi(conn)?;
     migrate_pos_shift_jurnal_columns(conn)?;
+    migrate_operasional_konfigurasi(conn)?;
+    Ok(())
+}
+
+/// Pengaturan operasional global — sumber kebenaran untuk hal-hal yang
+/// menjadi acuan lintas modul, mis. **tanggal awal periode operasional**
+/// (dipakai oleh saldo awal stok, kas, dan pembukuan).
+fn migrate_operasional_konfigurasi(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS operasional_konfigurasi (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            awal_periode TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        ",
+    )?;
     Ok(())
 }
 

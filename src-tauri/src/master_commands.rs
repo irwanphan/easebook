@@ -10597,6 +10597,89 @@ pub fn pos_metode_bayar_delete(state: State<DbState>, kode: String) -> Result<()
     })
 }
 
+// --- Konfigurasi operasional (acuan global pembukuan) ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct OperasionalKonfigurasiRow {
+    /// Tanggal awal periode operasional (YYYY-MM-DD). Dipakai sebagai acuan
+    /// untuk saldo awal stok, kas, dan pembukuan.
+    pub awal_periode: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperasionalKonfigurasiSetPayload {
+    pub awal_periode: Option<String>,
+}
+
+fn operasional_konfigurasi_ensure_row(conn: &Connection, ts: i64) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR IGNORE INTO operasional_konfigurasi (id, created_at, updated_at)
+         VALUES (1, ?, ?)",
+        params![ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn operasional_konfigurasi_load(conn: &Connection) -> Result<OperasionalKonfigurasiRow, String> {
+    conn.query_row(
+        "SELECT awal_periode FROM operasional_konfigurasi WHERE id = 1",
+        [],
+        |r| {
+            Ok(OperasionalKonfigurasiRow {
+                awal_periode: r.get::<_, Option<String>>(0)?,
+            })
+        },
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn operasional_konfigurasi_get(
+    state: State<DbState>,
+) -> Result<OperasionalKonfigurasiRow, String> {
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    operasional_konfigurasi_ensure_row(&tx, ts)?;
+    let row = operasional_konfigurasi_load(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(row)
+}
+
+#[tauri::command]
+pub fn operasional_konfigurasi_set(
+    state: State<DbState>,
+    payload: OperasionalKonfigurasiSetPayload,
+) -> Result<OperasionalKonfigurasiRow, String> {
+    let awal_periode = payload
+        .awal_periode
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    if let Some(d) = &awal_periode {
+        NaiveDate::parse_from_str(d, "%Y-%m-%d")
+            .map_err(|_| "Tanggal awal periode tidak valid (gunakan YYYY-MM-DD).".to_string())?;
+    }
+
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    operasional_konfigurasi_ensure_row(&tx, ts)?;
+
+    tx.execute(
+        "UPDATE operasional_konfigurasi SET awal_periode = ?, updated_at = ? WHERE id = 1",
+        params![awal_periode, ts],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let row = operasional_konfigurasi_load(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(row)
+}
+
 // --- Konfigurasi POS (kas operasional & kas kasir) ---
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

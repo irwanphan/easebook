@@ -7,6 +7,7 @@ import { TabsBar } from "@/components/ui/TabsBar";
 import { AktivasiSection } from "@/features/activation/AktivasiSection";
 import { useLicenseGate } from "@/features/activation/useLicenseGate";
 import { PosKonfigurasiForm } from "@/features/pengaturan/PosKonfigurasiForm";
+import { OperasionalKonfigurasiForm } from "@/features/pengaturan/OperasionalKonfigurasiForm";
 import type { InformasiPerusahaan } from "@/features/pengaturan/informasiPerusahaanStorage";
 import {
   loadInformasiPerusahaan,
@@ -271,12 +272,30 @@ export function PengaturanPage() {
           ) : null}
 
           {activeTab === "operasional" ? (
-            <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50/80 px-4 py-10 text-center">
-              <p className="text-sm font-medium text-zinc-700">Operasional</p>
-              <p className="mt-2 text-sm leading-relaxed text-zinc-500">
-                Bagian ini akan diisi pada tahap berikutnya (parameter operasi, default gudang, format
-                nomor dokumen, dll.).
-              </p>
+            <div className="space-y-8">
+              {/* Section: Awal periode */}
+              <section className="space-y-5">
+                <header>
+                  <h2 className="text-base font-semibold text-zinc-900">Periode pembukuan</h2>
+                  <p className="mt-0.5 text-sm text-zinc-500">
+                    Tanggal awal yang dipakai sebagai acuan saldo awal stok, kas, dan laporan.
+                  </p>
+                </header>
+                <OperasionalKonfigurasiForm />
+              </section>
+
+              {/* Placeholder untuk pengaturan operasional lain di masa depan */}
+              <section className="space-y-3 border-t border-zinc-100 pt-6">
+                <header>
+                  <h2 className="text-base font-semibold text-zinc-900">Parameter operasi lain</h2>
+                  <p className="mt-0.5 text-sm text-zinc-500">
+                    Default gudang, format nomor dokumen, dll. (akan diisi pada tahap berikutnya).
+                  </p>
+                </header>
+                <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50/80 px-4 py-6 text-center text-sm text-zinc-500">
+                  Belum ada pengaturan tambahan.
+                </div>
+              </section>
             </div>
           ) : null}
 

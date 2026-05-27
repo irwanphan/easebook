@@ -155,6 +155,8 @@ pub fn run() {
             master_commands::pos_metode_bayar_delete,
             master_commands::pos_konfigurasi_get,
             master_commands::pos_konfigurasi_set,
+            master_commands::operasional_konfigurasi_get,
+            master_commands::operasional_konfigurasi_set,
             master_commands::pos_shift_active_for,
             master_commands::pos_shift_carry_modal,
             master_commands::pos_shift_open,

@@ -6,6 +6,7 @@ import {
   ArrowUpDown,
   BookText,
   Pencil,
+  PiggyBank,
   Plus,
   Search,
   Wallet,
@@ -18,6 +19,7 @@ import type { AkunKeuanganRow } from "@/data/keuangan";
 import { labelKelompokAkun } from "@/data/keuangan";
 import { formatRupiah } from "@/lib/format";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { VerticalSeparator } from "@/components/ui/Separator";
 
 type SortKey = "kode" | "saldo";
 type SortDir = "asc" | "desc";
@@ -130,10 +132,17 @@ export function AkunKasPage() {
         title="Akun kas"
         description="Saldo terkini untuk semua akun yang ditandai sebagai akun kas (kas tunai, bank, e-wallet, dll.)."
         actions={
-          <Button type="button" onClick={openCreate}>
-            <Plus className="h-4 w-4" aria-hidden />
-            Tambah akun kas
-          </Button>
+          <>
+            <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/konfigurasi-akun-jurnal")}>
+              <PiggyBank className="h-4 w-4" aria-hidden />
+              Atur kas awal
+            </Button>
+            <VerticalSeparator />
+            <Button type="button" onClick={openCreate}>
+              <Plus className="h-4 w-4" aria-hidden />
+              Tambah akun kas
+            </Button>
+          </>
         }
       />
 

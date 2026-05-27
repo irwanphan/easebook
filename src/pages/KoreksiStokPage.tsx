@@ -19,6 +19,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
+import { TokoLookup } from "@/components/ui/TokoLookup";
 import { FakturLineSatuanSelect } from "@/features/barang-jasa/FakturLineSatuanSelect";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { useGudang } from "@/features/gudang/GudangContext";
@@ -27,6 +28,8 @@ import {
   getDefaultSatuanPilihan,
   qtyToSatuanTerkecil,
 } from "@/data/barangJasa";
+import type { BarangJasaRow } from "@/data/barangJasa";
+import type { GudangRow } from "@/data/gudang";
 import type { BarangSaldoGudangRow } from "@/data/mutasiAntarGudang";
 import type { HppListRow } from "@/data/hpp";
 import {
@@ -477,26 +480,21 @@ export function KoreksiStokPage() {
               />
             </div>
             <div>
-              <label
-                htmlFor="kor-gudang"
-                className="block text-sm font-medium text-zinc-700"
-              >
-                Gudang
-              </label>
-              <TokoSelect
+              <TokoLookup<GudangRow>
                 id="kor-gudang"
-                value={gudangKode}
-                onChange={(e) => setGudangKode(e.target.value)}
+                label="Gudang"
+                options={gudangItems}
+                value={gudangKode || null}
+                getKey={(g) => g.kode}
+                getLabel={(g) => `${g.kode} — ${g.nama}`}
+                getDescription={(g) => g.alamat || undefined}
+                onChange={(opt) => setGudangKode(opt ? opt.kode : "")}
+                placeholder="— Pilih gudang —"
+                searchPlaceholder="Cari kode atau nama gudang…"
+                emptyMessage="Gudang tidak ditemukan."
                 disabled={masterLoading}
                 required
-              >
-                <option value="">— Pilih gudang —</option>
-                {gudangItems.map((g) => (
-                  <option key={g.kode} value={g.kode}>
-                    {g.kode} — {g.nama}
-                  </option>
-                ))}
-              </TokoSelect>
+              />
               {gudangKode && stokLoading ? (
                 <p className="mt-1.5 text-xs text-zinc-400">
                   Memuat saldo stok gudang…
@@ -623,21 +621,21 @@ export function KoreksiStokPage() {
                   return (
                     <tr key={row.id} className="bg-white align-top">
                       <td className="px-3 py-3">
-                        <TokoSelect
-                          value={row.barangKode}
-                          onChange={(e) =>
-                            setLine(row.id, { barangKode: e.target.value })
+                        <TokoLookup<BarangJasaRow>
+                          options={barangFisik}
+                          value={row.barangKode || null}
+                          getKey={(b) => b.kode}
+                          getLabel={(b) => `${b.kode} — ${b.nama}`}
+                          getDescription={(b) => b.satuan || undefined}
+                          onChange={(opt) =>
+                            setLine(row.id, { barangKode: opt ? opt.kode : "" })
                           }
+                          placeholder="— Pilih barang —"
+                          searchPlaceholder="Cari kode atau nama barang…"
+                          emptyMessage="Barang tidak ditemukan."
                           disabled={masterLoading}
                           required
-                        >
-                          <option value="">— Pilih barang —</option>
-                          {barangFisik.map((b) => (
-                            <option key={b.kode} value={b.kode}>
-                              {b.kode} — {b.nama}
-                            </option>
-                          ))}
-                        </TokoSelect>
+                        />
                         {barang && gudangKode ? (
                           <p
                             className={`mt-1.5 text-xs ${

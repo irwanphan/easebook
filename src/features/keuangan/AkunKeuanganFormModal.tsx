@@ -10,6 +10,8 @@ import type {
 import { KELOMPOK_AKUN, KELOMPOK_LABA_RUGI, KOLOM_NORM } from "@/data/keuangan";
 import { tauriErrorMessage } from "@/lib/tauriError";
 import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
+import { TokoLookup } from "@/components/ui/TokoLookup";
+import { labelKelompokAkun } from "@/data/keuangan";
 import { Save, X } from "lucide-react";
 
 const FORM_ID = "akun-keuangan-form";
@@ -239,24 +241,21 @@ export function AkunKeuanganFormModal({
             required
           />
         </div>
-        <div>
-          <label htmlFor="ak-form-induk" className="block text-sm font-medium text-zinc-700">
-            Induk akun (opsional)
-          </label>
-          <TokoSelect
-            id="ak-form-induk"
-            value={indukKode}
-            onChange={(e) => setIndukKode(e.target.value)}
-            disabled={submitting}
-          >
-            <option value="">— Tanpa induk —</option>
-            {indukOptions.map((a) => (
-              <option key={a.kode} value={a.kode}>
-                {a.kode} — {a.nama}
-              </option>
-            ))}
-          </TokoSelect>
-        </div>
+        <TokoLookup<AkunKeuanganRow>
+          id="ak-form-induk"
+          label="Induk akun (opsional)"
+          options={indukOptions}
+          value={indukKode || null}
+          getKey={(a) => a.kode}
+          getLabel={(a) => `${a.kode} — ${a.nama}`}
+          getDescription={(a) => labelKelompokAkun(a.kelompok)}
+          onChange={(opt) => setIndukKode(opt ? opt.kode : "")}
+          placeholder="— Tanpa induk —"
+          searchPlaceholder="Cari kode atau nama akun…"
+          emptyMessage="Akun tidak ditemukan."
+          clearable
+          disabled={submitting}
+        />
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="ak-form-kelompok" className="block text-sm font-medium text-zinc-700">

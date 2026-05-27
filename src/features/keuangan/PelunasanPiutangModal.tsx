@@ -6,7 +6,8 @@ import type { AkunKeuanganRow } from "@/data/keuangan";
 import type { PelunasanPiutangPayload, PiutangBelumLunasRow } from "@/data/pelunasanPiutang";
 import { tauriErrorMessage } from "@/lib/tauriError";
 import { Save, X } from "lucide-react";
-import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
+import { TokoInput } from "@/components/ui/TokoInput";
+import { TokoLookup } from "@/components/ui/TokoLookup";
 
 const FORM_ID = "pelunasan-piutang-form";
 
@@ -164,23 +165,21 @@ export function PelunasanPiutangModal({ open, faktur, onClose, onSaved }: Peluna
           </div>
 
           <div>
-            <label htmlFor="pp-kas" className="block text-sm font-medium text-zinc-700">
-              Diterima melalui (kas / bank)
-            </label>
-            <TokoSelect
+            <TokoLookup<AkunKeuanganRow>
               id="pp-kas"
-              value={kasKode}
-              onChange={(e) => setKasKode(e.target.value)}
+              label="Diterima melalui (kas / bank)"
+              options={akunKasList}
+              value={kasKode || null}
+              getKey={(a) => a.kode}
+              getLabel={(a) => `${a.kode} — ${a.nama}`}
+              getDescription={(a) => `Saldo: ${formatRupiah(a.saldo)}`}
+              onChange={(opt) => setKasKode(opt ? opt.kode : "")}
+              placeholder="— Pilih akun kas —"
+              searchPlaceholder="Cari kode atau nama akun kas…"
+              emptyMessage="Akun kas tidak ditemukan."
               disabled={disabled}
               required
-            >
-              <option value="">— Pilih akun kas —</option>
-              {akunKasList.map((a) => (
-                <option key={a.kode} value={a.kode}>
-                  {a.kode} — {a.nama}
-                </option>
-              ))}
-            </TokoSelect>
+            />
             {akunKasLoading ? (
               <p className="mt-1.5 text-xs text-zinc-400">Memuat akun kas…</p>
             ) : akunKasList.length === 0 ? (

@@ -9,7 +9,10 @@ import { Badge } from "@/components/ui/Badge";
 import type { AkunKeuanganRow } from "@/data/keuangan";
 import type { HutangBelumLunasRow, PelunasanHutangBatchPayload } from "@/data/pelunasanHutang";
 import { tauriErrorMessage } from "@/lib/tauriError";
-import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
+import { TokoInput } from "@/components/ui/TokoInput";
+import { TokoLookup } from "@/components/ui/TokoLookup";
+
+type PemasokOption = { kode: string; nama: string };
 
 function todayLocalISODate(): string {
   const d = new Date();
@@ -242,23 +245,20 @@ export function PelunasanHutangBatchForm({
           <h2 className="text-sm font-semibold text-zinc-900">Pemasok</h2>
           <p className="mt-1 text-sm text-zinc-500">Hanya pemasok dengan hutang belum lunas ditampilkan.</p>
           <div className="mt-4 max-w-md">
-            <label htmlFor="phb-pemasok" className="block text-sm font-medium text-zinc-700">
-              Pemasok
-            </label>
-            <TokoSelect
+            <TokoLookup<PemasokOption>
               id="phb-pemasok"
-              value={pemasokKode}
-              onChange={(e) => handlePemasokChange(e.target.value)}
+              label="Pemasok"
+              options={pemasokOptions}
+              value={pemasokKode || null}
+              getKey={(p) => p.kode}
+              getLabel={(p) => `${p.kode} — ${p.nama}`}
+              onChange={(opt) => handlePemasokChange(opt ? opt.kode : "")}
+              placeholder="— Pilih pemasok —"
+              searchPlaceholder="Cari kode atau nama pemasok…"
+              emptyMessage="Pemasok tidak ditemukan."
               disabled={formDisabled || pemasokOptions.length === 0}
               required
-            >
-              <option value="">— Pilih pemasok —</option>
-              {pemasokOptions.map((p) => (
-                <option key={p.kode} value={p.kode}>
-                  {p.kode} — {p.nama}
-                </option>
-              ))}
-            </TokoSelect>
+            />
             {loading ? (
               <p className="mt-1.5 text-xs text-zinc-400">Memuat hutang…</p>
             ) : pemasokOptions.length === 0 ? (
@@ -398,23 +398,21 @@ export function PelunasanHutangBatchForm({
               />
             </div>
             <div>
-              <label htmlFor="phb-kas" className="block text-sm font-medium text-zinc-700">
-                Dibayar melalui (kas / bank)
-              </label>
-              <TokoSelect
+              <TokoLookup<AkunKeuanganRow>
                 id="phb-kas"
-                value={kasKode}
-                onChange={(e) => setKasKode(e.target.value)}
+                label="Dibayar melalui (kas / bank)"
+                options={akunKasList}
+                value={kasKode || null}
+                getKey={(a) => a.kode}
+                getLabel={(a) => `${a.kode} — ${a.nama}`}
+                getDescription={(a) => `Saldo: ${formatRupiah(a.saldo)}`}
+                onChange={(opt) => setKasKode(opt ? opt.kode : "")}
+                placeholder="— Pilih akun kas —"
+                searchPlaceholder="Cari kode atau nama akun kas…"
+                emptyMessage="Akun kas tidak ditemukan."
                 disabled={formDisabled}
                 required
-              >
-                <option value="">— Pilih akun kas —</option>
-                {akunKasList.map((a) => (
-                  <option key={a.kode} value={a.kode}>
-                    {a.kode} — {a.nama}
-                  </option>
-                ))}
-              </TokoSelect>
+              />
               {akunKasLoading ? (
                 <p className="mt-1.5 text-xs text-zinc-400">Memuat akun kas…</p>
               ) : akunKasList.length === 0 ? (

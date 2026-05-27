@@ -9,7 +9,8 @@ import type { AkunKeuanganRow, JurnalKonfigurasi } from "@/data/keuangan";
 import type { PenerimaanInsertPayload } from "@/data/penerimaan";
 import { filterAkunPenerimaan } from "@/lib/akunPenerimaan";
 import { tauriErrorMessage } from "@/lib/tauriError";
-import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
+import { TokoInput } from "@/components/ui/TokoInput";
+import { TokoLookup } from "@/components/ui/TokoLookup";
 
 function todayLocalISODate(): string {
   const d = new Date();
@@ -189,23 +190,21 @@ export function PenerimaanForm({ cancelHref, onSuccess }: PenerimaanFormProps) {
               />
             </div>
             <div>
-              <label htmlFor="pn-kas" className="block text-sm font-medium text-zinc-700">
-                Diterima oleh (kas / bank)
-              </label>
-              <TokoSelect
+              <TokoLookup<AkunKeuanganRow>
                 id="pn-kas"
-                value={kasKode}
-                onChange={(e) => setKasKode(e.target.value)}
+                label="Diterima oleh (kas / bank)"
+                options={akunKasList}
+                value={kasKode || null}
+                getKey={(a) => a.kode}
+                getLabel={(a) => `${a.kode} — ${a.nama}`}
+                getDescription={(a) => `Saldo: ${formatRupiah(a.saldo)}`}
+                onChange={(opt) => setKasKode(opt ? opt.kode : "")}
+                placeholder="— Pilih akun kas —"
+                searchPlaceholder="Cari kode atau nama akun kas…"
+                emptyMessage="Akun kas tidak ditemukan."
                 disabled={disabled}
                 required
-              >
-                <option value="">— Pilih akun kas —</option>
-                {akunKasList.map((a) => (
-                  <option key={a.kode} value={a.kode}>
-                    {a.kode} — {a.nama}
-                  </option>
-                ))}
-              </TokoSelect>
+              />
               {masterLoading ? (
                 <p className="mt-1.5 text-xs text-zinc-400">Memuat akun kas…</p>
               ) : akunKasList.length === 0 ? (
@@ -268,20 +267,21 @@ export function PenerimaanForm({ cancelHref, onSuccess }: PenerimaanFormProps) {
                   {lines.map((line) => (
                     <tr key={line.id} className="bg-white">
                       <td className="px-2 py-1">
-                        <TokoSelect
+                        <TokoLookup<AkunKeuanganRow>
                           id={`pn-akun-${line.id}`}
-                          value={line.akunKode}
-                          onChange={(e) => updateLine(line.id, { akunKode: e.target.value })}
+                          options={akunPenerimaanList}
+                          value={line.akunKode || null}
+                          getKey={(a) => a.kode}
+                          getLabel={(a) => `${a.kode} — ${a.nama}`}
+                          onChange={(opt) =>
+                            updateLine(line.id, { akunKode: opt ? opt.kode : "" })
+                          }
+                          placeholder="— Pilih akun —"
+                          searchPlaceholder="Cari akun pendapatan…"
+                          emptyMessage="Akun pendapatan tidak ditemukan."
                           disabled={disabled}
                           required
-                        >
-                          <option value="">— Pilih akun —</option>
-                          {akunPenerimaanList.map((a) => (
-                            <option key={a.kode} value={a.kode}>
-                              {a.kode} — {a.nama}
-                            </option>
-                          ))}
-                        </TokoSelect>
+                        />
                       </td>
                       <td className="px-2 py-1">
                         <TokoInput

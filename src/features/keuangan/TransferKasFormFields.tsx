@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
+import { TokoInput } from "@/components/ui/TokoInput";
+import { TokoLookup } from "@/components/ui/TokoLookup";
 import type { AkunKeuanganRow } from "@/data/keuangan";
 
 export type TransferKasFormState = {
@@ -109,21 +110,21 @@ export function TransferKasFormFields({
       />
 
       <div className="grid gap-4 md:grid-cols-2">
-        <TokoSelect
+        <TokoLookup<AkunKeuanganRow>
           label="Kas asal"
-          value={value.sumber}
-          onChange={(e) => patch({ sumber: e.target.value })}
-          disabled={disabled || loadingMaster}
+          options={akunKasList}
+          value={value.sumber || null}
+          getKey={(a) => a.kode}
+          getLabel={(a) => `${a.kode} — ${a.nama}`}
+          getDescription={(a) => `Saldo: ${formatRupiah(a.saldo)}`}
+          onChange={(opt) => patch({ sumber: opt ? opt.kode : "" })}
+          placeholder="— Pilih akun kas —"
+          searchPlaceholder="Cari kode atau nama akun kas…"
+          emptyMessage="Akun kas tidak ditemukan."
           hint={sumberRow ? `Saldo ${formatRupiah(sumberRow.saldo)}` : undefined}
+          disabled={disabled || loadingMaster}
           required
-        >
-          <option value="">— Pilih akun kas —</option>
-          {akunKasList.map((a) => (
-            <option key={a.kode} value={a.kode}>
-              {a.kode} — {a.nama}
-            </option>
-          ))}
-        </TokoSelect>
+        />
         <TokoInput
           label="Nominal dikirim"
           type="text"
@@ -135,11 +136,17 @@ export function TransferKasFormFields({
           className="text-right"
           required
         />
-        <TokoSelect
+        <TokoLookup<AkunKeuanganRow>
           label="Kas tujuan"
-          value={value.tujuan}
-          onChange={(e) => patch({ tujuan: e.target.value })}
-          disabled={disabled || loadingMaster}
+          options={akunKasList.filter((a) => a.kode !== value.sumber)}
+          value={value.tujuan || null}
+          getKey={(a) => a.kode}
+          getLabel={(a) => `${a.kode} — ${a.nama}`}
+          getDescription={(a) => `Saldo: ${formatRupiah(a.saldo)}`}
+          onChange={(opt) => patch({ tujuan: opt ? opt.kode : "" })}
+          placeholder="— Pilih akun kas —"
+          searchPlaceholder="Cari kode atau nama akun kas…"
+          emptyMessage="Akun kas tidak ditemukan."
           error={
             value.sumber && value.tujuan && value.sumber === value.tujuan
               ? "Tidak boleh sama dengan kas asal."
@@ -150,17 +157,9 @@ export function TransferKasFormFields({
               ? `Saldo ${formatRupiah(tujuanRow.saldo)}`
               : undefined
           }
+          disabled={disabled || loadingMaster}
           required
-        >
-          <option value="">— Pilih akun kas —</option>
-          {akunKasList
-            .filter((a) => a.kode !== value.sumber)
-            .map((a) => (
-              <option key={a.kode} value={a.kode}>
-                {a.kode} — {a.nama}
-              </option>
-            ))}
-        </TokoSelect>
+        />
         <TokoInput
           label="Nominal diterima"
           type="text"
@@ -186,21 +185,20 @@ export function TransferKasFormFields({
           className="text-right"
           hint="Selisih kirim − terima; jadi 0 jika sama besar."
         />
-        <TokoSelect
+        <TokoLookup<AkunKeuanganRow>
           label="Akun biaya"
-          value={value.akunBiaya}
-          onChange={(e) => patch({ akunBiaya: e.target.value })}
-          disabled={disabled || value.biaya === 0 || loadingMaster}
+          options={akunBiayaList}
+          value={value.akunBiaya || null}
+          getKey={(a) => a.kode}
+          getLabel={(a) => `${a.kode} — ${a.nama}`}
+          onChange={(opt) => patch({ akunBiaya: opt ? opt.kode : "" })}
+          placeholder="— Pilih akun biaya —"
+          searchPlaceholder="Cari kode atau nama akun biaya…"
+          emptyMessage="Akun biaya tidak ditemukan."
           hint={value.biaya === 0 ? "Tidak diperlukan jika biaya 0." : "Catat biaya ke akun ini."}
+          disabled={disabled || value.biaya === 0 || loadingMaster}
           required={value.biaya > 0}
-        >
-          <option value="">— Pilih akun biaya —</option>
-          {akunBiayaList.map((a) => (
-            <option key={a.kode} value={a.kode}>
-              {a.kode} — {a.nama}
-            </option>
-          ))}
-        </TokoSelect>
+        />
       </div>
 
       <div

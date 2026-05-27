@@ -1,8 +1,9 @@
 import type { FormEvent, ReactNode } from "react";
 import type { AkunKeuanganRow, JurnalKonfigurasi } from "@/data/keuangan";
+import { labelKelompokAkun } from "@/data/keuangan";
 import { Button } from "@/components/ui/Button";
 import { isJurnalKonfigurasiComplete, JURNAL_KONFIGURASI_FIELDS } from "@/features/keuangan/jurnalKonfigurasi";
-import { TokoSelect } from "@/components/ui/TokoInput";
+import { TokoLookup } from "@/components/ui/TokoLookup";
 
 export type JurnalKonfigurasiFormProps = {
   config: JurnalKonfigurasi | null;
@@ -29,28 +30,25 @@ export function JurnalKonfigurasiForm({
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
       {JURNAL_KONFIGURASI_FIELDS.map(({ key, label, hint }) => (
-        <div key={key}>
-          <label className="block text-sm font-medium text-zinc-700">{label}</label>
-          {hint ? <p className="mt-0.5 text-xs text-zinc-500">{hint}</p> : null}
-          <TokoSelect
-            value={config?.[key] ?? ""}
-            onChange={(e) => {
-              if (!config) return;
-              onConfigChange({
-                ...config,
-                [key]: e.target.value ? e.target.value : null,
-              });
-            }}
-            disabled={fieldsDisabled || saving}
-          >
-            <option value="">— Pilih akun —</option>
-            {akunList.map((a) => (
-              <option key={a.kode} value={a.kode}>
-                {a.kode} — {a.nama}
-              </option>
-            ))}
-          </TokoSelect>
-        </div>
+        <TokoLookup<AkunKeuanganRow>
+          key={key}
+          label={label}
+          hint={hint}
+          options={akunList}
+          value={config?.[key] ?? null}
+          getKey={(a) => a.kode}
+          getLabel={(a) => `${a.kode} — ${a.nama}`}
+          getDescription={(a) => labelKelompokAkun(a.kelompok)}
+          onChange={(opt) => {
+            if (!config) return;
+            onConfigChange({ ...config, [key]: opt ? opt.kode : null });
+          }}
+          placeholder="— Pilih akun —"
+          searchPlaceholder="Cari kode atau nama akun…"
+          emptyMessage="Akun tidak ditemukan."
+          clearable
+          disabled={fieldsDisabled || saving}
+        />
       ))}
 
       <div className="pt-1">

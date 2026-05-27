@@ -152,6 +152,7 @@ export const halamanAksesGroups: HalamanAksesGroup[] = [
       { key: "ke-transfer", label: "Transfer", pathPattern: "keuangan/transfer" },
       { key: "ke-daftar-akun", label: "Daftar akun", pathPattern: "keuangan/daftar-akun" },
       { key: "ke-akun-kas", label: "Akun kas", pathPattern: "keuangan/akun-kas" },
+      { key: "ke-kas-awal", label: "Pengaturan kas awal", pathPattern: "keuangan/kas-awal" },
       {
         key: "ke-konfigurasi-akun-jurnal",
         label: "Konfigurasi akun jurnal",

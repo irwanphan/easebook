@@ -80,6 +80,9 @@ export type JurnalKonfigurasi = {
   akunPembelian: string | null;
   akunPenerimaanLainnya: string | null;
   akunPengeluaranLainnya: string | null;
+  /** Akun lawan untuk semua jurnal pembuka (saldo awal kas, stok, dll.)
+   *  yang tanggalnya = `operasional_konfigurasi.awal_periode`. */
+  akunHistoricalBalance: string | null;
 };
 
 export type JurnalKonfigurasiSetPayload = {
@@ -89,6 +92,7 @@ export type JurnalKonfigurasiSetPayload = {
   akunPembelian: string | null;
   akunPenerimaanLainnya: string | null;
   akunPengeluaranLainnya: string | null;
+  akunHistoricalBalance: string | null;
 };
 
 export type JurnalJenisTransaksi =

@@ -360,6 +360,33 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     migrate_pos_konfigurasi(conn)?;
     migrate_pos_shift_jurnal_columns(conn)?;
     migrate_operasional_konfigurasi(conn)?;
+    migrate_jurnal_konfigurasi_historical(conn)?;
+    Ok(())
+}
+
+/// Tambah kolom `akun_historical_balance` ke `jurnal_konfigurasi`. Akun ini
+/// dipakai sebagai lawan transaksi untuk semua jurnal "pembuka" di periode
+/// sebelum awal periode operasional (mis. saldo awal kas, saldo awal stok).
+fn migrate_jurnal_konfigurasi_historical(conn: &Connection) -> rusqlite::Result<()> {
+    let exists: bool = {
+        let mut stmt = conn.prepare("PRAGMA table_info(jurnal_konfigurasi)")?;
+        let names = stmt.query_map([], |r| r.get::<_, String>(1))?;
+        let mut found = false;
+        for n in names {
+            if n? == "akun_historical_balance" {
+                found = true;
+                break;
+            }
+        }
+        found
+    };
+    if !exists {
+        conn.execute(
+            "ALTER TABLE jurnal_konfigurasi
+             ADD COLUMN akun_historical_balance TEXT REFERENCES akun_keuangan(kode) ON UPDATE CASCADE",
+            [],
+        )?;
+    }
     Ok(())
 }
 

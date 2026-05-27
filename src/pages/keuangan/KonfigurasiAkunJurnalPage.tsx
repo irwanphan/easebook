@@ -56,6 +56,7 @@ export function KonfigurasiAkunJurnalPage() {
         akunPembelian: config.akunPembelian,
         akunPenerimaanLainnya: config.akunPenerimaanLainnya,
         akunPengeluaranLainnya: config.akunPengeluaranLainnya,
+        akunHistoricalBalance: config.akunHistoricalBalance,
       };
       await invoke("jurnal_konfigurasi_set", { payload });
       setSavedHint("Konfigurasi akun jurnal telah disimpan.");

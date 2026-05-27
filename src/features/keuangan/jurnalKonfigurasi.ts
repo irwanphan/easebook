@@ -15,6 +15,11 @@ export const JURNAL_KONFIGURASI_FIELDS: {
   },
   { key: "akunPenerimaanLainnya", label: "Penerimaan lain", hint: "Kredit penerimaan non-penjualan" },
   { key: "akunPengeluaranLainnya", label: "Pengeluaran lain", hint: "Debit pengeluaran non-pembelian" },
+  {
+    key: "akunHistoricalBalance",
+    label: "Historical Balance",
+    hint: "Lawan untuk semua jurnal pembuka (saldo awal kas/stok/dll.) sebelum awal periode operasional",
+  },
 ];
 
 export function isJurnalKonfigurasiComplete(config: JurnalKonfigurasi | null): boolean {

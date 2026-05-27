@@ -6762,6 +6762,9 @@ pub struct JurnalKonfigurasiRow {
     pub akun_pembelian: Option<String>,
     pub akun_penerimaan_lainnya: Option<String>,
     pub akun_pengeluaran_lainnya: Option<String>,
+    /// Akun lawan untuk jurnal pembuka (saldo awal kas/stok/dll) di periode
+    /// sebelum awal periode operasional.
+    pub akun_historical_balance: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -6773,6 +6776,7 @@ pub struct JurnalKonfigurasiSetPayload {
     pub akun_pembelian: Option<String>,
     pub akun_penerimaan_lainnya: Option<String>,
     pub akun_pengeluaran_lainnya: Option<String>,
+    pub akun_historical_balance: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -6814,7 +6818,8 @@ fn konfigurasi_ensure_row(tx: &Transaction<'_>, ts: i64) -> Result<(), String> {
 
 fn konfigurasi_get_row(tx: &Transaction<'_>) -> Result<JurnalKonfigurasiRow, String> {
     tx.query_row(
-        "SELECT akun_piutang, akun_hutang, akun_pendapatan, akun_pembelian, akun_penerimaan_lainnya, akun_pengeluaran_lainnya
+        "SELECT akun_piutang, akun_hutang, akun_pendapatan, akun_pembelian,
+                akun_penerimaan_lainnya, akun_pengeluaran_lainnya, akun_historical_balance
          FROM jurnal_konfigurasi
          WHERE id = 1",
         [],
@@ -6826,6 +6831,7 @@ fn konfigurasi_get_row(tx: &Transaction<'_>) -> Result<JurnalKonfigurasiRow, Str
                 akun_pembelian: r.get(3)?,
                 akun_penerimaan_lainnya: r.get(4)?,
                 akun_pengeluaran_lainnya: r.get(5)?,
+                akun_historical_balance: r.get(6)?,
             })
         },
     )
@@ -7059,9 +7065,10 @@ pub fn akun_keuangan_delete(state: State<DbState>, kode: String) -> Result<(), S
              akun_pendapatan = CASE WHEN lower(akun_pendapatan) = lower(?) THEN NULL ELSE akun_pendapatan END,
              akun_pembelian = CASE WHEN lower(akun_pembelian) = lower(?) THEN NULL ELSE akun_pembelian END,
              akun_penerimaan_lainnya = CASE WHEN lower(akun_penerimaan_lainnya) = lower(?) THEN NULL ELSE akun_penerimaan_lainnya END,
-             akun_pengeluaran_lainnya = CASE WHEN lower(akun_pengeluaran_lainnya) = lower(?) THEN NULL ELSE akun_pengeluaran_lainnya END
+             akun_pengeluaran_lainnya = CASE WHEN lower(akun_pengeluaran_lainnya) = lower(?) THEN NULL ELSE akun_pengeluaran_lainnya END,
+             akun_historical_balance = CASE WHEN lower(akun_historical_balance) = lower(?) THEN NULL ELSE akun_historical_balance END
          WHERE id = 1",
-        params![kode, kode, kode, kode, kode, kode],
+        params![kode, kode, kode, kode, kode, kode, kode],
     )
     .map_err(|e| e.to_string())?;
 
@@ -7109,7 +7116,8 @@ pub fn jurnal_konfigurasi_set(
     tx.execute(
         "UPDATE jurnal_konfigurasi
          SET akun_piutang = ?, akun_hutang = ?, akun_pendapatan = ?, akun_pembelian = ?,
-             akun_penerimaan_lainnya = ?, akun_pengeluaran_lainnya = ?, updated_at = ?
+             akun_penerimaan_lainnya = ?, akun_pengeluaran_lainnya = ?,
+             akun_historical_balance = ?, updated_at = ?
          WHERE id = 1",
         params![
             payload.akun_piutang.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()),
@@ -7118,6 +7126,7 @@ pub fn jurnal_konfigurasi_set(
             payload.akun_pembelian.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()),
             payload.akun_penerimaan_lainnya.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()),
             payload.akun_pengeluaran_lainnya.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()),
+            payload.akun_historical_balance.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()),
             ts
         ],
     )
@@ -10718,6 +10727,290 @@ pub fn operasional_konfigurasi_set(
     let row = operasional_konfigurasi_load(&tx)?;
     tx.commit().map_err(|e| e.to_string())?;
     Ok(row)
+}
+
+// --- Saldo awal kas (jurnal pembuka di awal periode operasional) ---
+
+const KAS_AWAL_JENIS: &str = "KAS_AWAL";
+const KAS_AWAL_REFERENSI: &str = "KAS-AWAL";
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct KasAwalEntryRow {
+    pub akun_kode: String,
+    pub akun_nama: String,
+    pub nilai_awal: i64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct KasAwalSnapshot {
+    pub awal_periode: Option<String>,
+    pub akun_historical_balance_kode: Option<String>,
+    pub akun_historical_balance_nama: Option<String>,
+    pub entries: Vec<KasAwalEntryRow>,
+    /// Tanggal jurnal yang tersimpan terakhir (jika ada). Bisa beda dari
+    /// `awal_periode` kalau pengaturan diubah setelah kas awal di-set.
+    pub tanggal_jurnal: Option<String>,
+    pub jurnal_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KasAwalEntryInput {
+    pub akun_kode: String,
+    pub nilai_awal: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KasAwalSetPayload {
+    pub entries: Vec<KasAwalEntryInput>,
+}
+
+/// Cari jurnal kas awal aktif (KAS_AWAL / KAS-AWAL). Ada paling banyak 1
+/// karena pada `kas_awal_set` kita selalu menghapus jurnal lama sebelum
+/// membuat yang baru.
+fn kas_awal_find_existing(conn: &Connection) -> Result<Option<(i64, String)>, String> {
+    let r = conn.query_row(
+        "SELECT id, tanggal FROM jurnal_umum
+         WHERE jenis = ? AND referensi = ?
+         ORDER BY id DESC LIMIT 1",
+        params![KAS_AWAL_JENIS, KAS_AWAL_REFERENSI],
+        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+    );
+    match r {
+        Ok(v) => Ok(Some(v)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Reverse semua line dari jurnal yang ditarget, lalu hapus jurnal+lines-nya.
+fn kas_awal_reverse_and_delete(
+    tx: &Transaction<'_>,
+    jurnal_id: i64,
+    ts: i64,
+) -> Result<(), String> {
+    let lines: Vec<(String, i64, i64)> = {
+        let mut stmt = tx
+            .prepare(
+                "SELECT akun_kode, debit, kredit FROM jurnal_umum_line WHERE jurnal_id = ?",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        let rows = stmt
+            .query_map(params![jurnal_id], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
+            })
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            out.push(row.map_err(|e| e.to_string())?);
+        }
+        out
+    };
+
+    // Reverse saldo dengan swap (D ↔ K).
+    for (akun_kode, debit, kredit) in &lines {
+        akun_jurnal_apply_saldo_delta(tx, akun_kode, *kredit, *debit, ts)?;
+    }
+
+    tx.execute(
+        "DELETE FROM jurnal_umum_line WHERE jurnal_id = ?",
+        params![jurnal_id],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM jurnal_umum WHERE id = ?", params![jurnal_id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn kas_awal_get(state: State<DbState>) -> Result<KasAwalSnapshot, String> {
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    operasional_konfigurasi_ensure_row(&tx, ts)?;
+    konfigurasi_ensure_row(&tx, ts)?;
+
+    let op_cfg = operasional_konfigurasi_load(&tx)?;
+    let jurnal_cfg = konfigurasi_get_row(&tx)?;
+    let hb_kode = jurnal_cfg.akun_historical_balance.clone();
+    let hb_nama: Option<String> = if let Some(k) = &hb_kode {
+        tx.query_row(
+            "SELECT nama FROM akun_keuangan WHERE lower(kode) = lower(?)",
+            params![k],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
+    } else {
+        None
+    };
+
+    let existing = kas_awal_find_existing(&tx)?;
+
+    let (entries, tanggal_jurnal, jurnal_id) = if let Some((jid, tgl)) = existing {
+        let mut stmt = tx
+            .prepare(
+                "SELECT l.akun_kode, COALESCE(a.nama, l.akun_kode), l.debit, l.kredit
+                 FROM jurnal_umum_line l
+                 LEFT JOIN akun_keuangan a ON lower(a.kode) = lower(l.akun_kode)
+                 WHERE l.jurnal_id = ?
+                 ORDER BY l.id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut rows: Vec<KasAwalEntryRow> = Vec::new();
+        let it = stmt
+            .query_map(params![jid], |r| {
+                let kode: String = r.get(0)?;
+                let nama: String = r.get(1)?;
+                let debit: i64 = r.get(2)?;
+                let kredit: i64 = r.get(3)?;
+                Ok((kode, nama, debit, kredit))
+            })
+            .map_err(|e| e.to_string())?;
+        for row in it {
+            let (kode, nama, debit, kredit) = row.map_err(|e| e.to_string())?;
+            // Sisi kas selalu di debit; lawan (Historical Balance) di kredit. Skip lawan.
+            if let Some(hb) = &hb_kode {
+                if kode.eq_ignore_ascii_case(hb) {
+                    continue;
+                }
+            } else if debit == 0 && kredit > 0 {
+                // Fallback bila historical_balance tidak terbaca: lewati baris yang murni kredit.
+                continue;
+            }
+            if debit > 0 {
+                rows.push(KasAwalEntryRow {
+                    akun_kode: kode,
+                    akun_nama: nama,
+                    nilai_awal: debit,
+                });
+            }
+        }
+        (rows, Some(tgl), Some(jid))
+    } else {
+        (Vec::new(), None, None)
+    };
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(KasAwalSnapshot {
+        awal_periode: op_cfg.awal_periode,
+        akun_historical_balance_kode: hb_kode,
+        akun_historical_balance_nama: hb_nama,
+        entries,
+        tanggal_jurnal,
+        jurnal_id,
+    })
+}
+
+#[tauri::command]
+pub fn kas_awal_set(
+    state: State<DbState>,
+    payload: KasAwalSetPayload,
+) -> Result<KasAwalSnapshot, String> {
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    // Validasi prasyarat
+    operasional_konfigurasi_ensure_row(&tx, ts)?;
+    konfigurasi_ensure_row(&tx, ts)?;
+    let op_cfg = operasional_konfigurasi_load(&tx)?;
+    let awal_periode = op_cfg
+        .awal_periode
+        .clone()
+        .ok_or_else(|| "Tanggal awal periode operasional belum diset.".to_string())?;
+    NaiveDate::parse_from_str(&awal_periode, "%Y-%m-%d")
+        .map_err(|_| "Tanggal awal periode tidak valid.".to_string())?;
+
+    let cfg = konfigurasi_get_row(&tx)?;
+    let hb_kode = cfg
+        .akun_historical_balance
+        .clone()
+        .ok_or_else(|| "Akun Historical Balance belum diset di Konfigurasi akun jurnal.".to_string())?;
+
+    // Normalisasi & validasi entries
+    let mut total: i64 = 0;
+    let mut clean: Vec<(String, i64)> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for e in &payload.entries {
+        let kode = e.akun_kode.trim().to_uppercase();
+        if kode.is_empty() {
+            return Err("Setiap entry harus memiliki kode akun.".into());
+        }
+        if !seen.insert(kode.clone()) {
+            return Err(format!("Akun '{kode}' tercantum lebih dari sekali."));
+        }
+        if e.nilai_awal < 0 {
+            return Err(format!("Nilai kas awal untuk '{kode}' tidak boleh negatif."));
+        }
+        if kode.eq_ignore_ascii_case(&hb_kode) {
+            return Err(
+                "Akun Historical Balance tidak boleh menjadi salah satu kas awal."
+                    .to_string(),
+            );
+        }
+        let is_kas: i64 = tx
+            .query_row(
+                "SELECT COALESCE(is_akun_kas, 0) FROM akun_keuangan WHERE lower(kode) = lower(?)",
+                params![&kode],
+                |r| r.get(0),
+            )
+            .map_err(|_| format!("Akun '{kode}' tidak ditemukan."))?;
+        if is_kas == 0 {
+            return Err(format!("Akun '{kode}' bukan akun kas."));
+        }
+        if e.nilai_awal > 0 {
+            total = total
+                .checked_add(e.nilai_awal)
+                .ok_or_else(|| "Total kas awal melebihi batas.".to_string())?;
+            clean.push((kode, e.nilai_awal));
+        }
+    }
+
+    // Reverse jurnal lama (jika ada) sebelum membuat baru.
+    if let Some((jid, _)) = kas_awal_find_existing(&tx)? {
+        kas_awal_reverse_and_delete(&tx, jid, ts)?;
+    }
+
+    // Bila semua nilai = 0, cukup kembalikan snapshot kosong tanpa membuat jurnal baru.
+    if clean.is_empty() {
+        tx.commit().map_err(|e| e.to_string())?;
+        return kas_awal_get(state);
+    }
+
+    // Insert jurnal kompound: per akun kas di sisi D; Historical Balance di sisi K (sum).
+    let catatan = format!("Saldo awal kas per {awal_periode}");
+    tx.execute(
+        "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)",
+        params![awal_periode, KAS_AWAL_JENIS, KAS_AWAL_REFERENSI, catatan, ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    let jid = tx.last_insert_rowid();
+
+    for (kode, nilai) in &clean {
+        tx.execute(
+            "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+             VALUES (?, ?, ?, 0, 'Saldo awal kas')",
+            params![jid, kode, nilai],
+        )
+        .map_err(|e| e.to_string())?;
+        akun_jurnal_apply_saldo_delta(&tx, kode, *nilai, 0, ts)?;
+    }
+
+    tx.execute(
+        "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+         VALUES (?, ?, 0, ?, 'Lawan saldo awal kas')",
+        params![jid, &hb_kode, total],
+    )
+    .map_err(|e| e.to_string())?;
+    akun_jurnal_apply_saldo_delta(&tx, &hb_kode, 0, total, ts)?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    kas_awal_get(state)
 }
 
 // --- Konfigurasi POS (kas operasional & kas kasir) ---

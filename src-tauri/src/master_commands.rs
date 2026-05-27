@@ -1919,6 +1919,46 @@ pub fn pengguna_login(
     })
 }
 
+/// Verifikasi kata sandi pengguna saat ini — dipakai sebagai pengaman tambahan
+/// untuk aksi sensitif (mis. mengubah pengaturan operasional awal periode).
+///
+/// Beda dengan `pengguna_login`: tidak mengembalikan session, hanya `()` saat
+/// berhasil. Tetap mensyaratkan akun aktif dan password cocok via bcrypt.
+#[tauri::command]
+pub fn pengguna_verifikasi_kata_sandi(
+    state: State<DbState>,
+    username: String,
+    password: String,
+) -> Result<(), String> {
+    let key = username.trim();
+    if key.is_empty() {
+        return Err("Username wajib diisi.".into());
+    }
+    if password.is_empty() {
+        return Err("Kata sandi wajib diisi.".into());
+    }
+
+    with_conn_app(&state, |conn| {
+        let row: (i64, String) = conn
+            .query_row(
+                "SELECT aktif, password_hash FROM pengguna WHERE lower(username) = lower(?)",
+                params![key],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(|_| "Pengguna tidak ditemukan.".to_string())?;
+
+        if row.0 == 0 {
+            return Err("Akun pengguna tidak aktif.".into());
+        }
+
+        let ok = bcrypt::verify(password.as_str(), &row.1).map_err(|e| e.to_string())?;
+        if !ok {
+            return Err("Kata sandi salah.".into());
+        }
+        Ok(())
+    })
+}
+
 #[tauri::command]
 pub fn pengguna_halaman_akses_get(state: State<DbState>, username: String) -> Result<Vec<String>, String> {
     let key = username.trim();

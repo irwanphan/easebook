@@ -104,6 +104,7 @@ pub fn run() {
             master_commands::pengguna_foto_save,
             master_commands::pengguna_foto_remove,
             master_commands::pengguna_login,
+            master_commands::pengguna_verifikasi_kata_sandi,
             master_commands::pengguna_session_get,
             master_commands::pembelian_list,
             master_commands::pembelian_insert,

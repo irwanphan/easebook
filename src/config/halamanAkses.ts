@@ -20,6 +20,14 @@ export const halamanAksesGroups: HalamanAksesGroup[] = [
       { key: "dashboard", label: "Dashboard", pathPattern: "" },
       { key: "pengaturan", label: "Pengaturan", pathPattern: "pengaturan" },
       { key: "pos", label: "Kasir POS", pathPattern: "pos" },
+      // Aksi sensitif — bukan halaman. Tetap dipakai sebagai permission key
+      // sehingga muncul di Manajemen → Pengguna → Hak akses. Pola path tidak
+      // pernah dipakai di router (sintetik) agar tidak mengganggu navigasi.
+      {
+        key: "pengaturan-ubah-awal-periode",
+        label: "Pengaturan: Ubah tanggal awal periode",
+        pathPattern: "pengaturan/aksi/ubah-awal-periode",
+      },
     ],
   },
   {

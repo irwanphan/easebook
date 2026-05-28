@@ -7,7 +7,10 @@ import {
   BookText,
   CheckCircle2,
   Info,
+  Lock,
   PiggyBank,
+  ShieldAlert,
+  Unlock,
   Wallet,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -19,9 +22,14 @@ import { kasAwalGet, kasAwalSet } from "@/features/keuangan/kasAwalInvoke";
 import { formatTanggalLokal } from "@/data/operasionalKonfigurasi";
 import { formatRupiah, parseRupiahInput } from "@/lib/format";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { PasswordConfirmModal } from "@/features/auth/PasswordConfirmModal";
+import { useAuth } from "@/features/auth/AuthContext";
 
 /** Map kode akun → input string (raw teks user, belum di-parse). */
 type InputMap = Record<string, string>;
+
+/** Permission key untuk membuka kunci saldo kas awal yang sudah disetel. */
+const AKSES_UBAH_KAS_AWAL = "pengaturan-ubah-kas-awal";
 
 /**
  * Pengaturan saldo awal kas — antar-muka untuk membentuk jurnal pembuka
@@ -37,6 +45,7 @@ type InputMap = Record<string, string>;
  */
 export function PengaturanKasAwalPage() {
   const navigate = useNavigate();
+  const { session } = useAuth();
   const [snapshot, setSnapshot] = useState<KasAwalSnapshot | null>(null);
   const [akunKasList, setAkunKasList] = useState<AkunKeuanganRow[]>([]);
   const [inputs, setInputs] = useState<InputMap>({});
@@ -44,6 +53,32 @@ export function PengaturanKasAwalPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
+  /** True = form unlock untuk editing. False = read-only (terkunci). */
+  const [editing, setEditing] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+
+  const isAdmin = session?.isAdmin ?? false;
+  const allowedKeys = useMemo(
+    () => new Set(session?.halamanAkses ?? []),
+    [session?.halamanAkses],
+  );
+  const punyaHakUbah = isAdmin || allowedKeys.has(AKSES_UBAH_KAS_AWAL);
+
+  /** Rebuild inputs map from a snapshot — single source of truth supaya
+   *  "Batal" bisa mengembalikan state ke kondisi tersimpan. */
+  const buildInputsFromSnapshot = useCallback(
+    (snap: KasAwalSnapshot, kasOnly: AkunKeuanganRow[]): InputMap => {
+      const next: InputMap = {};
+      for (const a of kasOnly) {
+        const existing = snap.entries.find(
+          (e) => e.akunKode.toLowerCase() === a.kode.toLowerCase(),
+        );
+        next[a.kode] = existing ? String(existing.nilaiAwal) : "";
+      }
+      return next;
+    },
+    [],
+  );
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -56,21 +91,16 @@ export function PengaturanKasAwalPage() {
       setSnapshot(snap);
       const kasOnly = akunList.filter((a) => a.isAkunKas);
       setAkunKasList(kasOnly);
-      // Pre-fill inputs dari snapshot — kas yang belum punya entry diisi "".
-      const next: InputMap = {};
-      for (const a of kasOnly) {
-        const existing = snap.entries.find(
-          (e) => e.akunKode.toLowerCase() === a.kode.toLowerCase(),
-        );
-        next[a.kode] = existing ? String(existing.nilaiAwal) : "";
-      }
-      setInputs(next);
+      setInputs(buildInputsFromSnapshot(snap, kasOnly));
+      // First-time setup: belum pernah disetel → langsung editing.
+      // Kalau sudah pernah → kunci sampai user explicit unlock.
+      setEditing(snap.entries.length === 0);
     } catch (e) {
       setError(tauriErrorMessage(e));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [buildInputsFromSnapshot]);
 
   useEffect(() => {
     void refresh();
@@ -122,6 +152,32 @@ export function PengaturanKasAwalPage() {
     setError(null);
   }
 
+  function handleCancelEdit() {
+    if (snapshot) {
+      setInputs(buildInputsFromSnapshot(snapshot, akunKasList));
+    }
+    setEditing(false);
+    setError(null);
+    setHint(null);
+  }
+
+  function handleRequestUnlock() {
+    if (!punyaHakUbah) {
+      setError(
+        "Anda tidak memiliki hak akses untuk mengubah saldo kas awal. Hubungi administrator.",
+      );
+      return;
+    }
+    setPasswordModalOpen(true);
+  }
+
+  function handlePasswordConfirmed() {
+    setPasswordModalOpen(false);
+    setEditing(true);
+    setError(null);
+    setHint("Kunci dibuka. Anda dapat mengubah saldo kas awal.");
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -142,19 +198,14 @@ export function PengaturanKasAwalPage() {
       }));
       const updated = await kasAwalSet({ entries });
       setSnapshot(updated);
-      const next: InputMap = {};
-      for (const a of akunKasList) {
-        const existing = updated.entries.find(
-          (e) => e.akunKode.toLowerCase() === a.kode.toLowerCase(),
-        );
-        next[a.kode] = existing ? String(existing.nilaiAwal) : "";
-      }
-      setInputs(next);
+      setInputs(buildInputsFromSnapshot(updated, akunKasList));
+      // Auto-kunci kembali setelah simpan sukses (kalau ada entry).
+      setEditing(updated.entries.length === 0);
       setHint(
         updated.entries.length > 0
           ? `Saldo awal kas tersimpan sebagai jurnal pembuka per ${formatTanggalLokal(
               updated.tanggalJurnal,
-            )}.`
+            )}. Form dikunci kembali — gunakan tombol Ubah untuk membuka.`
           : "Semua nilai 0 — jurnal saldo awal kas dihapus.",
       );
     } catch (err) {
@@ -275,6 +326,26 @@ export function PengaturanKasAwalPage() {
             </div>
           ) : null}
 
+          {/* Banner kunci — muncul saat sudah pernah disetel dan masih
+              terkunci. */}
+          {sudahPernahDiset && !editing ? (
+            <div className="flex items-start gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-xs leading-relaxed text-zinc-700">
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-zinc-500" aria-hidden />
+              <div className="flex-1">
+                <p className="font-semibold text-zinc-800">Saldo kas awal dikunci</p>
+                <p className="mt-0.5">
+                  Untuk melindungi konsistensi pembukuan, perubahan setelah
+                  ditetapkan butuh konfirmasi kata sandi.{" "}
+                  {!punyaHakUbah ? (
+                    <span className="font-medium text-rose-700">
+                      Hak akses ini belum diberikan kepada Anda.
+                    </span>
+                  ) : null}
+                </p>
+              </div>
+            </div>
+          ) : null}
+
           {/* Form */}
           <Card className="p-6">
             <form onSubmit={handleSubmit} className="space-y-5">
@@ -289,7 +360,7 @@ export function PengaturanKasAwalPage() {
                     . Kosongkan atau isi 0 untuk akun yang belum punya saldo.
                   </p>
                 </div>
-                {akunKasList.length > 0 ? (
+                {akunKasList.length > 0 && editing ? (
                   <button
                     type="button"
                     className="self-start rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 cursor-pointer"
@@ -342,15 +413,24 @@ export function PengaturanKasAwalPage() {
                             </td>
                             <td className="px-3 py-2.5">
                               <div className="flex flex-col items-end gap-0.5">
-                                <input
-                                  type="text"
-                                  inputMode="numeric"
-                                  value={v}
-                                  onChange={(e) => patchInput(a.kode, e.target.value)}
-                                  placeholder="0"
-                                  disabled={saving || !prasyaratSiap}
-                                  className="w-44 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-right text-sm tabular-nums text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-zinc-50"
-                                />
+                                <div className="relative">
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={v}
+                                    onChange={(e) => patchInput(a.kode, e.target.value)}
+                                    placeholder="0"
+                                    disabled={saving || !prasyaratSiap || !editing}
+                                    aria-readonly={!editing}
+                                    className={`w-44 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-right text-sm tabular-nums text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-zinc-50 ${!editing ? "pr-8" : ""}`}
+                                  />
+                                  {!editing && sudahPernahDiset ? (
+                                    <Lock
+                                      className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400"
+                                      aria-hidden
+                                    />
+                                  ) : null}
+                                </div>
                                 <span
                                   className={`text-xs tabular-nums ${
                                     parsed < 0
@@ -409,19 +489,62 @@ export function PengaturanKasAwalPage() {
                   ) : null}
                 </div>
                 <div className="flex gap-2">
-                  <Button
-                    type="submit"
-                    disabled={saving || !prasyaratSiap || (!adaPerubahan && !sudahPernahDiset)}
-                  >
-                    <PiggyBank className="h-4 w-4" aria-hidden />
-                    {saving ? "Menyimpan…" : "Simpan saldo awal kas"}
-                  </Button>
+                  {editing ? (
+                    <>
+                      <Button
+                        type="submit"
+                        disabled={
+                          saving ||
+                          !prasyaratSiap ||
+                          (!adaPerubahan && !sudahPernahDiset)
+                        }
+                      >
+                        <PiggyBank className="h-4 w-4" aria-hidden />
+                        {saving ? "Menyimpan…" : "Simpan saldo awal kas"}
+                      </Button>
+                      {sudahPernahDiset ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleCancelEdit}
+                          disabled={saving}
+                        >
+                          Batal
+                        </Button>
+                      ) : null}
+                    </>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleRequestUnlock}
+                      disabled={!punyaHakUbah}
+                      title={
+                        punyaHakUbah
+                          ? "Buka kunci untuk mengubah saldo awal kas"
+                          : "Anda tidak punya hak akses untuk aksi ini"
+                      }
+                    >
+                      <Unlock className="h-4 w-4" aria-hidden />
+                      Ubah
+                    </Button>
+                  )}
                 </div>
               </div>
             </form>
           </Card>
         </>
       )}
+
+      <PasswordConfirmModal
+        open={passwordModalOpen}
+        title="Buka kunci saldo kas awal"
+        description="Anda akan mengubah saldo kas awal yang sudah ditetapkan. Re-simpan akan mengganti jurnal pembuka. Masukkan kata sandi untuk membuka kunci."
+        confirmLabel="Buka kunci"
+        confirmVariant="danger"
+        onClose={() => setPasswordModalOpen(false)}
+        onConfirmed={handlePasswordConfirmed}
+      />
     </div>
   );
 }

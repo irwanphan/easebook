@@ -28,6 +28,16 @@ export const halamanAksesGroups: HalamanAksesGroup[] = [
         label: "Pengaturan: Ubah tanggal awal periode",
         pathPattern: "pengaturan/aksi/ubah-awal-periode",
       },
+      {
+        key: "pengaturan-ubah-kas-awal",
+        label: "Pengaturan: Ubah saldo kas awal yang sudah disetel",
+        pathPattern: "pengaturan/aksi/ubah-kas-awal",
+      },
+      {
+        key: "pengaturan-ubah-stok-awal",
+        label: "Pengaturan: Ubah saldo stok awal yang sudah disetel",
+        pathPattern: "pengaturan/aksi/ubah-stok-awal",
+      },
     ],
   },
   {

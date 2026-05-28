@@ -12,9 +12,12 @@ import {
   BookText,
   CheckCircle2,
   Info,
+  Lock,
   PackageOpen,
   Search,
+  ShieldAlert,
   Trash,
+  Unlock,
   Warehouse,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -38,6 +41,11 @@ import { formatTanggalLokal } from "@/data/operasionalKonfigurasi";
 import { formatAngka, formatRupiah, parseRupiahInput } from "@/lib/format";
 import { tauriErrorMessage } from "@/lib/tauriError";
 import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
+import { PasswordConfirmModal } from "@/features/auth/PasswordConfirmModal";
+import { useAuth } from "@/features/auth/AuthContext";
+
+/** Permission key untuk membuka kunci saldo stok awal yang sudah disetel. */
+const AKSES_UBAH_STOK_AWAL = "pengaturan-ubah-stok-awal";
 
 /** Satu cell input per (barang, gudang). */
 type CellInput = {
@@ -120,6 +128,7 @@ function buildInitialInputs(
  */
 export function PengaturanStokAwalPage() {
   const navigate = useNavigate();
+  const { session } = useAuth();
   const { items: allBarang, loading: barangLoading } = useBarangJasa();
   const { items: gudangs, loading: gudangLoading } = useGudang();
 
@@ -130,6 +139,16 @@ export function PengaturanStokAwalPage() {
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  /** True = form unlock untuk editing. False = read-only (terkunci). */
+  const [editing, setEditing] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+
+  const isAdmin = session?.isAdmin ?? false;
+  const allowedKeys = useMemo(
+    () => new Set(session?.halamanAkses ?? []),
+    [session?.halamanAkses],
+  );
+  const punyaHakUbah = isAdmin || allowedKeys.has(AKSES_UBAH_STOK_AWAL);
 
   const barangFisik = useMemo(
     () =>
@@ -152,6 +171,8 @@ export function PengaturanStokAwalPage() {
       if (barangFisik.length > 0 && gudangSorted.length > 0) {
         setInputs(buildInitialInputs(snap, barangFisik, gudangSorted));
       }
+      // First-time setup → langsung editing. Kalau sudah pernah → kunci.
+      setEditing(snap.entries.length === 0);
     } catch (e) {
       setError(tauriErrorMessage(e));
     } finally {
@@ -297,6 +318,32 @@ export function PengaturanStokAwalPage() {
     setError(null);
   }
 
+  function handleCancelEdit() {
+    if (snapshot) {
+      setInputs(buildInitialInputs(snapshot, barangFisik, gudangSorted));
+    }
+    setEditing(false);
+    setError(null);
+    setHint(null);
+  }
+
+  function handleRequestUnlock() {
+    if (!punyaHakUbah) {
+      setError(
+        "Anda tidak memiliki hak akses untuk mengubah saldo stok awal. Hubungi administrator.",
+      );
+      return;
+    }
+    setPasswordModalOpen(true);
+  }
+
+  function handlePasswordConfirmed() {
+    setPasswordModalOpen(false);
+    setEditing(true);
+    setError(null);
+    setHint("Kunci dibuka. Anda dapat mengubah saldo stok awal.");
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -337,11 +384,13 @@ export function PengaturanStokAwalPage() {
       const updated = await stokAwalSet({ entries });
       setSnapshot(updated);
       setInputs(buildInitialInputs(updated, barangFisik, gudangSorted));
+      // Auto-kunci kembali setelah simpan sukses (kalau ada entry).
+      setEditing(updated.entries.length === 0);
       setHint(
         updated.entries.length > 0
           ? `Saldo awal stok tersimpan sebagai jurnal pembuka per ${formatTanggalLokal(
               updated.tanggalJurnal,
-            )}. Total nilai persediaan ${formatRupiah(updated.totalNilai)}.`
+            )}. Total nilai persediaan ${formatRupiah(updated.totalNilai)}. Form dikunci kembali — gunakan tombol Ubah untuk membuka.`
           : "Semua nilai 0 — jurnal saldo awal stok dihapus.",
       );
     } catch (err) {
@@ -526,6 +575,31 @@ export function PengaturanStokAwalPage() {
             </div>
           ) : null}
 
+          {/* Banner kunci — muncul saat sudah pernah disetel dan masih
+              terkunci. */}
+          {sudahPernahDiset && !editing ? (
+            <div className="flex items-start gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-xs leading-relaxed text-zinc-700">
+              <ShieldAlert
+                className="mt-0.5 h-4 w-4 shrink-0 text-zinc-500"
+                aria-hidden
+              />
+              <div className="flex-1">
+                <p className="font-semibold text-zinc-800">
+                  Saldo stok awal dikunci
+                </p>
+                <p className="mt-0.5">
+                  Untuk melindungi konsistensi pembukuan &amp; HPP, perubahan
+                  setelah ditetapkan butuh konfirmasi kata sandi.{" "}
+                  {!punyaHakUbah ? (
+                    <span className="font-medium text-rose-700">
+                      Hak akses ini belum diberikan kepada Anda.
+                    </span>
+                  ) : null}
+                </p>
+              </div>
+            </div>
+          ) : null}
+
           {/* Grid input */}
           <Card className="p-0">
             <div className="flex flex-col gap-3 border-b border-zinc-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -556,7 +630,7 @@ export function PengaturanStokAwalPage() {
                     className="w-56 rounded-lg border border-zinc-200 bg-white py-1.5 pl-8 pr-2.5 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
                   />
                 </div>
-                {barangFisik.length > 0 ? (
+                {barangFisik.length > 0 && editing ? (
                   <Button
                     type="button"
                     variant="danger"
@@ -651,17 +725,28 @@ export function PengaturanStokAwalPage() {
                               </td>
                               <td className="px-3 py-2 align-top">
                                 <div className="flex flex-col items-end gap-0.5">
-                                  <input
-                                    type="text"
-                                    inputMode="numeric"
-                                    value={row.nilaiText}
-                                    onChange={(e) =>
-                                      handleNilai(b.kode, e.target.value)
-                                    }
-                                    placeholder="0"
-                                    disabled={saving || !prasyaratSiap}
-                                    className="w-36 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-right text-sm tabular-nums text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-zinc-50"
-                                  />
+                                  <div className="relative">
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={row.nilaiText}
+                                      onChange={(e) =>
+                                        handleNilai(b.kode, e.target.value)
+                                      }
+                                      placeholder="0"
+                                      disabled={
+                                        saving || !prasyaratSiap || !editing
+                                      }
+                                      aria-readonly={!editing}
+                                      className={`w-36 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-right text-sm tabular-nums text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-zinc-50 ${!editing ? "pr-8" : ""}`}
+                                    />
+                                    {!editing && sudahPernahDiset ? (
+                                      <Lock
+                                        className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400"
+                                        aria-hidden
+                                      />
+                                    ) : null}
+                                  </div>
                                   <span
                                     className={`text-xs tabular-nums ${
                                       nilai > 0
@@ -706,7 +791,9 @@ export function PengaturanStokAwalPage() {
                                           )
                                         }
                                         placeholder="0"
-                                        disabled={saving || !prasyaratSiap}
+                                        disabled={
+                                          saving || !prasyaratSiap || !editing
+                                        }
                                       />
                                       <TokoSelect
                                         value={cell.satuanTingkat}
@@ -720,6 +807,7 @@ export function PengaturanStokAwalPage() {
                                         disabled={
                                           saving ||
                                           !prasyaratSiap ||
+                                          !editing ||
                                           satuanOpts.length <= 1
                                         }
                                         className="rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-zinc-50"
@@ -798,23 +886,62 @@ export function PengaturanStokAwalPage() {
                   ) : null}
                 </div>
                 <div className="flex gap-2">
-                  <Button
-                    type="submit"
-                    disabled={
-                      saving ||
-                      !prasyaratSiap ||
-                      (rowsBerisi === 0 && !sudahPernahDiset)
-                    }
-                  >
-                    <PackageOpen className="h-4 w-4" aria-hidden />
-                    {saving ? "Menyimpan…" : "Simpan saldo awal stok"}
-                  </Button>
+                  {editing ? (
+                    <>
+                      <Button
+                        type="submit"
+                        disabled={
+                          saving ||
+                          !prasyaratSiap ||
+                          (rowsBerisi === 0 && !sudahPernahDiset)
+                        }
+                      >
+                        <PackageOpen className="h-4 w-4" aria-hidden />
+                        {saving ? "Menyimpan…" : "Simpan saldo awal stok"}
+                      </Button>
+                      {sudahPernahDiset ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleCancelEdit}
+                          disabled={saving}
+                        >
+                          Batal
+                        </Button>
+                      ) : null}
+                    </>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleRequestUnlock}
+                      disabled={!punyaHakUbah}
+                      title={
+                        punyaHakUbah
+                          ? "Buka kunci untuk mengubah saldo awal stok"
+                          : "Anda tidak punya hak akses untuk aksi ini"
+                      }
+                    >
+                      <Unlock className="h-4 w-4" aria-hidden />
+                      Ubah
+                    </Button>
+                  )}
                 </div>
               </div>
             </form>
           </Card>
         </>
       )}
+
+      <PasswordConfirmModal
+        open={passwordModalOpen}
+        title="Buka kunci saldo stok awal"
+        description="Anda akan mengubah saldo stok awal yang sudah ditetapkan. Re-simpan akan mereverse mutasi dan jurnal pembuka lama. Masukkan kata sandi untuk membuka kunci."
+        confirmLabel="Buka kunci"
+        confirmVariant="danger"
+        onClose={() => setPasswordModalOpen(false)}
+        onConfirmed={handlePasswordConfirmed}
+      />
     </div>
   );
 }

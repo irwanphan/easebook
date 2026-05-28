@@ -143,3 +143,39 @@ export type JurnalManualInsertPayload = {
   catatan: string;
   lines: JurnalManualLinePayload[];
 };
+
+/** Satu baris mutasi di buku besar (general ledger) + saldo running. */
+export type BukuBesarRow = {
+  lineId: number;
+  jurnalId: number;
+  tanggal: string;
+  jenis: string;
+  referensi: string;
+  catatan: string;
+  debit: number;
+  kredit: number;
+  /**
+   * Saldo kumulatif setelah baris ini, dalam basis natural akun (positif =
+   * sisi normal). Untuk `kolomNorm = "D"`, ini = Σ debit − Σ kredit kumulatif.
+   * Untuk `kolomNorm = "K"`, ini = Σ kredit − Σ debit kumulatif.
+   */
+  saldoRunning: number;
+};
+
+/** Snapshot buku besar untuk satu akun pada rentang tanggal tertentu. */
+export type BukuBesarSnapshot = {
+  akunKode: string;
+  akunNama: string;
+  kelompok: string;
+  /** "D" atau "K" — arah saldo natural akun. */
+  kolomNorm: string;
+  tanggalDari: string;
+  tanggalSampai: string;
+  /** Saldo akun per awal `tanggalDari` (sebelum hari pertama), basis natural. */
+  saldoAwal: number;
+  totalDebit: number;
+  totalKredit: number;
+  /** Saldo akhir = saldoAwal + Σ delta natural, basis natural. */
+  saldoAkhir: number;
+  entries: BukuBesarRow[];
+};

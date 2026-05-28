@@ -88,6 +88,7 @@ export const primaryNavEntries: PrimaryNavEntry[] = [
       { id: "ke-akun-kas", label: "Akun kas", path: "/keuangan/akun-kas" },
       { id: "ke-daftar-akun", label: "Daftar akun", path: "/keuangan/daftar-akun" },
       { id: "ke-jurnal-umum", label: "Jurnal umum", path: "/keuangan/jurnal-umum" },
+      { id: "ke-buku-besar", label: "Buku besar", path: "/keuangan/buku-besar" },
     ],
   },
   { kind: "link", id: "pengaturan", label: "Pengaturan", path: "/pengaturan", icon: Settings },

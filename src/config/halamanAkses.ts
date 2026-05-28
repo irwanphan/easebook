@@ -174,6 +174,7 @@ export const halamanAksesGroups: HalamanAksesGroup[] = [
         pathPattern: "keuangan/konfigurasi-akun-jurnal",
       },
       { key: "ke-jurnal-umum", label: "Jurnal umum", pathPattern: "keuangan/jurnal-umum" },
+      { key: "ke-buku-besar", label: "Buku besar", pathPattern: "keuangan/buku-besar" },
     ],
   },
 ];

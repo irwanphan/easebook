@@ -74,6 +74,7 @@ import { DaftarAkunPage } from "@/pages/keuangan/DaftarAkunPage";
 import { AkunKasPage } from "@/pages/keuangan/AkunKasPage";
 import { PengaturanKasAwalPage } from "@/pages/keuangan/PengaturanKasAwalPage";
 import { JurnalUmumPage } from "@/pages/keuangan/JurnalUmumPage";
+import { BukuBesarPage } from "@/pages/keuangan/BukuBesarPage";
 import { KonfigurasiAkunJurnalPage } from "@/pages/keuangan/KonfigurasiAkunJurnalPage";
 import { LaporanPergerakanStokPage } from "@/pages/laporan/LaporanPergerakanStokPage";
 import { LaporanMutasiAntarGudangPage } from "@/pages/laporan/LaporanMutasiAntarGudangPage";
@@ -179,6 +180,7 @@ export const mainRouter = createHashRouter([
       { path: "keuangan/kas-awal", element: <PengaturanKasAwalPage /> },
       { path: "keuangan/konfigurasi-akun-jurnal", element: <KonfigurasiAkunJurnalPage /> },
       { path: "keuangan/jurnal-umum", element: <JurnalUmumPage /> },
+      { path: "keuangan/buku-besar", element: <BukuBesarPage /> },
       { path: "pengaturan", element: <PengaturanPage /> },
             ],
           },

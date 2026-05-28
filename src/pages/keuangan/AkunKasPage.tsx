@@ -304,12 +304,12 @@ export function AkunKasPage() {
                       <div className="inline-flex items-center gap-1">
                         <button
                           type="button"
-                          onClick={() => navigate(`/keuangan/jurnal-umum?akun=${encodeURIComponent(r.kode)}`)}
+                          onClick={() => navigate(`/keuangan/buku-besar?akun=${encodeURIComponent(r.kode)}`)}
                           className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 cursor-pointer"
-                          title="Lihat jurnal terkait akun ini"
+                          title="Lihat buku besar akun ini"
                         >
                           <BookText className="h-3.5 w-3.5" aria-hidden />
-                          Jurnal
+                          Buku besar
                         </button>
                         <button
                           type="button"

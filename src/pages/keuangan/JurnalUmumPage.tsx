@@ -9,6 +9,8 @@ import type { AkunKeuanganRow, JurnalUmumListRow } from "@/data/keuangan";
 import { tauriErrorMessage } from "@/lib/tauriError";
 import { VerticalSeparator } from "@/components/ui/Separator";
 import { Plus, RefreshCcw } from "lucide-react";
+import { TokoInput } from "@/components/ui/TokoInput";
+import { jenisBadgeVariant, jenisLabel } from "@/features/keuangan/jurnalJenis";
 
 const inputClass =
   "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
@@ -38,41 +40,6 @@ function formatRupiah(n: number) {
     currency: "IDR",
     maximumFractionDigits: 0,
   }).format(n);
-}
-
-const JENIS_LABELS: Record<string, string> = {
-  PEMBELIAN: "Pembelian (hutang / inventori)",
-  PEMBELIAN_TUNAI: "Pembelian tunai (kas keluar)",
-  PENJUALAN: "Penjualan (piutang)",
-  PENJUALAN_TUNAI: "Penjualan tunai (kas masuk)",
-  PELUNASAN_PIUTANG: "Pelunasan piutang (kas masuk)",
-  PELUNASAN_HUTANG: "Pelunasan hutang (kas keluar)",
-  PELUNASAN_PIUTANG_REVERSAL: "Pembalik pelunasan piutang",
-  PELUNASAN_HUTANG_REVERSAL: "Pembalik pelunasan hutang",
-  TRANSFER_REVERSAL: "Pembalik transfer kas",
-  PENERIMAAN: "Penerimaan (pendapatan / kas masuk)",
-  PENERIMAAN_LAINNYA: "Penerimaan lain (kas masuk)",
-  PENGELUARAN: "Pengeluaran (biaya / kas keluar)",
-  PENGELUARAN_LAINNYA: "Pengeluaran lain (kas keluar)",
-  TRANSFER: "Transfer antar akun kas",
-  MANUAL: "Jurnal manual",
-};
-
-function jenisBadgeVariant(jenis: string) {
-  if (jenis.endsWith("_REVERSAL")) return "delayed" as const;
-  if (jenis === "MANUAL") return "neutral" as const;
-  if (jenis === "PEMBELIAN" || jenis === "PEMBELIAN_TUNAI") return "neutral" as const;
-  if (jenis === "PENJUALAN" || jenis === "PENJUALAN_TUNAI") return "success" as const;
-  if (jenis === "PELUNASAN_PIUTANG" || jenis === "PENERIMAAN" || jenis === "PENERIMAAN_LAINNYA")
-    return "processing" as const;
-  if (jenis === "PELUNASAN_HUTANG" || jenis === "PENGELUARAN" || jenis === "PENGELUARAN_LAINNYA")
-    return "delayed" as const;
-  if (jenis === "TRANSFER") return "warning" as const;
-  return "neutral" as const;
-}
-
-function jenisLabel(jenis: string) {
-  return JENIS_LABELS[jenis] ?? jenis;
 }
 
 export function JurnalUmumPage() {
@@ -177,7 +144,7 @@ export function JurnalUmumPage() {
               <label htmlFor="jurnal-dari" className="block text-sm font-medium text-zinc-700">
                 Tanggal mulai
               </label>
-              <input
+              <TokoInput
                 id="jurnal-dari"
                 type="date"
                 value={tanggalDari}
@@ -189,7 +156,7 @@ export function JurnalUmumPage() {
               <label htmlFor="jurnal-sampai" className="block text-sm font-medium text-zinc-700">
                 Tanggal akhir
               </label>
-              <input
+              <TokoInput
                 id="jurnal-sampai"
                 type="date"
                 value={tanggalSampai}

@@ -7136,6 +7136,188 @@ pub fn jurnal_konfigurasi_set(
     Ok(())
 }
 
+/// Satu baris di buku besar (mutasi + saldo running setelah baris ini).
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BukuBesarRow {
+    pub line_id: i64,
+    pub jurnal_id: i64,
+    pub tanggal: String,
+    pub jenis: String,
+    pub referensi: String,
+    pub catatan: String,
+    pub debit: i64,
+    pub kredit: i64,
+    /// Saldo running setelah baris ini diaplikasikan, dalam basis natural
+    /// akun (positif = sisi normal). Untuk kolom_norm "D" = D - K
+    /// kumulatif, untuk "K" = K - D kumulatif.
+    pub saldo_running: i64,
+}
+
+/// Snapshot buku besar untuk satu akun dalam rentang tanggal tertentu.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BukuBesarSnapshot {
+    pub akun_kode: String,
+    pub akun_nama: String,
+    pub kelompok: String,
+    /// "D" atau "K" — menentukan arah saldo natural.
+    pub kolom_norm: String,
+    pub tanggal_dari: String,
+    pub tanggal_sampai: String,
+    /// Saldo akun per awal `tanggal_dari` (sebelum hari pertama), basis natural.
+    pub saldo_awal: i64,
+    /// Total debet pada rentang.
+    pub total_debit: i64,
+    /// Total kredit pada rentang.
+    pub total_kredit: i64,
+    /// Saldo akhir = saldo_awal + Σ mutasi (basis natural).
+    pub saldo_akhir: i64,
+    pub entries: Vec<BukuBesarRow>,
+}
+
+/// Buku besar (general ledger) per akun. Menghitung saldo awal periode dari
+/// akumulasi semua mutasi sebelum `tanggal_dari`, lalu mereplay mutasi pada
+/// rentang untuk menghasilkan saldo running per baris.
+///
+/// Saldo dipresentasikan dalam basis "natural" akun:
+/// - Akun dengan `kolom_norm = "D"` (Aset, Beban): saldo = Σ debit − Σ kredit
+/// - Akun dengan `kolom_norm = "K"` (Hutang, Modal, Pendapatan): saldo = Σ kredit − Σ debit
+///
+/// Dengan begitu, nilai positif selalu berarti "saldo wajar" untuk akun
+/// tersebut, dan UI dapat menampilkan label D/K konsisten.
+#[tauri::command]
+pub fn buku_besar_get(
+    state: State<DbState>,
+    akun_kode: String,
+    tanggal_dari: String,
+    tanggal_sampai: String,
+) -> Result<BukuBesarSnapshot, String> {
+    let kode = akun_kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Akun wajib dipilih.".into());
+    }
+    let dari = tanggal_dari.trim();
+    let sampai = tanggal_sampai.trim();
+    let d1 = NaiveDate::parse_from_str(dari, "%Y-%m-%d")
+        .map_err(|_| "Tanggal mulai tidak valid (YYYY-MM-DD).".to_string())?;
+    let d2 = NaiveDate::parse_from_str(sampai, "%Y-%m-%d")
+        .map_err(|_| "Tanggal akhir tidak valid (YYYY-MM-DD).".to_string())?;
+    if d2 < d1 {
+        return Err("Tanggal akhir tidak boleh sebelum tanggal mulai.".into());
+    }
+
+    with_conn_app(&state, |conn| {
+        // Ambil meta akun (nama, kelompok, kolom_norm).
+        let meta = conn
+            .query_row(
+                "SELECT nama, COALESCE(kelompok, ''), COALESCE(kolom_norm, '')
+                 FROM akun_keuangan WHERE lower(kode) = lower(?)",
+                params![&kode],
+                |r| Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                )),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        let (nama, kelompok, kolom_norm) = meta
+            .ok_or_else(|| format!("Akun '{kode}' tidak ditemukan."))?;
+
+        // Pengali untuk konversi mutasi (D, K) ke delta natural saldo.
+        // Akun D-side: delta = debit - kredit. Akun K-side: delta = kredit - debit.
+        let kn = kolom_norm.trim().to_uppercase();
+        let sign_for_natural = |debit: i64, kredit: i64| -> i64 {
+            if kn == "K" { kredit - debit } else { debit - kredit }
+        };
+
+        // Saldo awal = akumulasi semua mutasi sebelum tanggal_dari.
+        let saldo_awal: i64 = {
+            let (sum_d, sum_k): (i64, i64) = conn
+                .query_row(
+                    "SELECT COALESCE(SUM(l.debit), 0), COALESCE(SUM(l.kredit), 0)
+                     FROM jurnal_umum_line l
+                     INNER JOIN jurnal_umum j ON j.id = l.jurnal_id
+                     WHERE lower(l.akun_kode) = lower(?) AND j.tanggal < ?",
+                    params![&kode, dari],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap_or((0, 0));
+            sign_for_natural(sum_d, sum_k)
+        };
+
+        // Mutasi dalam rentang — diurut ASC supaya running balance benar.
+        let raw_rows: Vec<(i64, i64, String, String, String, String, i64, i64)> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT l.id, j.id, j.tanggal, j.jenis, j.referensi,
+                            COALESCE(NULLIF(TRIM(l.catatan), ''), j.catatan),
+                            l.debit, l.kredit
+                     FROM jurnal_umum_line l
+                     INNER JOIN jurnal_umum j ON j.id = l.jurnal_id
+                     WHERE lower(l.akun_kode) = lower(?) AND j.tanggal >= ? AND j.tanggal <= ?
+                     ORDER BY j.tanggal ASC, j.id ASC, l.id ASC",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(params![&kode, dari, sampai], |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, String>(4)?,
+                        r.get::<_, String>(5)?,
+                        r.get::<_, i64>(6)?,
+                        r.get::<_, i64>(7)?,
+                    ))
+                })
+                .map_err(|e| e.to_string())?;
+            let mut out = Vec::new();
+            for row in rows {
+                out.push(row.map_err(|e| e.to_string())?);
+            }
+            out
+        };
+
+        let mut entries: Vec<BukuBesarRow> = Vec::with_capacity(raw_rows.len());
+        let mut running = saldo_awal;
+        let mut total_d: i64 = 0;
+        let mut total_k: i64 = 0;
+        for (line_id, jurnal_id, tanggal, jenis, referensi, catatan, debit, kredit) in raw_rows {
+            running += sign_for_natural(debit, kredit);
+            total_d += debit;
+            total_k += kredit;
+            entries.push(BukuBesarRow {
+                line_id,
+                jurnal_id,
+                tanggal,
+                jenis,
+                referensi,
+                catatan,
+                debit,
+                kredit,
+                saldo_running: running,
+            });
+        }
+
+        Ok(BukuBesarSnapshot {
+            akun_kode: kode,
+            akun_nama: nama,
+            kelompok,
+            kolom_norm: kn,
+            tanggal_dari: dari.to_string(),
+            tanggal_sampai: sampai.to_string(),
+            saldo_awal,
+            total_debit: total_d,
+            total_kredit: total_k,
+            saldo_akhir: running,
+            entries,
+        })
+    })
+}
+
 #[tauri::command]
 pub fn jurnal_umum_list(
     state: State<DbState>,

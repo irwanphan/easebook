@@ -19,7 +19,6 @@ import type { AkunKeuanganRow } from "@/data/keuangan";
 import { labelKelompokAkun } from "@/data/keuangan";
 import { formatRupiah } from "@/lib/format";
 import { tauriErrorMessage } from "@/lib/tauriError";
-import { VerticalSeparator } from "@/components/ui/Separator";
 
 type SortKey = "kode" | "saldo";
 type SortDir = "asc" | "desc";

@@ -124,7 +124,7 @@ export function BarangJasaPage() {
               <SendToBack className="h-4 w-4" aria-hidden />
               Mutasi
             </Button>
-            <Button type="button" onClick={() => navigate("/barang-jasa/mutasi-antar-gudang")}>
+            <Button type="button" onClick={() => navigate("/barang-jasa/atur-stok-awal")}>
               <CirclePile className="h-4 w-4" aria-hidden />
               Atur stok awal
             </Button>

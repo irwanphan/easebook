@@ -44,6 +44,11 @@ export const halamanAksesGroups: HalamanAksesGroup[] = [
         label: "Mutasi antar gudang",
         pathPattern: "barang-jasa/mutasi-antar-gudang",
       },
+      {
+        key: "barang-jasa-stok-awal",
+        label: "Pengaturan stok awal",
+        pathPattern: "barang-jasa/atur-stok-awal",
+      },
       { key: "produksi", label: "Daftar produksi", pathPattern: "barang-jasa/produksi" },
       {
         key: "produksi-tambah",

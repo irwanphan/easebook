@@ -64,6 +64,7 @@ export function labelJenisEventHpp(jenis: string): string {
   if (j === "MUTASI_GUDANG") return "Mutasi antar gudang";
   if (j === "KOREKSI_MASUK") return "Koreksi masuk";
   if (j === "KOREKSI_KELUAR") return "Koreksi keluar";
+  if (j === "STOK_AWAL") return "Saldo awal stok";
   if (j === "ADJUSTMENT") return "Penyesuaian";
   return jenis;
 }
@@ -82,6 +83,9 @@ export function eventMengubahHpp(ev: HppHistoryEvent): boolean {
     return ev.qtyMasuk > 0 && ev.hargaSatuanBeli !== null;
   }
   if (j === "KOREKSI_MASUK") {
+    return ev.qtyMasuk > 0 && ev.hargaSatuanBeli !== null;
+  }
+  if (j === "STOK_AWAL") {
     return ev.qtyMasuk > 0 && ev.hargaSatuanBeli !== null;
   }
   return false;

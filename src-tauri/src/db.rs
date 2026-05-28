@@ -361,6 +361,47 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     migrate_pos_shift_jurnal_columns(conn)?;
     migrate_operasional_konfigurasi(conn)?;
     migrate_jurnal_konfigurasi_historical(conn)?;
+    migrate_stok_awal_tables(conn)?;
+    Ok(())
+}
+
+/// Saldo awal stok (jurnal pembuka per gudang × barang) — analog ke
+/// `kas_awal` tetapi untuk persediaan. Header singleton (`id = 1`) memegang
+/// referensi jurnal aktif & tanggal jurnal terakhir; baris-baris di
+/// `stok_awal_line` menyimpan qty + nilai per (barang, gudang).
+///
+/// Setiap baris juga membuat satu entri di `stok_mutasi` dengan
+/// `jenis = 'STOK_AWAL'` agar modul HPP, kartu stok, dan laporan pergerakan
+/// stok ikut konsisten. Saat re-simpan, jurnal lama di-reverse, semua
+/// mutasi STOK_AWAL lama dihapus (sambil di-reverse di `barang_jasa.stok`),
+/// lalu data baru ditulis ulang.
+fn migrate_stok_awal_tables(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS stok_awal (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            jurnal_id INTEGER REFERENCES jurnal_umum(id) ON DELETE SET NULL ON UPDATE CASCADE,
+            tanggal_jurnal TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS stok_awal_line (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            barang_kode TEXT NOT NULL REFERENCES barang_jasa(kode) ON UPDATE CASCADE,
+            gudang_kode TEXT NOT NULL REFERENCES gudang(kode) ON UPDATE CASCADE,
+            qty INTEGER NOT NULL,
+            satuan_tingkat INTEGER NOT NULL DEFAULT 1,
+            qty_smallest INTEGER NOT NULL,
+            nilai_per_unit INTEGER NOT NULL DEFAULT 0,
+            subtotal_nilai INTEGER NOT NULL DEFAULT 0,
+            UNIQUE (barang_kode, gudang_kode)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_stok_awal_line_barang ON stok_awal_line(barang_kode);
+        CREATE INDEX IF NOT EXISTS idx_stok_awal_line_gudang ON stok_awal_line(gudang_kode);
+        ",
+    )?;
     Ok(())
 }
 

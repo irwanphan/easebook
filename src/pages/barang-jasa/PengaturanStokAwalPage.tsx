@@ -14,6 +14,7 @@ import {
   Info,
   PackageOpen,
   Search,
+  Trash,
   Warehouse,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -36,6 +37,7 @@ import {
 import { formatTanggalLokal } from "@/data/operasionalKonfigurasi";
 import { formatAngka, formatRupiah, parseRupiahInput } from "@/lib/format";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
 
 /** Satu cell input per (barang, gudang). */
 type CellInput = {
@@ -545,13 +547,14 @@ export function PengaturanStokAwalPage() {
                   />
                 </div>
                 {barangFisik.length > 0 ? (
-                  <button
+                  <Button
                     type="button"
-                    className="cursor-pointer rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                    variant="danger"
                     onClick={kosongkanSemua}
                   >
+                    <Trash className="h-4 w-4" aria-hidden />
                     Kosongkan semua
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             </div>
@@ -682,9 +685,8 @@ export function PengaturanStokAwalPage() {
                                     className="px-3 py-2 align-top"
                                   >
                                     <div className="flex items-center gap-1.5">
-                                      <input
-                                        type="text"
-                                        inputMode="numeric"
+                                      <TokoInput
+                                        type="number"
                                         value={cell.qtyText}
                                         onChange={(e) =>
                                           handleCellQty(
@@ -695,9 +697,8 @@ export function PengaturanStokAwalPage() {
                                         }
                                         placeholder="0"
                                         disabled={saving || !prasyaratSiap}
-                                        className="w-20 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-right text-sm tabular-nums text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-zinc-50"
                                       />
-                                      <select
+                                      <TokoSelect
                                         value={cell.satuanTingkat}
                                         onChange={(e) =>
                                           handleCellSatuan(
@@ -721,7 +722,7 @@ export function PengaturanStokAwalPage() {
                                             {o.nama}
                                           </option>
                                         ))}
-                                      </select>
+                                      </TokoSelect>
                                     </div>
                                     {showKonversi ? (
                                       <div className="mt-1 text-right text-[11px] text-zinc-500">

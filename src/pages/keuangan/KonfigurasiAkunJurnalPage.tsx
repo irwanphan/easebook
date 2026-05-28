@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { ArrowLeft, ChevronRight } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -8,7 +8,31 @@ import { JurnalKonfigurasiForm } from "@/features/keuangan/JurnalKonfigurasiForm
 import type { AkunKeuanganRow, JurnalKonfigurasi, JurnalKonfigurasiSetPayload } from "@/data/keuangan";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
+/**
+ * State yang bisa dikirim oleh halaman pemanggil via
+ * `navigate("/keuangan/konfigurasi-akun-jurnal", { state: { from, label } })`.
+ * Bila ada, link "kembali" di halaman ini diganti ke `from` (bukan ke daftar
+ * akun) dan banner sukses memperlihatkan shortcut langsung ke `label`.
+ *
+ * Path `from` harus path absolut react-router (mis. "/keuangan/kas-awal").
+ */
+type ReturnTo = {
+  from: string;
+  label: string;
+};
+
+function isReturnTo(value: unknown): value is ReturnTo {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.from === "string" && typeof v.label === "string";
+}
+
 export function KonfigurasiAkunJurnalPage() {
+  const location = useLocation();
+  const returnTo = useMemo<ReturnTo | null>(
+    () => (isReturnTo(location.state) ? location.state : null),
+    [location.state],
+  );
   const [akunList, setAkunList] = useState<AkunKeuanganRow[]>([]);
   const [config, setConfig] = useState<JurnalKonfigurasi | null>(null);
   const [akunLoading, setAkunLoading] = useState(true);
@@ -69,16 +93,26 @@ export function KonfigurasiAkunJurnalPage() {
 
   const loading = akunLoading || configLoading;
 
+  const backTo = returnTo?.from ?? "/keuangan/daftar-akun";
+  const backLabel = returnTo
+    ? `Kembali ke ${returnTo.label}`
+    : "Kembali ke daftar akun";
+
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <div>
-        <Link
-          to="/keuangan/daftar-akun"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700"
+        <nav
+          aria-label="Navigasi halaman"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-medium text-brand-600"
         >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          Kembali ke daftar akun
-        </Link>
+          <Link
+            to={backTo}
+            className="inline-flex items-center gap-1.5 hover:text-brand-700"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            {backLabel}
+          </Link>
+        </nav>
         <PageHeader
           title="Konfigurasi akun jurnal"
           description="Tentukan akun default untuk pasangan debit/kredit pada jurnal otomatis (pembelian, penjualan, pelunasan, dll.)."
@@ -92,9 +126,18 @@ export function KonfigurasiAkunJurnalPage() {
       ) : null}
 
       {savedHint ? (
-        <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-          {savedHint}
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          <span>{savedHint}</span>
+          {returnTo ? (
+            <Link
+              to={returnTo.from}
+              className="inline-flex items-center gap-1.5 font-medium text-emerald-800 hover:text-emerald-900 hover:underline"
+            >
+              Lanjut ke {returnTo.label}
+              <ChevronRight className="h-4 w-4" aria-hidden />
+            </Link>
+          ) : null}
+        </div>
       ) : null}
 
       <Card className="p-6">

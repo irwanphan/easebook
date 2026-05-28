@@ -454,7 +454,12 @@ export function PengaturanStokAwalPage() {
                       type="button"
                       className="cursor-pointer font-semibold text-brand-700 hover:underline"
                       onClick={() =>
-                        navigate("/keuangan/konfigurasi-akun-jurnal")
+                        navigate("/keuangan/konfigurasi-akun-jurnal", {
+                          state: {
+                            from: "/barang-jasa/atur-stok-awal",
+                            label: "Pengaturan stok awal",
+                          },
+                        })
                       }
                     >
                       Belum diset — atur di Konfigurasi akun jurnal
@@ -487,7 +492,12 @@ export function PengaturanStokAwalPage() {
                       type="button"
                       className="cursor-pointer font-semibold text-brand-700 hover:underline"
                       onClick={() =>
-                        navigate("/keuangan/konfigurasi-akun-jurnal")
+                        navigate("/keuangan/konfigurasi-akun-jurnal", {
+                          state: {
+                            from: "/barang-jasa/atur-stok-awal",
+                            label: "Pengaturan stok awal",
+                          },
+                        })
                       }
                     >
                       Belum diset — atur di Konfigurasi akun jurnal

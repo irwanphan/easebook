@@ -242,7 +242,14 @@ export function PengaturanKasAwalPage() {
                     <button
                       type="button"
                       className="font-semibold text-brand-700 hover:underline cursor-pointer"
-                      onClick={() => navigate("/keuangan/konfigurasi-akun-jurnal")}
+                      onClick={() =>
+                        navigate("/keuangan/konfigurasi-akun-jurnal", {
+                          state: {
+                            from: "/keuangan/kas-awal",
+                            label: "Pengaturan kas awal",
+                          },
+                        })
+                      }
                     >
                       Belum diset — atur di Konfigurasi akun jurnal
                     </button>

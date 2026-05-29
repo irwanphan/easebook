@@ -10,7 +10,7 @@ import { tauriErrorMessage } from "@/lib/tauriError";
 import { TokoInput } from "@/components/ui/TokoInput";
 import { exportToXlsx } from "@/lib/exportXlsx";
 import { notify } from "@/lib/notify";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 function toIsoDate(d: Date) {
   const y = d.getFullYear();
@@ -133,19 +133,14 @@ export function KeuanganPengeluaranPage() {
         return;
       }
 
-      // Folder parent (drop nama file di akhir).
-      const folderPath = result.filePath
-        ? result.filePath.replace(/[\\/][^\\/]+$/, "")
-        : null;
-
       notify.success("File Excel berhasil disimpan", {
         description: result.filePath ?? result.fileName,
         duration: 6000,
-        action: folderPath
+        action: result.filePath
           ? {
               label: "Buka folder",
               onClick: () => {
-                void openPath(folderPath).catch((e) => {
+                void revealItemInDir(result.filePath as string).catch((e) => {
                   notify.error("Gagal membuka folder", {
                     description: tauriErrorMessage(e),
                   });

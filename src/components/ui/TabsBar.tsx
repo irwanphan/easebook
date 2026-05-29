@@ -27,7 +27,7 @@ export function TabsBar({ tabs, activeId, onChange }: TabsBarProps) {
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(tab.id)}
             className={[
-              "relative -mb-px border-b-2 px-4 py-3 text-sm font-semibold transition-colors",
+              "relative -mb-px border-b-2 px-4 py-3 text-sm font-semibold transition-colors cursor-pointer",
               selected
                 ? "border-brand-600 text-brand-700"
                 : "border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-800",

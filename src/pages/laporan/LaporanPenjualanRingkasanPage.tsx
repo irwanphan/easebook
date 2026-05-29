@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ListOrdered } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import type { LaporanPenjualanSnapshot } from "@/data/laporanTransaksi";
 import { formatBulan } from "@/data/laporanTransaksi";
@@ -220,7 +220,7 @@ export function LaporanPenjualanRingkasanPage() {
       exporting={exporting}
       extraHeaderActions={
         <Button type="button" variant="secondary" onClick={() => navigate("/penjualan")}>
-          <ArrowLeft className="h-4 w-4" aria-hidden />
+          <ListOrdered className="h-4 w-4" aria-hidden />
           Daftar faktur
         </Button>
       }

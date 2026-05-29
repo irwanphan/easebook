@@ -199,76 +199,80 @@ export function KeuanganPelunasanHutangPage() {
       ) : null}
 
       <Card className="overflow-hidden p-0">
-        <div className="border-b border-zinc-100 px-6 pb-5">
-          <div className="grid gap-4 sm:grid-cols-3 lg:max-w-3xl">
-          <div>
-              <label htmlFor="ph-pemasok" className="block text-sm font-medium text-zinc-700">
-                Pemasok
-              </label>
-              <TokoSelect
-                id="ph-pemasok"
-                value={filterPemasokKode}
-                onChange={(e) => setFilterPemasokKode(e.target.value)}
-                disabled={loading}
-              >
-                <option value="">Semua pemasok</option>
-                {pemasokOptions.map((p) => (
-                  <option key={p.kode} value={p.kode}>
-                    {p.kode} — {p.nama}
-                  </option>
-                ))}
-              </TokoSelect>
-            </div>
-            <div>
-              <label htmlFor="ph-filter" className="block text-sm font-medium text-zinc-700">
-                Jatuh tempo
-              </label>
-              <TokoSelect
-                id="ph-filter"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value as FilterTampilan)}
-                disabled={loading}
-              >
-                <option value="semua">Semua hutang belum lunas</option>
-                <option value="jatuh_tempo">Hanya jatuh tempo lewat ({jatuhTempoCount})</option>
-              </TokoSelect>
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-zinc-900">Hutang belum lunas</h2>
-              <p className="mt-1 text-sm text-zinc-500">
-                {loading
-                  ? "Memuat…"
-                  : rows.length === 0
-                    ? "Tidak ada hutang terbuka."
-                    : filteredRows.length === 0
-                      ? rowsByPemasok.length === 0
-                        ? filterPemasokKode
-                          ? "Tidak ada hutang untuk pemasok ini."
+        <div className="border-b border-zinc-100 pb-3 mb-3">
+          <div className="flex justify-between gap-4">
+            <div className="flex gap-4">
+
+              <div>
+                <label htmlFor="ph-pemasok" className="block text-sm font-medium text-zinc-700">
+                  Pemasok
+                </label>
+                <TokoSelect
+                  id="ph-pemasok"
+                  value={filterPemasokKode}
+                  onChange={(e) => setFilterPemasokKode(e.target.value)}
+                  disabled={loading}
+                >
+                  <option value="">Semua pemasok</option>
+                  {pemasokOptions.map((p) => (
+                    <option key={p.kode} value={p.kode}>
+                      {p.kode} — {p.nama}
+                    </option>
+                  ))}
+                </TokoSelect>
+              </div>
+              <div>
+                <label htmlFor="ph-filter" className="block text-sm font-medium text-zinc-700">
+                  Jatuh tempo
+                </label>
+                <TokoSelect
+                  id="ph-filter"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value as FilterTampilan)}
+                  disabled={loading}
+                >
+                  <option value="semua">Semua hutang belum lunas</option>
+                  <option value="jatuh_tempo">Hanya jatuh tempo lewat ({jatuhTempoCount})</option>
+                </TokoSelect>
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-zinc-900">Hutang belum lunas</h2>
+                <p className="mt-1 text-sm text-zinc-500">
+                  {loading
+                    ? "Memuat…"
+                    : rows.length === 0
+                      ? "Tidak ada hutang terbuka."
+                      : filteredRows.length === 0
+                        ? rowsByPemasok.length === 0
+                          ? filterPemasokKode
+                            ? "Tidak ada hutang untuk pemasok ini."
+                            : filter === "jatuh_tempo"
+                              ? `Tidak ada faktur jatuh tempo (${rows.length} hutang lain masih dalam tempo).`
+                              : "Tidak ada faktur sesuai filter."
                           : filter === "jatuh_tempo"
-                            ? `Tidak ada faktur jatuh tempo (${rows.length} hutang lain masih dalam tempo).`
+                            ? `Tidak ada faktur jatuh tempo untuk filter ini (${rowsByPemasok.length} faktur masih dalam tempo).`
                             : "Tidak ada faktur sesuai filter."
-                        : filter === "jatuh_tempo"
-                          ? `Tidak ada faktur jatuh tempo untuk filter ini (${rowsByPemasok.length} faktur masih dalam tempo).`
-                          : "Tidak ada faktur sesuai filter."
-                      : `${filteredRows.length} faktur ditampilkan · total ${formatRupiah(totalHutang)}`}
-              </p>
+                        : `${filteredRows.length} faktur ditampilkan · total ${formatRupiah(totalHutang)}`}
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => void handleExport()}
-              disabled={loading || exporting || filteredRows.length === 0}
-              title={
-                filteredRows.length === 0
-                  ? "Tidak ada data pada filter ini"
-                  : `Export ${filteredRows.length} faktur ke .xlsx`
-              }
-            >
-              <Sheet className="h-4 w-4" aria-hidden />
-              {exporting ? "Mengexport…" : "Export XLSX"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-9 self-end"
+                onClick={() => void handleExport()}
+                disabled={loading || exporting || filteredRows.length === 0}
+                title={
+                  filteredRows.length === 0
+                    ? "Tidak ada data pada filter ini"
+                    : `Export ${filteredRows.length} faktur ke .xlsx`
+                }
+              >
+                <Sheet className="h-4 w-4" aria-hidden />
+                {exporting ? "Mengexport…" : "Export XLSX"}
+              </Button>
+            </div>
           </div>
         </div>
 

@@ -10,6 +10,22 @@
     "core:webview:allow-create-webview-window",
     "core:window:allow-set-focus",
     "core:window:allow-close",
-    "core:webview:allow-webview-close"
+    "core:webview:allow-webview-close",
+    "dialog:default",
+    "dialog:allow-save",
+    "dialog:allow-open",
+    "fs:allow-write-file",
+    "fs:allow-write-text-file",
+    "fs:allow-read-file",
+    "fs:allow-exists",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$HOME/**" }
+      ]
+    }
   ]
 }

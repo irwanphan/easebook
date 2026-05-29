@@ -28,6 +28,8 @@ bcrypt = "0.16"
 sha2 = "0.10"
 ed25519-dalek = { version = "2", features = ["std"] }
 base64 = "0.22"
+tauri-plugin-dialog = "2.7.1"
+tauri-plugin-fs = "2.5.1"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 machine-uid = "0.5"

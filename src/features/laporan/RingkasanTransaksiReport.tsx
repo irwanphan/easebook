@@ -166,16 +166,6 @@ export function RingkasanTransaksiReport({
               />
               {loading ? "Memuat…" : "Refresh"}
             </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={onExport}
-              disabled={loading || exporting || !data || inputInvalid}
-              title={!data ? "Belum ada data untuk diexport" : "Export ke .xlsx"}
-            >
-              <Sheet className="h-4 w-4" aria-hidden />
-              {exporting ? "Mengexport…" : "Export XLSX"}
-            </Button>
           </>
         }
       />
@@ -234,6 +224,16 @@ export function RingkasanTransaksiReport({
             >
               <Filter className="h-4 w-4" aria-hidden />
               {loading ? "Memuat…" : "Terapkan"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onExport}
+              disabled={loading || exporting || !data || inputInvalid}
+              title={!data ? "Belum ada data untuk diexport" : "Export ke .xlsx"}
+            >
+              <Sheet className="h-4 w-4" aria-hidden />
+              {exporting ? "Mengexport…" : "Export XLSX"}
             </Button>
           </div>
         </div>

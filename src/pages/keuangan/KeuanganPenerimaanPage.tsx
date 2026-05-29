@@ -8,9 +8,7 @@ import { Button } from "@/components/ui/Button";
 import type { PenerimaanListRow } from "@/data/penerimaan";
 import { tauriErrorMessage } from "@/lib/tauriError";
 import { TokoInput } from "@/components/ui/TokoInput";
-import { exportToXlsx } from "@/lib/exportXlsx";
-import { notify } from "@/lib/notify";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { useXlsxExport } from "@/lib/useXlsxExport";
 
 function toIsoDate(d: Date) {
   const y = d.getFullYear();
@@ -49,8 +47,8 @@ export function KeuanganPenerimaanPage() {
   const [tanggalSampai, setTanggalSampai] = useState(defaultTanggalSampaiBulanIni);
   const [rows, setRows] = useState<PenerimaanListRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { exporting, exportNow } = useXlsxExport();
 
   const rentangInvalid = useMemo(() => {
     if (!tanggalDari || !tanggalSampai) return true;
@@ -95,68 +93,37 @@ export function KeuanganPenerimaanPage() {
       setError("Tidak ada data pada filter saat ini untuk diexport.");
       return;
     }
-    setExporting(true);
     setError(null);
-    try {
-      const result = await exportToXlsx<PenerimaanListRow>({
-        fileName: `penerimaan_${tanggalDari}_sd_${tanggalSampai}`,
-        sheetName: "Penerimaan",
-        title: "Daftar Penerimaan",
-        meta: [
-          { label: "Periode", value: `${formatTanggal(tanggalDari)} – ${formatTanggal(tanggalSampai)}` },
-          { label: "Jumlah transaksi", value: rows.length },
-          { label: "Total periode", value: formatRupiah(totalPeriode) },
-        ],
-        columns: [
-          { header: "No. bukti", value: (r) => r.nomor, type: "text", width: 18 },
-          { header: "Tanggal", value: (r) => r.tanggal, type: "date" },
-          { header: "Akun kas (kode)", value: (r) => r.akunKasKode, type: "text", width: 14 },
-          { header: "Akun kas (nama)", value: (r) => r.akunKasNama, type: "text", width: 28 },
-          { header: "Jumlah baris", value: (r) => r.jumlahBaris, type: "integer", width: 12 },
-          { header: "Total", value: (r) => r.total, type: "currency", width: 18 },
-          { header: "Catatan", value: (r) => r.catatan, type: "text", width: 40 },
-        ],
-        data: rows,
-        footerRow: [
-          null,
-          null,
-          null,
-          null,
-          { value: "TOTAL", type: "text" },
-          { value: totalPeriode, type: "currency" },
-          null,
-        ],
-      });
-
-      if (result.cancelled) {
-        notify.info("Export dibatalkan.");
-        return;
-      }
-
-      notify.success("File Excel berhasil disimpan", {
-        description: result.filePath ?? result.fileName,
-        duration: 6000,
-        action: result.filePath
-          ? {
-              label: "Buka folder",
-              onClick: () => {
-                void revealItemInDir(result.filePath as string).catch((e) => {
-                  notify.error("Gagal membuka folder", {
-                    description: tauriErrorMessage(e),
-                  });
-                });
-              },
-            }
-          : undefined,
-      });
-    } catch (e) {
-      const msg = tauriErrorMessage(e);
-      setError(msg);
-      notify.error("Gagal export Excel", { description: msg });
-    } finally {
-      setExporting(false);
-    }
-  }, [rentangInvalid, rows, tanggalDari, tanggalSampai, totalPeriode]);
+    await exportNow<PenerimaanListRow>({
+      fileName: `penerimaan_${tanggalDari}_sd_${tanggalSampai}`,
+      sheetName: "Penerimaan",
+      title: "Daftar Penerimaan",
+      meta: [
+        { label: "Periode", value: `${formatTanggal(tanggalDari)} – ${formatTanggal(tanggalSampai)}` },
+        { label: "Jumlah transaksi", value: rows.length },
+        { label: "Total periode", value: formatRupiah(totalPeriode) },
+      ],
+      columns: [
+        { header: "No. bukti", value: (r) => r.nomor, type: "text", width: 18 },
+        { header: "Tanggal", value: (r) => r.tanggal, type: "date" },
+        { header: "Akun kas (kode)", value: (r) => r.akunKasKode, type: "text", width: 14 },
+        { header: "Akun kas (nama)", value: (r) => r.akunKasNama, type: "text", width: 28 },
+        { header: "Jumlah baris", value: (r) => r.jumlahBaris, type: "integer", width: 12 },
+        { header: "Total", value: (r) => r.total, type: "currency", width: 18 },
+        { header: "Catatan", value: (r) => r.catatan, type: "text", width: 40 },
+      ],
+      data: rows,
+      footerRow: [
+        null,
+        null,
+        null,
+        null,
+        { value: "TOTAL", type: "text" },
+        { value: totalPeriode, type: "currency" },
+        null,
+      ],
+    });
+  }, [exportNow, rentangInvalid, rows, tanggalDari, tanggalSampai, totalPeriode]);
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">

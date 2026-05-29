@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CreditCard, List, Plus, RefreshCcw } from "lucide-react";
+import { CreditCard, List, Plus, RefreshCcw, Sheet } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -11,6 +11,7 @@ import type { BuatPelunasanHutangLocationState, HutangBelumLunasRow } from "@/da
 import { tauriErrorMessage } from "@/lib/tauriError";
 import { TokoSelect } from "@/components/ui/TokoInput";
 import { VerticalSeparator } from "@/components/ui/Separator";
+import { useXlsxExport } from "@/lib/useXlsxExport";
 
 function todayLocalISODate(): string {
   const d = new Date();
@@ -48,6 +49,7 @@ export function KeuanganPelunasanHutangPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modalFaktur, setModalFaktur] = useState<HutangBelumLunasRow | null>(null);
+  const { exporting, exportNow } = useXlsxExport();
 
   const pemasokOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -115,6 +117,56 @@ export function KeuanganPelunasanHutangPage() {
   function openPelunasanBaru() {
     goBuatPelunasan(filterPemasokKode ? { pemasokKode: filterPemasokKode } : undefined);
   }
+
+  const handleExport = useCallback(async () => {
+    if (filteredRows.length === 0) return;
+
+    const pemasokLabel = filterPemasokKode
+      ? `${filterPemasokKode} — ${pemasokOptions.find((p) => p.kode === filterPemasokKode)?.nama ?? ""}`
+      : "Semua pemasok";
+    const jatuhTempoLabel =
+      filter === "jatuh_tempo" ? "Hanya jatuh tempo lewat" : "Semua hutang belum lunas";
+    const today = todayLocalISODate();
+
+    await exportNow<HutangBelumLunasRow>({
+      fileName: `hutang_belum_lunas${filterPemasokKode ? `_${filterPemasokKode}` : ""}`,
+      sheetName: "Hutang belum lunas",
+      title: "Daftar Hutang Belum Lunas",
+      meta: [
+        { label: "Tanggal cetak", value: formatTanggal(today) },
+        { label: "Filter pemasok", value: pemasokLabel },
+        { label: "Filter jatuh tempo", value: jatuhTempoLabel },
+        { label: "Jumlah faktur", value: filteredRows.length },
+        { label: "Total hutang", value: formatRupiah(totalHutang) },
+      ],
+      columns: [
+        { header: "No. faktur", value: (r) => r.nomor, type: "text", width: 18 },
+        { header: "Tanggal faktur", value: (r) => r.tanggalFaktur, type: "date" },
+        { header: "Jatuh tempo", value: (r) => r.jatuhTempo, type: "date" },
+        {
+          header: "Status",
+          value: (r) => (isJatuhTempoLewat(r.jatuhTempo) ? "Lewat tempo" : "Dalam tempo"),
+          type: "text",
+          width: 14,
+        },
+        { header: "Kode pemasok", value: (r) => r.pemasokKode, type: "text", width: 14 },
+        { header: "Pemasok", value: (r) => r.pemasokNama, type: "text", width: 30 },
+        { header: "Total hutang", value: (r) => r.total, type: "currency", width: 18 },
+        { header: "Metode pembayaran", value: (r) => r.metodePembayaran, type: "text", width: 18 },
+      ],
+      data: filteredRows,
+      footerRow: [
+        null,
+        null,
+        null,
+        null,
+        null,
+        { value: "TOTAL", type: "text" },
+        { value: totalHutang, type: "currency" },
+        null,
+      ],
+    });
+  }, [exportNow, filter, filterPemasokKode, filteredRows, pemasokOptions, totalHutang]);
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -201,6 +253,22 @@ export function KeuanganPelunasanHutangPage() {
                       : `${filteredRows.length} faktur ditampilkan · total ${formatRupiah(totalHutang)}`}
               </p>
             </div>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void handleExport()}
+              disabled={loading || exporting || filteredRows.length === 0}
+              title={
+                filteredRows.length === 0
+                  ? "Tidak ada data pada filter ini"
+                  : `Export ${filteredRows.length} faktur ke .xlsx`
+              }
+            >
+              <Sheet className="h-4 w-4" aria-hidden />
+              {exporting ? "Mengexport…" : "Export XLSX"}
+            </Button>
           </div>
         </div>
 

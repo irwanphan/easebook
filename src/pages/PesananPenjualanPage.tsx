@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, FileText, Plus } from "lucide-react";
+import { ArrowLeft, FileText, Plus, Sheet } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -14,6 +14,7 @@ import type {
 import { useLicenseGate } from "@/features/activation/useLicenseGate";
 import { TransactionGateBanner } from "@/features/activation/TransactionGateBanner";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { useXlsxExport } from "@/lib/useXlsxExport";
 
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -72,6 +73,8 @@ export function PesananPenjualanPage() {
   const [tanggalSampai, setTanggalSampai] = useState(INITIAL_TANGGAL_SAMPAI);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(STATUS_ALL);
+
+  const { exporting, exportNow } = useXlsxExport();
 
   const refresh = useCallback(async () => {
     setLoadError(null);
@@ -135,6 +138,56 @@ export function PesananPenjualanPage() {
     setQuery("");
     setStatusFilter(STATUS_ALL);
   }, []);
+
+  const handleExport = useCallback(async () => {
+    if (rentangInvalid || filteredRows.length === 0) return;
+    await exportNow<PesananPenjualanListRow>({
+      fileName: `pesanan_penjualan_${tanggalDari}_sd_${tanggalSampai}`,
+      sheetName: "Pesanan penjualan",
+      title: "Daftar Pesanan Penjualan",
+      meta: [
+        { label: "Periode pesanan", value: `${formatTanggal(tanggalDari)} – ${formatTanggal(tanggalSampai)}` },
+        { label: "Status", value: statusFilter || "Semua status" },
+        { label: "Pencarian", value: query.trim() || "—" },
+        { label: "Jumlah pesanan", value: filteredRows.length },
+        { label: "Jumlah draft", value: totalDraft },
+        { label: "Total periode", value: formatRupiah(totalPeriode) },
+      ],
+      columns: [
+        { header: "No. pesanan", value: (r) => r.nomor, type: "text", width: 18 },
+        { header: "Tgl pesanan", value: (r) => r.tanggalPesanan, type: "date" },
+        { header: "Tgl kirim", value: (r) => r.tanggalKirim ?? "", type: "date" },
+        { header: "Kode pelanggan", value: (r) => r.pelangganKode, type: "text", width: 14 },
+        { header: "Pelanggan", value: (r) => r.pelangganNama, type: "text", width: 30 },
+        { header: "Salesman", value: (r) => r.salesman, type: "text", width: 20 },
+        { header: "Total", value: (r) => r.total, type: "currency", width: 18 },
+        { header: "Status", value: (r) => r.status, type: "text", width: 14 },
+        { header: "No. faktur", value: (r) => r.fakturNomor ?? "", type: "text", width: 18 },
+      ],
+      data: filteredRows,
+      footerRow: [
+        null,
+        null,
+        null,
+        null,
+        null,
+        { value: "TOTAL", type: "text" },
+        { value: totalPeriode, type: "currency" },
+        null,
+        null,
+      ],
+    });
+  }, [
+    exportNow,
+    filteredRows,
+    query,
+    rentangInvalid,
+    statusFilter,
+    tanggalDari,
+    tanggalSampai,
+    totalDraft,
+    totalPeriode,
+  ]);
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -217,7 +270,19 @@ export function PesananPenjualanPage() {
                   : "Tidak ada pesanan pada filter ini."
                 : `${filteredRows.length} pesanan · ${totalDraft} draft · total ${formatRupiah(totalPeriode)}`
           }
-        />
+        >
+          <Button 
+            type="button"
+            variant="secondary"
+            className="h-9 self-end"
+            onClick={() => void handleExport()}
+            disabled={loading || exporting || filteredRows.length === 0}
+            title={filteredRows.length === 0 ? "Tidak ada data pada filter ini" : `Export ${filteredRows.length} pesanan ke .xlsx`}
+          >
+            <Sheet className="h-4 w-4" aria-hidden />
+            {exporting ? "Mengexport…" : "Export XLSX"}
+          </Button>
+        </ListFilterBar>
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[920px] text-left text-sm">

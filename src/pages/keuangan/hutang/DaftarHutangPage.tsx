@@ -41,7 +41,7 @@ function isJatuhTempoLewat(jatuhTempo: string) {
 
 type FilterTampilan = "semua" | "jatuh_tempo";
 
-export function KeuanganPelunasanHutangPage() {
+export function DaftarHutangPage() {
   const navigate = useNavigate();
   const [rows, setRows] = useState<HutangBelumLunasRow[]>([]);
   const [filter, setFilter] = useState<FilterTampilan>("semua");
@@ -107,7 +107,7 @@ export function KeuanganPelunasanHutangPage() {
   }, [pemasokOptions, filterPemasokKode]);
 
   function goBuatPelunasan(state?: BuatPelunasanHutangLocationState) {
-    navigate("/keuangan/pelunasan-hutang/buat", { state });
+    navigate("/keuangan/hutang/buat-pelunasan", { state });
   }
 
   function openPelunasan(row: HutangBelumLunasRow) {
@@ -171,11 +171,11 @@ export function KeuanganPelunasanHutangPage() {
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
-        title="Pelunasan hutang"
+        title="Daftar hutang"
         description="Faktur pembelian kredit (belum dibayar tunai). Catat pembayaran ke supplier untuk melunasi hutang dagang."
         actions={
           <>
-            <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/pelunasan-hutang/daftar")}>
+            <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/hutang/daftar-pelunasan")}>
               <List className="h-4 w-4" aria-hidden />
               Daftar pelunasan hutang
             </Button>

@@ -41,7 +41,7 @@ function isJatuhTempoLewat(jatuhTempo: string) {
 
 type FilterTampilan = "semua" | "jatuh_tempo";
 
-export function KeuanganPelunasanPiutangPage() {
+export function DaftarPiutangPage() {
   const navigate = useNavigate();
   const [rows, setRows] = useState<PiutangBelumLunasRow[]>([]);
   const [filter, setFilter] = useState<FilterTampilan>("semua");
@@ -107,7 +107,7 @@ export function KeuanganPelunasanPiutangPage() {
   }, [pelangganOptions, filterPelangganKode]);
 
   function goBuatPelunasan(state?: BuatPelunasanPiutangLocationState) {
-    navigate("/keuangan/pelunasan-piutang/buat", { state });
+    navigate("/keuangan/piutang/buat-pelunasan", { state });
   }
 
   function openPelunasan(row: PiutangBelumLunasRow) {
@@ -173,13 +173,13 @@ export function KeuanganPelunasanPiutangPage() {
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
-        title="Pelunasan piutang"
+        title="Daftar piutang"
         description="Faktur penjualan kredit (belum diterima tunai). Catat pembayaran pelanggan untuk melunasi piutang."
         actions={
           <>
-            <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/pelunasan-piutang/daftar")}>
+            <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/piutang/daftar-pelunasan")}>
               <List className="h-4 w-4" aria-hidden />
-              Daftar pelunasan
+              Daftar pelunasan piutang
             </Button>
             <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
               <RefreshCcw className="h-4 w-4" aria-hidden />

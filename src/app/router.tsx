@@ -1,4 +1,4 @@
-import { createHashRouter, Outlet } from "react-router-dom";
+import { createHashRouter, Navigate, Outlet } from "react-router-dom";
 import { AppShell } from "@/app/layout/AppShell";
 import { POSShell } from "@/app/layout/POSShell";
 import { AuthProvider } from "@/features/auth/AuthContext";
@@ -59,14 +59,14 @@ import { PengeluaranDetailPage } from "@/pages/keuangan/PengeluaranDetailPage";
 import { KeuanganPenerimaanPage } from "@/pages/keuangan/KeuanganPenerimaanPage";
 import { TambahPenerimaanPage } from "@/pages/keuangan/TambahPenerimaanPage";
 import { PenerimaanDetailPage } from "@/pages/keuangan/PenerimaanDetailPage";
-import { KeuanganPelunasanPiutangPage } from "@/pages/keuangan/KeuanganPelunasanPiutangPage";
-import { BuatPelunasanPiutangPage } from "@/pages/keuangan/BuatPelunasanPiutangPage";
-import { DaftarPelunasanPiutangPage } from "@/pages/keuangan/DaftarPelunasanPiutangPage";
-import { PelunasanPiutangDetailPage } from "@/pages/keuangan/PelunasanPiutangDetailPage";
-import { KeuanganPelunasanHutangPage } from "@/pages/keuangan/KeuanganPelunasanHutangPage";
-import { BuatPelunasanHutangPage } from "@/pages/keuangan/BuatPelunasanHutangPage";
-import { DaftarPelunasanHutangPage } from "@/pages/keuangan/DaftarPelunasanHutangPage";
-import { PelunasanHutangDetailPage } from "@/pages/keuangan/PelunasanHutangDetailPage";
+import { DaftarPiutangPage } from "@/pages/keuangan/piutang/DaftarPiutangPage";
+import { BuatPelunasanPiutangPage } from "@/pages/keuangan/piutang/BuatPelunasanPiutangPage";
+import { DaftarPelunasanPiutangPage } from "@/pages/keuangan/piutang/DaftarPelunasanPiutangPage";
+import { PelunasanPiutangDetailPage } from "@/pages/keuangan/piutang/PelunasanPiutangDetailPage";
+import { DaftarHutangPage } from "@/pages/keuangan/hutang/DaftarHutangPage";
+import { BuatPelunasanHutangPage } from "@/pages/keuangan/hutang/BuatPelunasanHutangPage";
+import { DaftarPelunasanHutangPage } from "@/pages/keuangan/hutang/DaftarPelunasanHutangPage";
+import { PelunasanHutangDetailPage } from "@/pages/keuangan/hutang/PelunasanHutangDetailPage";
 import { KeuanganTransferPage } from "@/pages/keuangan/KeuanganTransferPage";
 import { TransferKasDetailPage } from "@/pages/keuangan/TransferKasDetailPage";
 import { UbahTransferKasPage } from "@/pages/keuangan/UbahTransferKasPage";
@@ -168,14 +168,18 @@ export const mainRouter = createHashRouter([
       { path: "keuangan/penerimaan", element: <KeuanganPenerimaanPage /> },
       { path: "keuangan/penerimaan/tambah", element: <TambahPenerimaanPage /> },
       { path: "keuangan/penerimaan/detail/:nomor", element: <PenerimaanDetailPage /> },
-      { path: "keuangan/pelunasan-piutang", element: <KeuanganPelunasanPiutangPage /> },
-      { path: "keuangan/pelunasan-piutang/daftar", element: <DaftarPelunasanPiutangPage /> },
-      { path: "keuangan/pelunasan-piutang/daftar/:nomor", element: <PelunasanPiutangDetailPage /> },
-      { path: "keuangan/pelunasan-piutang/buat", element: <BuatPelunasanPiutangPage /> },
-      { path: "keuangan/pelunasan-hutang", element: <KeuanganPelunasanHutangPage /> },
-      { path: "keuangan/pelunasan-hutang/daftar", element: <DaftarPelunasanHutangPage /> },
-      { path: "keuangan/pelunasan-hutang/daftar/:nomor", element: <PelunasanHutangDetailPage /> },
-      { path: "keuangan/pelunasan-hutang/buat", element: <BuatPelunasanHutangPage /> },
+      // Piutang — URL match nama file supaya tidak ambigu antara
+      // "daftar piutang" (faktur belum lunas) vs "daftar pelunasan" (riwayat).
+      { path: "keuangan/piutang", element: <Navigate to="/keuangan/piutang/daftar-piutang" replace /> },
+      { path: "keuangan/piutang/daftar-piutang", element: <DaftarPiutangPage /> },
+      { path: "keuangan/piutang/daftar-pelunasan", element: <DaftarPelunasanPiutangPage /> },
+      { path: "keuangan/piutang/daftar-pelunasan/:nomor", element: <PelunasanPiutangDetailPage /> },
+      { path: "keuangan/piutang/buat-pelunasan", element: <BuatPelunasanPiutangPage /> },
+      { path: "keuangan/hutang", element: <Navigate to="/keuangan/hutang/daftar-hutang" replace /> },
+      { path: "keuangan/hutang/daftar-hutang", element: <DaftarHutangPage /> },
+      { path: "keuangan/hutang/daftar-pelunasan", element: <DaftarPelunasanHutangPage /> },
+      { path: "keuangan/hutang/daftar-pelunasan/:nomor", element: <PelunasanHutangDetailPage /> },
+      { path: "keuangan/hutang/buat-pelunasan", element: <BuatPelunasanHutangPage /> },
       { path: "keuangan/transfer/detail/:nomor", element: <TransferKasDetailPage /> },
       { path: "keuangan/transfer/ubah/:nomor", element: <UbahTransferKasPage /> },
       { path: "keuangan/transfer", element: <KeuanganTransferPage /> },

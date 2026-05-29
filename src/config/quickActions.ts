@@ -155,7 +155,7 @@ export const QUICK_ACTIONS: QuickAction[] = [
     icon: Wallet,
     tone: "emerald",
     kind: "navigate",
-    path: "/keuangan/pelunasan-piutang/buat",
+    path: "/keuangan/piutang/buat-pelunasan",
     accessKey: "ke-piutang-buat",
   },
   {
@@ -165,7 +165,7 @@ export const QUICK_ACTIONS: QuickAction[] = [
     icon: CreditCard,
     tone: "rose",
     kind: "navigate",
-    path: "/keuangan/pelunasan-hutang/buat",
+    path: "/keuangan/hutang/buat-pelunasan",
     accessKey: "ke-hutang-buat",
   },
   {

@@ -125,7 +125,7 @@ export function DaftarPelunasanHutangPage() {
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <div>
         <Link
-          to="/keuangan/pelunasan-hutang"
+          to="/keuangan/hutang/daftar-hutang"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700"
         >
           ← Kembali ke hutang belum lunas
@@ -232,7 +232,7 @@ export function DaftarPelunasanHutangPage() {
                           variant="outline"
                           className="!px-3 !py-1.5 text-xs"
                           onClick={() =>
-                            navigate(`/keuangan/pelunasan-hutang/daftar/${encodeURIComponent(row.nomor)}`)
+                            navigate(`/keuangan/hutang/daftar-pelunasan/${encodeURIComponent(row.nomor)}`)
                           }
                         >
                           Detail

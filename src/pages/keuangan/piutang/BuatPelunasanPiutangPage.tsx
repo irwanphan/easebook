@@ -9,10 +9,10 @@ export function BuatPelunasanPiutangPage() {
 
   return (
     <PelunasanPiutangBatchForm
-      cancelHref="/keuangan/pelunasan-piutang"
+      cancelHref="/keuangan/piutang/daftar-piutang"
       initialPelangganKode={state.pelangganKode ?? ""}
       preselectNomor={state.preselectNomor ?? []}
-      onSuccess={() => navigate("/keuangan/pelunasan-piutang")}
+      onSuccess={() => navigate("/keuangan/piutang/daftar-piutang")}
     />
   );
 }

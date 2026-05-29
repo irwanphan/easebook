@@ -125,7 +125,7 @@ export function DaftarPelunasanPiutangPage() {
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <div>
         <Link
-          to="/keuangan/pelunasan-piutang"
+          to="/keuangan/piutang/daftar-piutang"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700"
         >
           ← Kembali ke piutang belum lunas
@@ -232,7 +232,7 @@ export function DaftarPelunasanPiutangPage() {
                           variant="outline"
                           className="!px-3 !py-1.5 text-xs"
                           onClick={() =>
-                            navigate(`/keuangan/pelunasan-piutang/daftar/${encodeURIComponent(row.nomor)}`)
+                            navigate(`/keuangan/piutang/daftar-pelunasan/${encodeURIComponent(row.nomor)}`)
                           }
                         >
                           Detail

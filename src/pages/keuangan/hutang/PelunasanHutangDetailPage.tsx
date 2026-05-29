@@ -11,23 +11,23 @@ import {
   type PelunasanPrintConfig,
 } from "@/features/templates/pelunasanPrintTemplate";
 import type { SignatureColumn } from "@/features/keuangan/printSignature";
-import type { PelunasanPiutangDetail } from "@/data/pelunasanPiutang";
+import type { PelunasanHutangDetail } from "@/data/pelunasanHutang";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
-// Pelunasan piutang (pelanggan bayar ke kita):
-// kiri = pelanggan (yang membayar), kanan = kasir kita (yang menerima).
-const PELUNASAN_PIUTANG_SIGNATURES: SignatureColumn[] = [
+// Pelunasan hutang (kita bayar ke pemasok):
+// kiri = kasir kita (yang membayar), kanan = pemasok (yang menerima).
+const PELUNASAN_HUTANG_SIGNATURES: SignatureColumn[] = [
   { label: "Yang Membayar" },
   { label: "Yang Menerima" },
 ];
 
-const PELUNASAN_PIUTANG_PRINT_CONFIG: PelunasanPrintConfig = {
-  judulDokumen: "Kuitansi pelunasan piutang",
-  pihakLabel: "Pelanggan",
-  kasLabel: "Diterima ke kas",
-  fakturTitle: "Faktur penjualan yang dilunasi",
-  fakturNomorLabel: "No. faktur penjualan",
-  signatures: PELUNASAN_PIUTANG_SIGNATURES,
+const PELUNASAN_HUTANG_PRINT_CONFIG: PelunasanPrintConfig = {
+  judulDokumen: "Bukti pembayaran hutang",
+  pihakLabel: "Pemasok",
+  kasLabel: "Dibayar dari kas",
+  fakturTitle: "Faktur pembelian yang dilunasi",
+  fakturNomorLabel: "No. faktur pembelian",
+  signatures: PELUNASAN_HUTANG_SIGNATURES,
   signatureMode: "paraf",
 };
 
@@ -58,12 +58,12 @@ function formatWaktuDicatat(ts: number) {
   });
 }
 
-export function PelunasanPiutangDetailPage() {
+export function PelunasanHutangDetailPage() {
   const { nomor: nomorParam } = useParams();
   const navigate = useNavigate();
   const nomor = nomorParam ? decodeURIComponent(nomorParam) : "";
 
-  const [detail, setDetail] = useState<PelunasanPiutangDetail | null>(null);
+  const [detail, setDetail] = useState<PelunasanHutangDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,7 +72,7 @@ export function PelunasanPiutangDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const d = await invoke<PelunasanPiutangDetail>("pelunasan_piutang_riwayat_detail", {
+      const d = await invoke<PelunasanHutangDetail>("pelunasan_hutang_riwayat_detail", {
         nomor: nomor.trim(),
       });
       setDetail(d);
@@ -96,7 +96,7 @@ export function PelunasanPiutangDetailPage() {
           type="button"
           variant="ghost"
           className="self-start"
-          onClick={() => navigate("/keuangan/pelunasan-piutang/daftar")}
+          onClick={() => navigate("/keuangan/hutang/daftar-pelunasan")}
         >
           Kembali ke daftar
         </Button>
@@ -104,7 +104,7 @@ export function PelunasanPiutangDetailPage() {
     );
   }
 
-  const daftarHref = "/keuangan/pelunasan-piutang/daftar";
+  const daftarHref = "/keuangan/hutang/daftar-pelunasan";
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
@@ -115,10 +115,10 @@ export function PelunasanPiutangDetailPage() {
             className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 print:hidden"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden />
-            Kembali ke daftar pelunasan
+            Kembali ke daftar pelunasan hutang
           </Link>
           <PageHeader
-            title="Detail pelunasan piutang"
+            title="Detail pelunasan hutang"
             description={detail ? `Nomor ${detail.nomor}` : "Memuat data pelunasan…"}
           />
         </div>
@@ -126,14 +126,14 @@ export function PelunasanPiutangDetailPage() {
           <PrintButton
             mode="browser"
             label="Cetak"
-            filenameHint={`pelunasan-piutang-${detail.nomor}`}
+            filenameHint={`pelunasan-hutang-${detail.nomor}`}
             htmlBuilder={({ paperSize }) =>
               buildPelunasanPrintHtml(
                 {
                   nomor: detail.nomor,
                   tanggal: detail.tanggal,
-                  pihakKode: detail.pelangganKode,
-                  pihakNama: detail.pelangganNama,
+                  pihakKode: detail.pemasokKode,
+                  pihakNama: detail.pemasokNama,
                   akunKasKode: detail.akunKasKode,
                   akunKasNama: detail.akunKasNama,
                   total: detail.total,
@@ -141,7 +141,7 @@ export function PelunasanPiutangDetailPage() {
                   createdAt: detail.createdAt,
                   faktur: detail.faktur,
                 },
-                PELUNASAN_PIUTANG_PRINT_CONFIG,
+                PELUNASAN_HUTANG_PRINT_CONFIG,
                 paperSize,
               )
             }
@@ -180,12 +180,12 @@ export function PelunasanPiutangDetailPage() {
                 <p className="mt-0.5 text-xs text-zinc-500">Waktu sistem saat transaksi disimpan di aplikasi.</p>
               </div>
               <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Pelanggan</p>
-                <p className="mt-1 text-sm font-medium text-zinc-900">{detail.pelangganNama}</p>
-                <p className="font-mono text-xs text-zinc-500">{detail.pelangganKode}</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Pemasok</p>
+                <p className="mt-1 text-sm font-medium text-zinc-900">{detail.pemasokNama}</p>
+                <p className="font-mono text-xs text-zinc-500">{detail.pemasokKode}</p>
               </div>
               <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Diterima ke kas</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Dibayar dari kas</p>
                 <p className="mt-1 text-sm font-medium text-zinc-900">{detail.akunKasNama || detail.akunKasKode}</p>
                 <p className="font-mono text-xs text-zinc-500">{detail.akunKasKode}</p>
               </div>
@@ -205,7 +205,7 @@ export function PelunasanPiutangDetailPage() {
 
           <Card className="overflow-hidden p-0">
             <div className="border-b border-zinc-100 px-6 py-4">
-              <h2 className="text-sm font-semibold text-zinc-900">Faktur penjualan yang dilunasi</h2>
+              <h2 className="text-sm font-semibold text-zinc-900">Faktur pembelian yang dilunasi</h2>
               <p className="mt-0.5 text-sm text-zinc-500">
                 {detail.faktur.length} faktur · total {formatRupiah(detail.total)}
               </p>
@@ -214,7 +214,7 @@ export function PelunasanPiutangDetailPage() {
               <table className="w-full min-w-[640px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-zinc-100 bg-zinc-50/90 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                    <th className="px-5 py-3">No. faktur penjualan</th>
+                    <th className="px-5 py-3">No. faktur pembelian</th>
                     <th className="px-5 py-3">Tanggal faktur</th>
                     <th className="px-5 py-3">Jatuh tempo</th>
                     <th className="px-5 py-3 text-right">Jumlah dilunasi</th>

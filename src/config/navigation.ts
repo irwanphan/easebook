@@ -84,8 +84,8 @@ export const primaryNavEntries: PrimaryNavEntry[] = [
     children: [
       { id: "ke-pengeluaran", label: "Pengeluaran", path: "/keuangan/pengeluaran" },
       { id: "ke-penerimaan", label: "Penerimaan", path: "/keuangan/penerimaan" },
-      { id: "ke-piutang", label: "Pelunasan piutang", path: "/keuangan/pelunasan-piutang" },
-      { id: "ke-hutang", label: "Pelunasan hutang", path: "/keuangan/pelunasan-hutang" },
+      { id: "ke-piutang", label: "Piutang", path: "/keuangan/piutang/daftar-piutang" },
+      { id: "ke-hutang", label: "Hutang", path: "/keuangan/hutang/daftar-hutang" },
       { id: "ke-transfer", label: "Transfer", path: "/keuangan/transfer" },
       { id: "ke-akun-kas", label: "Akun kas", path: "/keuangan/akun-kas" },
       { id: "ke-daftar-akun", label: "Daftar akun", path: "/keuangan/daftar-akun" },

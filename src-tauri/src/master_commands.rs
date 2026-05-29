@@ -8036,6 +8036,487 @@ pub fn arus_kas_get(
     })
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Laporan Penjualan & Pembelian — Ringkasan multi-dimensi
+// ──────────────────────────────────────────────────────────────────────────
+//
+// Tujuan: memberikan agregasi siap-pakai untuk analisis (siapa pelanggan
+// terbesar? barang apa yang paling laku? bagaimana tren bulanan?). Berbeda
+// dari halaman `PenjualanPage`/`PembelianPage` yang menampilkan 1 baris per
+// faktur untuk navigasi operasional.
+//
+// Filter:
+// - Rentang tanggal (`tanggal_faktur`)
+// - Status `Dibatalkan` selalu dikecualikan supaya tidak mengotori statistik
+
+/// Ringkasan transaksi per partner (pelanggan untuk penjualan, pemasok untuk
+/// pembelian).
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RingkasanPartnerRow {
+    pub kode: String,
+    pub nama: String,
+    pub jumlah_faktur: i64,
+    pub qty: i64,
+    pub nominal: i64,
+    /// 0.0 … 1.0 — proporsi `nominal` terhadap total laporan.
+    pub kontribusi: f64,
+}
+
+/// Ringkasan transaksi per barang/jasa.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RingkasanBarangRow {
+    pub kode: String,
+    pub nama: String,
+    pub kategori_kode: String,
+    pub kategori_nama: String,
+    pub jumlah_faktur: i64,
+    pub qty: i64,
+    /// Total `subtotal` baris (belum dipotong diskon/pajak faktur).
+    pub nominal: i64,
+    pub kontribusi: f64,
+}
+
+/// Ringkasan transaksi per bulan kalender (YYYY-MM).
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RingkasanBulanRow {
+    /// Format `YYYY-MM`.
+    pub bulan: String,
+    pub jumlah_faktur: i64,
+    pub qty: i64,
+    pub nominal: i64,
+}
+
+/// Ringkasan transaksi per salesman (khusus penjualan).
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RingkasanSalesmanRow {
+    pub salesman: String,
+    pub jumlah_faktur: i64,
+    pub qty: i64,
+    pub nominal: i64,
+    pub kontribusi: f64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LaporanTransaksiTotal {
+    pub jumlah_faktur: i64,
+    pub jumlah_baris: i64,
+    pub qty: i64,
+    pub nominal: i64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LaporanPenjualanSnapshot {
+    pub tanggal_dari: String,
+    pub tanggal_sampai: String,
+    pub per_pelanggan: Vec<RingkasanPartnerRow>,
+    pub per_barang: Vec<RingkasanBarangRow>,
+    pub per_bulan: Vec<RingkasanBulanRow>,
+    pub per_salesman: Vec<RingkasanSalesmanRow>,
+    pub total: LaporanTransaksiTotal,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LaporanPembelianSnapshot {
+    pub tanggal_dari: String,
+    pub tanggal_sampai: String,
+    pub per_pemasok: Vec<RingkasanPartnerRow>,
+    pub per_barang: Vec<RingkasanBarangRow>,
+    pub per_bulan: Vec<RingkasanBulanRow>,
+    pub total: LaporanTransaksiTotal,
+}
+
+/// Hitung `kontribusi` untuk setiap baris berdasarkan `total_nominal`.
+fn isi_kontribusi_partner(rows: &mut [RingkasanPartnerRow], total: i64) {
+    if total <= 0 {
+        for r in rows.iter_mut() {
+            r.kontribusi = 0.0;
+        }
+        return;
+    }
+    let t = total as f64;
+    for r in rows.iter_mut() {
+        r.kontribusi = (r.nominal as f64) / t;
+    }
+}
+
+fn isi_kontribusi_barang(rows: &mut [RingkasanBarangRow], total: i64) {
+    if total <= 0 {
+        for r in rows.iter_mut() {
+            r.kontribusi = 0.0;
+        }
+        return;
+    }
+    let t = total as f64;
+    for r in rows.iter_mut() {
+        r.kontribusi = (r.nominal as f64) / t;
+    }
+}
+
+fn isi_kontribusi_salesman(rows: &mut [RingkasanSalesmanRow], total: i64) {
+    if total <= 0 {
+        for r in rows.iter_mut() {
+            r.kontribusi = 0.0;
+        }
+        return;
+    }
+    let t = total as f64;
+    for r in rows.iter_mut() {
+        r.kontribusi = (r.nominal as f64) / t;
+    }
+}
+
+fn validate_rentang_tanggal(dari: &str, sampai: &str) -> Result<(), String> {
+    let d1 = NaiveDate::parse_from_str(dari, "%Y-%m-%d")
+        .map_err(|_| "Tanggal mulai tidak valid (YYYY-MM-DD).".to_string())?;
+    let d2 = NaiveDate::parse_from_str(sampai, "%Y-%m-%d")
+        .map_err(|_| "Tanggal akhir tidak valid (YYYY-MM-DD).".to_string())?;
+    if d2 < d1 {
+        return Err("Tanggal akhir tidak boleh sebelum tanggal mulai.".into());
+    }
+    Ok(())
+}
+
+/// Laporan Penjualan: agregasi multi-dimensi (per pelanggan / barang / bulan
+/// / salesman). Faktur ber-status `Dibatalkan` dikecualikan.
+///
+/// Catatan nilai nominal:
+/// - **Per pelanggan / per bulan / per salesman**: pakai `penjualan.total`
+///   (omzet bersih, sudah include diskon & pajak faktur).
+/// - **Per barang**: pakai `SUM(penjualan_line.subtotal)` — nilai sebelum
+///   pajak/diskon faktur, karena pajak/diskon tidak bisa dialokasikan per
+///   barang secara akurat tanpa rule tambahan.
+#[tauri::command]
+pub fn laporan_penjualan_get(
+    state: State<DbState>,
+    tanggal_dari: String,
+    tanggal_sampai: String,
+) -> Result<LaporanPenjualanSnapshot, String> {
+    let dari = tanggal_dari.trim();
+    let sampai = tanggal_sampai.trim();
+    validate_rentang_tanggal(dari, sampai)?;
+
+    with_conn(&state, |conn| {
+        // ── Per pelanggan ────────────────────────────────────────────────
+        let mut stmt = conn.prepare(
+            "WITH line_agg AS (
+                SELECT nomor, SUM(qty) AS qty
+                FROM penjualan_line GROUP BY nomor
+             )
+             SELECT p.pelanggan_kode,
+                    COALESCE(pl.nama, p.pelanggan_kode) AS nama,
+                    COUNT(p.nomor) AS jumlah_faktur,
+                    COALESCE(SUM(la.qty), 0) AS qty,
+                    COALESCE(SUM(p.total), 0) AS nominal
+             FROM penjualan p
+             LEFT JOIN pelanggan pl ON lower(pl.kode) = lower(p.pelanggan_kode)
+             LEFT JOIN line_agg la ON la.nomor = p.nomor
+             WHERE p.tanggal_faktur >= ? AND p.tanggal_faktur <= ?
+               AND p.status <> 'Dibatalkan'
+             GROUP BY p.pelanggan_kode, pl.nama
+             HAVING SUM(p.total) <> 0 OR COUNT(p.nomor) > 0
+             ORDER BY nominal DESC",
+        )?;
+        let mut per_pelanggan: Vec<RingkasanPartnerRow> = stmt
+            .query_map(params![dari, sampai], |r| {
+                Ok(RingkasanPartnerRow {
+                    kode: r.get(0)?,
+                    nama: r.get(1)?,
+                    jumlah_faktur: r.get(2)?,
+                    qty: r.get(3)?,
+                    nominal: r.get(4)?,
+                    kontribusi: 0.0,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        // ── Per barang (dari penjualan_line) ─────────────────────────────
+        let mut stmt = conn.prepare(
+            "SELECT line.barang_kode,
+                    COALESCE(b.nama, line.barang_kode) AS nama,
+                    COALESCE(b.kategori_kode, '') AS kategori_kode,
+                    COALESCE(k.nama, '') AS kategori_nama,
+                    COUNT(DISTINCT line.nomor) AS jumlah_faktur,
+                    COALESCE(SUM(line.qty), 0) AS qty,
+                    COALESCE(SUM(line.subtotal), 0) AS nominal
+             FROM penjualan_line line
+             INNER JOIN penjualan p ON p.nomor = line.nomor
+             LEFT JOIN barang_jasa b ON lower(b.kode) = lower(line.barang_kode)
+             LEFT JOIN kategori k ON lower(k.kode) = lower(b.kategori_kode)
+             WHERE p.tanggal_faktur >= ? AND p.tanggal_faktur <= ?
+               AND p.status <> 'Dibatalkan'
+             GROUP BY line.barang_kode, b.nama, b.kategori_kode, k.nama
+             ORDER BY nominal DESC",
+        )?;
+        let mut per_barang: Vec<RingkasanBarangRow> = stmt
+            .query_map(params![dari, sampai], |r| {
+                Ok(RingkasanBarangRow {
+                    kode: r.get(0)?,
+                    nama: r.get(1)?,
+                    kategori_kode: r.get(2)?,
+                    kategori_nama: r.get(3)?,
+                    jumlah_faktur: r.get(4)?,
+                    qty: r.get(5)?,
+                    nominal: r.get(6)?,
+                    kontribusi: 0.0,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        // ── Per bulan ─────────────────────────────────────────────────────
+        let mut stmt = conn.prepare(
+            "WITH line_agg AS (
+                SELECT nomor, SUM(qty) AS qty
+                FROM penjualan_line GROUP BY nomor
+             )
+             SELECT substr(p.tanggal_faktur, 1, 7) AS bulan,
+                    COUNT(p.nomor) AS jumlah_faktur,
+                    COALESCE(SUM(la.qty), 0) AS qty,
+                    COALESCE(SUM(p.total), 0) AS nominal
+             FROM penjualan p
+             LEFT JOIN line_agg la ON la.nomor = p.nomor
+             WHERE p.tanggal_faktur >= ? AND p.tanggal_faktur <= ?
+               AND p.status <> 'Dibatalkan'
+             GROUP BY substr(p.tanggal_faktur, 1, 7)
+             ORDER BY bulan ASC",
+        )?;
+        let per_bulan: Vec<RingkasanBulanRow> = stmt
+            .query_map(params![dari, sampai], |r| {
+                Ok(RingkasanBulanRow {
+                    bulan: r.get(0)?,
+                    jumlah_faktur: r.get(1)?,
+                    qty: r.get(2)?,
+                    nominal: r.get(3)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        // ── Per salesman ─────────────────────────────────────────────────
+        let mut stmt = conn.prepare(
+            "WITH line_agg AS (
+                SELECT nomor, SUM(qty) AS qty
+                FROM penjualan_line GROUP BY nomor
+             )
+             SELECT CASE
+                      WHEN TRIM(COALESCE(p.salesman,'')) = '' THEN '—'
+                      ELSE TRIM(p.salesman)
+                    END AS salesman_label,
+                    COUNT(p.nomor) AS jumlah_faktur,
+                    COALESCE(SUM(la.qty), 0) AS qty,
+                    COALESCE(SUM(p.total), 0) AS nominal
+             FROM penjualan p
+             LEFT JOIN line_agg la ON la.nomor = p.nomor
+             WHERE p.tanggal_faktur >= ? AND p.tanggal_faktur <= ?
+               AND p.status <> 'Dibatalkan'
+             GROUP BY salesman_label
+             ORDER BY nominal DESC",
+        )?;
+        let mut per_salesman: Vec<RingkasanSalesmanRow> = stmt
+            .query_map(params![dari, sampai], |r| {
+                Ok(RingkasanSalesmanRow {
+                    salesman: r.get(0)?,
+                    jumlah_faktur: r.get(1)?,
+                    qty: r.get(2)?,
+                    nominal: r.get(3)?,
+                    kontribusi: 0.0,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        // ── Total (dari header) ──────────────────────────────────────────
+        let (total_faktur, total_nominal): (i64, i64) = conn.query_row(
+            "SELECT COUNT(p.nomor), COALESCE(SUM(p.total), 0)
+             FROM penjualan p
+             WHERE p.tanggal_faktur >= ? AND p.tanggal_faktur <= ?
+               AND p.status <> 'Dibatalkan'",
+            params![dari, sampai],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        let (total_baris, total_qty): (i64, i64) = conn.query_row(
+            "SELECT COALESCE(COUNT(line.id), 0), COALESCE(SUM(line.qty), 0)
+             FROM penjualan_line line
+             INNER JOIN penjualan p ON p.nomor = line.nomor
+             WHERE p.tanggal_faktur >= ? AND p.tanggal_faktur <= ?
+               AND p.status <> 'Dibatalkan'",
+            params![dari, sampai],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+
+        isi_kontribusi_partner(&mut per_pelanggan, total_nominal);
+        // Total per-barang berbeda (pakai subtotal line) — kontribusi dihitung
+        // relatif terhadap total subtotal baris saja, supaya jumlah % = 100%.
+        let total_subtotal_barang: i64 = per_barang.iter().map(|r| r.nominal).sum();
+        isi_kontribusi_barang(&mut per_barang, total_subtotal_barang);
+        isi_kontribusi_salesman(&mut per_salesman, total_nominal);
+
+        Ok(LaporanPenjualanSnapshot {
+            tanggal_dari: dari.to_string(),
+            tanggal_sampai: sampai.to_string(),
+            per_pelanggan,
+            per_barang,
+            per_bulan,
+            per_salesman,
+            total: LaporanTransaksiTotal {
+                jumlah_faktur: total_faktur,
+                jumlah_baris: total_baris,
+                qty: total_qty,
+                nominal: total_nominal,
+            },
+        })
+    })
+}
+
+/// Laporan Pembelian: agregasi multi-dimensi (per pemasok / barang / bulan).
+/// Faktur ber-status `Dibatalkan` dikecualikan.
+#[tauri::command]
+pub fn laporan_pembelian_get(
+    state: State<DbState>,
+    tanggal_dari: String,
+    tanggal_sampai: String,
+) -> Result<LaporanPembelianSnapshot, String> {
+    let dari = tanggal_dari.trim();
+    let sampai = tanggal_sampai.trim();
+    validate_rentang_tanggal(dari, sampai)?;
+
+    with_conn(&state, |conn| {
+        // ── Per pemasok ──────────────────────────────────────────────────
+        let mut stmt = conn.prepare(
+            "WITH line_agg AS (
+                SELECT nomor, SUM(qty) AS qty
+                FROM pembelian_line GROUP BY nomor
+             )
+             SELECT p.pemasok_kode,
+                    COALESCE(pm.nama, p.pemasok_kode) AS nama,
+                    COUNT(p.nomor) AS jumlah_faktur,
+                    COALESCE(SUM(la.qty), 0) AS qty,
+                    COALESCE(SUM(p.total), 0) AS nominal
+             FROM pembelian p
+             LEFT JOIN pemasok pm ON lower(pm.kode) = lower(p.pemasok_kode)
+             LEFT JOIN line_agg la ON la.nomor = p.nomor
+             WHERE p.tanggal_faktur >= ? AND p.tanggal_faktur <= ?
+               AND p.status <> 'Dibatalkan'
+             GROUP BY p.pemasok_kode, pm.nama
+             ORDER BY nominal DESC",
+        )?;
+        let mut per_pemasok: Vec<RingkasanPartnerRow> = stmt
+            .query_map(params![dari, sampai], |r| {
+                Ok(RingkasanPartnerRow {
+                    kode: r.get(0)?,
+                    nama: r.get(1)?,
+                    jumlah_faktur: r.get(2)?,
+                    qty: r.get(3)?,
+                    nominal: r.get(4)?,
+                    kontribusi: 0.0,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        // ── Per barang ───────────────────────────────────────────────────
+        let mut stmt = conn.prepare(
+            "SELECT line.barang_kode,
+                    COALESCE(b.nama, line.barang_kode) AS nama,
+                    COALESCE(b.kategori_kode, '') AS kategori_kode,
+                    COALESCE(k.nama, '') AS kategori_nama,
+                    COUNT(DISTINCT line.nomor) AS jumlah_faktur,
+                    COALESCE(SUM(line.qty), 0) AS qty,
+                    COALESCE(SUM(line.subtotal), 0) AS nominal
+             FROM pembelian_line line
+             INNER JOIN pembelian p ON p.nomor = line.nomor
+             LEFT JOIN barang_jasa b ON lower(b.kode) = lower(line.barang_kode)
+             LEFT JOIN kategori k ON lower(k.kode) = lower(b.kategori_kode)
+             WHERE p.tanggal_faktur >= ? AND p.tanggal_faktur <= ?
+               AND p.status <> 'Dibatalkan'
+             GROUP BY line.barang_kode, b.nama, b.kategori_kode, k.nama
+             ORDER BY nominal DESC",
+        )?;
+        let mut per_barang: Vec<RingkasanBarangRow> = stmt
+            .query_map(params![dari, sampai], |r| {
+                Ok(RingkasanBarangRow {
+                    kode: r.get(0)?,
+                    nama: r.get(1)?,
+                    kategori_kode: r.get(2)?,
+                    kategori_nama: r.get(3)?,
+                    jumlah_faktur: r.get(4)?,
+                    qty: r.get(5)?,
+                    nominal: r.get(6)?,
+                    kontribusi: 0.0,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        // ── Per bulan ────────────────────────────────────────────────────
+        let mut stmt = conn.prepare(
+            "WITH line_agg AS (
+                SELECT nomor, SUM(qty) AS qty
+                FROM pembelian_line GROUP BY nomor
+             )
+             SELECT substr(p.tanggal_faktur, 1, 7) AS bulan,
+                    COUNT(p.nomor) AS jumlah_faktur,
+                    COALESCE(SUM(la.qty), 0) AS qty,
+                    COALESCE(SUM(p.total), 0) AS nominal
+             FROM pembelian p
+             LEFT JOIN line_agg la ON la.nomor = p.nomor
+             WHERE p.tanggal_faktur >= ? AND p.tanggal_faktur <= ?
+               AND p.status <> 'Dibatalkan'
+             GROUP BY substr(p.tanggal_faktur, 1, 7)
+             ORDER BY bulan ASC",
+        )?;
+        let per_bulan: Vec<RingkasanBulanRow> = stmt
+            .query_map(params![dari, sampai], |r| {
+                Ok(RingkasanBulanRow {
+                    bulan: r.get(0)?,
+                    jumlah_faktur: r.get(1)?,
+                    qty: r.get(2)?,
+                    nominal: r.get(3)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        // ── Total ────────────────────────────────────────────────────────
+        let (total_faktur, total_nominal): (i64, i64) = conn.query_row(
+            "SELECT COUNT(p.nomor), COALESCE(SUM(p.total), 0)
+             FROM pembelian p
+             WHERE p.tanggal_faktur >= ? AND p.tanggal_faktur <= ?
+               AND p.status <> 'Dibatalkan'",
+            params![dari, sampai],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        let (total_baris, total_qty): (i64, i64) = conn.query_row(
+            "SELECT COALESCE(COUNT(line.id), 0), COALESCE(SUM(line.qty), 0)
+             FROM pembelian_line line
+             INNER JOIN pembelian p ON p.nomor = line.nomor
+             WHERE p.tanggal_faktur >= ? AND p.tanggal_faktur <= ?
+               AND p.status <> 'Dibatalkan'",
+            params![dari, sampai],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+
+        isi_kontribusi_partner(&mut per_pemasok, total_nominal);
+        let total_subtotal_barang: i64 = per_barang.iter().map(|r| r.nominal).sum();
+        isi_kontribusi_barang(&mut per_barang, total_subtotal_barang);
+
+        Ok(LaporanPembelianSnapshot {
+            tanggal_dari: dari.to_string(),
+            tanggal_sampai: sampai.to_string(),
+            per_pemasok,
+            per_barang,
+            per_bulan,
+            total: LaporanTransaksiTotal {
+                jumlah_faktur: total_faktur,
+                jumlah_baris: total_baris,
+                qty: total_qty,
+                nominal: total_nominal,
+            },
+        })
+    })
+}
+
 #[tauri::command]
 pub fn jurnal_umum_list(
     state: State<DbState>,

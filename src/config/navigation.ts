@@ -57,6 +57,8 @@ export const primaryNavEntries: PrimaryNavEntry[] = [
       { id: "lap-stok", label: "Pergerakan stok", path: "/laporan/pergerakan-stok" },
       { id: "lap-mutasi-gudang", label: "Mutasi antar gudang", path: "/laporan/mutasi-antar-gudang" },
       { id: "lap-hpp", label: "HPP", path: "/laporan/hpp" },
+      { id: "lap-penjualan-ringkasan", label: "Ringkasan penjualan", path: "/laporan/penjualan" },
+      { id: "lap-pembelian-ringkasan", label: "Ringkasan pembelian", path: "/laporan/pembelian" },
       { id: "lap-laba-rugi", label: "Laba rugi", path: "/laporan/laba-rugi" },
       { id: "lap-neraca", label: "Neraca", path: "/laporan/neraca" },
       { id: "lap-arus-kas", label: "Arus kas", path: "/laporan/arus-kas" },

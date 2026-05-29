@@ -166,6 +166,8 @@ pub fn run() {
             master_commands::neraca_get,
             master_commands::laba_rugi_get,
             master_commands::arus_kas_get,
+            master_commands::laporan_penjualan_get,
+            master_commands::laporan_pembelian_get,
             master_commands::jurnal_umum_insert_transaksi,
             master_commands::jurnal_umum_insert_manual,
             master_commands::transfer_kas_list,

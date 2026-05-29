@@ -125,6 +125,16 @@ export const halamanAksesGroups: HalamanAksesGroup[] = [
         pathPattern: "laporan/arus-kas",
       },
       {
+        key: "lap-penjualan-ringkasan",
+        label: "Ringkasan penjualan",
+        pathPattern: "laporan/penjualan",
+      },
+      {
+        key: "lap-pembelian-ringkasan",
+        label: "Ringkasan pembelian",
+        pathPattern: "laporan/pembelian",
+      },
+      {
         key: "lap-log-shift-pos",
         label: "Log shift POS",
         pathPattern: "laporan/log-shift-pos",

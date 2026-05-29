@@ -171,13 +171,13 @@ export function KeuanganPenerimaanPage() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button type="button" variant="secondary" onClick={() => void handleExport()} disabled={loading || exporting || rentangInvalid || rows.length === 0} title={rows.length === 0 ? "Tidak ada data pada filter ini" : `Export ${rows.length} transaksi ke .xlsx`}>
-              <Sheet className="h-4 w-4" aria-hidden />
-              {exporting ? "Mengexport…" : "Export XLSX"}
-            </Button>
             <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
               <Filter className="h-4 w-4" aria-hidden />
               {loading ? "Memuat…" : "Terapkan filter"}
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => void handleExport()} disabled={loading || exporting || rentangInvalid || rows.length === 0} title={rows.length === 0 ? "Tidak ada data pada filter ini" : `Export ${rows.length} transaksi ke .xlsx`}>
+              <Sheet className="h-4 w-4" aria-hidden />
+              {exporting ? "Mengexport…" : "Export XLSX"}
             </Button>
           </div>
         </div>

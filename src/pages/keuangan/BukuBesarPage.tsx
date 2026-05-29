@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { BookOpen, RefreshCcw } from "lucide-react";
+import { BookOpen, Filter, RefreshCcw, Sheet } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -19,6 +19,7 @@ import { bukuBesarGet } from "@/features/keuangan/bukuBesarInvoke";
 import { jenisBadgeVariant, jenisLabel } from "@/features/keuangan/jurnalJenis";
 import { formatRupiah } from "@/lib/format";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { useXlsxExport } from "@/lib/useXlsxExport";
 
 const inputClass =
   "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
@@ -109,6 +110,8 @@ export function BukuBesarPage() {
   const [error, setError] = useState<string | null>(null);
   const [defaultsApplied, setDefaultsApplied] = useState(false);
 
+  const { exporting, exportNow } = useXlsxExport();
+
   const rentangInvalid = useMemo(() => {
     if (!tanggalDari || !tanggalSampai) return true;
     return tanggalSampai < tanggalDari;
@@ -191,6 +194,84 @@ export function BukuBesarPage() {
   const summary = snapshot;
   const kolomNorm = akunDipilih?.kolomNorm ?? summary?.kolomNorm ?? "D";
 
+  const handleExport = useCallback(async () => {
+    if (rentangInvalid || !akunKode || !snapshot || snapshot.entries.length === 0) {
+      return;
+    }
+
+    const akunLabel = akunDipilih
+      ? `${akunDipilih.kode} — ${akunDipilih.nama}`
+      : `${snapshot.akunKode} — ${snapshot.akunNama}`;
+    const kelompokLabel = akunDipilih
+      ? labelKelompokAkun(akunDipilih.kelompok)
+      : labelKelompokAkun(snapshot.kelompok);
+    const saldoAwalFmt = formatSaldoNatural(snapshot.saldoAwal, kolomNorm);
+    const saldoAkhirFmt = formatSaldoNatural(snapshot.saldoAkhir, kolomNorm);
+
+    await exportNow<typeof snapshot.entries[number]>({
+      fileName: `buku_besar_${snapshot.akunKode}_${tanggalDari}_sd_${tanggalSampai}`,
+      sheetName: "Buku besar",
+      title: `Buku Besar — ${akunLabel}`,
+      meta: [
+        { label: "Akun", value: akunLabel },
+        { label: "Kelompok", value: kelompokLabel },
+        { label: "Sisi normal", value: kolomNorm === "K" ? "Kredit" : "Debit" },
+        { label: "Periode", value: `${snapshot.tanggalDari} – ${snapshot.tanggalSampai}` },
+        {
+          label: "Saldo awal periode",
+          value: `${saldoAwalFmt.text} (${saldoAwalFmt.sisi})`,
+        },
+        { label: "Total debet", value: formatRupiah(snapshot.totalDebit) },
+        { label: "Total kredit", value: formatRupiah(snapshot.totalKredit) },
+        {
+          label: "Saldo akhir",
+          value: `${saldoAkhirFmt.text} (${saldoAkhirFmt.sisi})`,
+        },
+      ],
+      columns: [
+        { header: "Tanggal", value: (r) => r.tanggal, type: "date" },
+        { header: "Jenis", value: (r) => jenisLabel(r.jenis), type: "text", width: 22 },
+        { header: "Referensi", value: (r) => r.referensi, type: "text", width: 18 },
+        { header: "Catatan", value: (r) => r.catatan, type: "text", width: 30 },
+        { header: "Debet", value: (r) => r.debit, type: "currency", width: 16 },
+        { header: "Kredit", value: (r) => r.kredit, type: "currency", width: 16 },
+        {
+          header: "Saldo",
+          value: (r) => Math.abs(r.saldoRunning),
+          type: "currency",
+          width: 16,
+        },
+        {
+          header: "Sisi",
+          value: (r) => formatSaldoNatural(r.saldoRunning, kolomNorm).sisi,
+          type: "text",
+          width: 8,
+          align: "center",
+        },
+      ],
+      data: snapshot.entries,
+      footerRow: [
+        null,
+        null,
+        null,
+        { value: "TOTAL MUTASI", type: "text" },
+        { value: snapshot.totalDebit, type: "currency" },
+        { value: snapshot.totalKredit, type: "currency" },
+        { value: Math.abs(snapshot.saldoAkhir), type: "currency" },
+        { value: saldoAkhirFmt.sisi, type: "text" },
+      ],
+    });
+  }, [
+    akunDipilih,
+    akunKode,
+    exportNow,
+    kolomNorm,
+    rentangInvalid,
+    snapshot,
+    tanggalDari,
+    tanggalSampai,
+  ]);
+
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
@@ -229,58 +310,88 @@ export function BukuBesarPage() {
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_auto] lg:items-end">
-          <div>
-            <label htmlFor="bb-akun" className="block text-sm font-medium text-zinc-700">
-              Akun
-            </label>
-            <TokoLookup
-              id="bb-akun"
-              options={akunList}
-              value={akunKode || null}
-              getKey={(a) => a.kode}
-              getLabel={(a) => `${a.kode} — ${a.nama}`}
-              getDescription={(a) => labelKelompokAkun(a.kelompok)}
-              onChange={(opt) => setAkunKode(opt ? opt.kode : "")}
-              placeholder={akunLoading ? "Memuat akun…" : "— Pilih akun —"}
-              searchPlaceholder="Cari berdasarkan kode atau nama akun…"
-              disabled={akunLoading}
-              clearable
-            />
+        <div className="flex justify-between gap-4">
+          <div className="flex gap-4">
+            <div>
+              <label htmlFor="bb-akun" className="block text-sm font-medium text-zinc-700">
+                Akun
+              </label>
+              <TokoLookup
+                id="bb-akun"
+                options={akunList}
+                value={akunKode || null}
+                getKey={(a) => a.kode}
+                getLabel={(a) => `${a.kode} — ${a.nama}`}
+                getDescription={(a) => labelKelompokAkun(a.kelompok)}
+                onChange={(opt) => setAkunKode(opt ? opt.kode : "")}
+                placeholder={akunLoading ? "Memuat akun…" : "— Pilih akun —"}
+                searchPlaceholder="Cari berdasarkan kode atau nama akun…"
+                disabled={akunLoading}
+                clearable
+              />
+            </div>
+            <div>
+              <label htmlFor="bb-dari" className="block text-sm font-medium text-zinc-700">
+                Tanggal mulai
+              </label>
+              <TokoInput
+                id="bb-dari"
+                type="date"
+                value={tanggalDari}
+                onChange={(e) => setTanggalDari(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label htmlFor="bb-sampai" className="block text-sm font-medium text-zinc-700">
+                Tanggal akhir
+              </label>
+              <TokoInput
+                id="bb-sampai"
+                type="date"
+                value={tanggalSampai}
+                min={tanggalDari}
+                onChange={(e) => setTanggalSampai(e.target.value)}
+                className={inputClass}
+              />
+            </div>
           </div>
-          <div>
-            <label htmlFor="bb-dari" className="block text-sm font-medium text-zinc-700">
-              Tanggal mulai
-            </label>
-            <TokoInput
-              id="bb-dari"
-              type="date"
-              value={tanggalDari}
-              onChange={(e) => setTanggalDari(e.target.value)}
-              className={inputClass}
-            />
+          <div className="flex gap-2 self-end">
+            <Button
+              type="button"
+              className="h-9 self-end"
+              variant="secondary"
+              disabled={listLoading || rentangInvalid || !akunKode}
+              onClick={() => void fetchSnapshot()}
+            >
+              <Filter className="h-4 w-4" aria-hidden />
+              {listLoading ? "Memuat…" : "Terapkan filter"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              className="h-9 self-end"
+              onClick={() => void handleExport()}
+              disabled={
+                listLoading ||
+                exporting ||
+                rentangInvalid ||
+                !akunKode ||
+                !snapshot ||
+                snapshot.entries.length === 0
+              }
+              title={
+                !akunKode
+                  ? "Pilih akun terlebih dahulu"
+                  : !snapshot || snapshot.entries.length === 0
+                    ? "Tidak ada mutasi pada rentang ini"
+                    : `Export ${snapshot.entries.length} baris mutasi ke .xlsx`
+              }
+            >
+              <Sheet className="h-4 w-4" aria-hidden />
+              {exporting ? "Mengexport…" : "Export XLSX"}
+            </Button>
           </div>
-          <div>
-            <label htmlFor="bb-sampai" className="block text-sm font-medium text-zinc-700">
-              Tanggal akhir
-            </label>
-            <TokoInput
-              id="bb-sampai"
-              type="date"
-              value={tanggalSampai}
-              min={tanggalDari}
-              onChange={(e) => setTanggalSampai(e.target.value)}
-              className={inputClass}
-            />
-          </div>
-          <Button
-            type="button"
-            className="h-11 w-full lg:w-auto"
-            disabled={listLoading || rentangInvalid || !akunKode}
-            onClick={() => void fetchSnapshot()}
-          >
-            Terapkan filter
-          </Button>
         </div>
         {rentangInvalid ? (
           <p className="mt-2 text-sm text-amber-700">

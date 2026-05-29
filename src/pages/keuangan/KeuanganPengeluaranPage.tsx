@@ -171,6 +171,10 @@ export function KeuanganPengeluaranPage() {
             </div>
           </div>
           <div className="flex gap-2">
+            <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
+              <Filter className="h-4 w-4" aria-hidden />
+              {loading ? "Memuat…" : "Terapkan filter"}
+            </Button>
             <Button
               type="button"
               variant="secondary"
@@ -184,10 +188,6 @@ export function KeuanganPengeluaranPage() {
             >
               <Sheet className="h-4 w-4" aria-hidden />
               {exporting ? "Mengexport…" : "Export XLSX"}
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
-              <Filter className="h-4 w-4" aria-hidden />
-              {loading ? "Memuat…" : "Terapkan filter"}
             </Button>
           </div>
         </div>

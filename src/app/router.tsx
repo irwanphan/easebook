@@ -81,6 +81,7 @@ import { LaporanMutasiAntarGudangPage } from "@/pages/laporan/LaporanMutasiAntar
 import { LaporanHppPage } from "@/pages/laporan/LaporanHppPage";
 import { LaporanHppDetailPage } from "@/pages/laporan/LaporanHppDetailPage";
 import { LaporanLogShiftPosPage } from "@/pages/laporan/LaporanLogShiftPosPage";
+import { LaporanLabaRugiPage } from "@/pages/laporan/LaporanLabaRugiPage";
 import { ProfilPenggunaPage } from "@/pages/ProfilPenggunaPage";
 import { PengaturanAksesCepatPage } from "@/pages/PengaturanAksesCepatPage";
 
@@ -124,6 +125,7 @@ export const mainRouter = createHashRouter([
       { path: "laporan/hpp", element: <LaporanHppPage /> },
       { path: "laporan/hpp/:kode", element: <LaporanHppDetailPage /> },
       { path: "laporan/log-shift-pos", element: <LaporanLogShiftPosPage /> },
+      { path: "laporan/laba-rugi", element: <LaporanLabaRugiPage /> },
       { path: "penjualan/tambah", element: <TambahPenjualanPage /> },
       { path: "penjualan/detail/:nomor", element: <PenjualanDetailPage /> },
       { path: "penjualan/ubah/:nomor", element: <UbahPenjualanPage /> },

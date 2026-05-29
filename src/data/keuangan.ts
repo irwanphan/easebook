@@ -162,6 +162,50 @@ export type BukuBesarRow = {
   saldoRunning: number;
 };
 
+/** Seksi pada laporan laba rugi. */
+export type LabaRugiSeksi = "PENDAPATAN" | "HPP" | "BEBAN";
+
+export function labelLabaRugiSeksi(seksi: string): string {
+  if (seksi === "PENDAPATAN") return "Pendapatan";
+  if (seksi === "HPP") return "Harga pokok penjualan";
+  if (seksi === "BEBAN") return "Beban operasional";
+  return seksi || "—";
+}
+
+/** Satu baris akun di laporan laba rugi. */
+export type LabaRugiAkunRow = {
+  akunKode: string;
+  akunNama: string;
+  /** Kelompok besar akun (mis. PENDAPATAN, BIAYA). */
+  kelompok: string;
+  /** Kelompok khusus laba rugi bila di-set (PENDAPATAN/HPP/BEBAN). */
+  kelompokLr: string;
+  subKelompok: string;
+  totalDebit: number;
+  totalKredit: number;
+  /**
+   * Nilai natural per seksi:
+   * - PENDAPATAN: kredit − debit.
+   * - HPP / BEBAN: debit − kredit.
+   */
+  nilai: number;
+  seksi: LabaRugiSeksi | string;
+};
+
+/** Snapshot laporan laba rugi untuk satu rentang tanggal. */
+export type LabaRugiSnapshot = {
+  tanggalDari: string;
+  tanggalSampai: string;
+  akun: LabaRugiAkunRow[];
+  totalPendapatan: number;
+  totalHpp: number;
+  /** = totalPendapatan − totalHpp. */
+  labaKotor: number;
+  totalBeban: number;
+  /** = labaKotor − totalBeban. */
+  labaBersih: number;
+};
+
 /** Snapshot buku besar untuk satu akun pada rentang tanggal tertentu. */
 export type BukuBesarSnapshot = {
   akunKode: string;

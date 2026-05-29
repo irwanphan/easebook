@@ -7318,6 +7318,165 @@ pub fn buku_besar_get(
     })
 }
 
+/// Satu baris akun dalam laporan laba rugi.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LabaRugiAkunRow {
+    pub akun_kode: String,
+    pub akun_nama: String,
+    pub kelompok: String,
+    pub kelompok_lr: String,
+    pub sub_kelompok: String,
+    /// Total debet pada periode.
+    pub total_debit: i64,
+    /// Total kredit pada periode.
+    pub total_kredit: i64,
+    /// Nilai natural untuk laba rugi pada seksinya:
+    /// - PENDAPATAN: kredit − debit (positif = pendapatan masuk).
+    /// - HPP / BEBAN: debit − kredit (positif = beban tercatat).
+    pub nilai: i64,
+    /// `"PENDAPATAN"` | `"HPP"` | `"BEBAN"`.
+    pub seksi: String,
+}
+
+/// Snapshot laporan laba rugi pada rentang tanggal tertentu.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LabaRugiSnapshot {
+    pub tanggal_dari: String,
+    pub tanggal_sampai: String,
+    pub akun: Vec<LabaRugiAkunRow>,
+    pub total_pendapatan: i64,
+    pub total_hpp: i64,
+    pub laba_kotor: i64,
+    pub total_beban: i64,
+    pub laba_bersih: i64,
+}
+
+/// Tentukan seksi laba rugi sebuah akun. `kelompok_lr` eksplisit menang
+/// (memungkinkan akun lain misal Aktiva ditandai "BEBAN" / "PENDAPATAN"
+/// untuk kebutuhan khusus). Fallback ke `kelompok` standar.
+fn klasifikasi_seksi_lr(kelompok: &str, kelompok_lr: &str) -> Option<&'static str> {
+    let lr = kelompok_lr.trim().to_uppercase();
+    match lr.as_str() {
+        "PENDAPATAN" => return Some("PENDAPATAN"),
+        "HPP" => return Some("HPP"),
+        "BEBAN" => return Some("BEBAN"),
+        _ => {}
+    }
+    let k = kelompok.trim().to_uppercase();
+    match k.as_str() {
+        "PENDAPATAN" => Some("PENDAPATAN"),
+        "BIAYA" => Some("BEBAN"),
+        _ => None,
+    }
+}
+
+/// Laporan Laba Rugi (Income Statement) untuk rentang tanggal.
+///
+/// Mengagregasi mutasi `jurnal_umum_line` per akun (hanya akun yang termasuk
+/// seksi laba rugi). Akun tanpa mutasi pada periode dikecualikan supaya tabel
+/// ringkas. Nilai disajikan dalam basis natural seksi (selalu positif untuk
+/// pendapatan/biaya yang wajar; negatif bila ada reversal/koreksi).
+///
+/// Total:
+/// - `total_pendapatan` − `total_hpp` = `laba_kotor`
+/// - `laba_kotor` − `total_beban` = `laba_bersih`
+#[tauri::command]
+pub fn laba_rugi_get(
+    state: State<DbState>,
+    tanggal_dari: String,
+    tanggal_sampai: String,
+) -> Result<LabaRugiSnapshot, String> {
+    let dari = tanggal_dari.trim();
+    let sampai = tanggal_sampai.trim();
+    let d1 = NaiveDate::parse_from_str(dari, "%Y-%m-%d")
+        .map_err(|_| "Tanggal mulai tidak valid (YYYY-MM-DD).".to_string())?;
+    let d2 = NaiveDate::parse_from_str(sampai, "%Y-%m-%d")
+        .map_err(|_| "Tanggal akhir tidak valid (YYYY-MM-DD).".to_string())?;
+    if d2 < d1 {
+        return Err("Tanggal akhir tidak boleh sebelum tanggal mulai.".into());
+    }
+
+    with_conn(&state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT l.akun_kode, a.nama,
+                    COALESCE(a.kelompok, ''), COALESCE(a.kelompok_lr, ''),
+                    COALESCE(a.sub_kelompok, ''),
+                    COALESCE(SUM(l.debit), 0), COALESCE(SUM(l.kredit), 0)
+             FROM jurnal_umum_line l
+             INNER JOIN jurnal_umum j ON j.id = l.jurnal_id
+             INNER JOIN akun_keuangan a ON lower(a.kode) = lower(l.akun_kode)
+             WHERE j.tanggal >= ? AND j.tanggal <= ?
+               AND (UPPER(COALESCE(a.kelompok,'')) IN ('PENDAPATAN','BIAYA')
+                    OR UPPER(COALESCE(a.kelompok_lr,'')) IN ('PENDAPATAN','HPP','BEBAN'))
+             GROUP BY l.akun_kode, a.nama, a.kelompok, a.kelompok_lr, a.sub_kelompok
+             HAVING SUM(l.debit) <> 0 OR SUM(l.kredit) <> 0
+             ORDER BY l.akun_kode COLLATE NOCASE ASC",
+        )?;
+
+        let raw_iter = stmt.query_map(params![dari, sampai], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, i64>(5)?,
+                r.get::<_, i64>(6)?,
+            ))
+        })?;
+
+        let mut akun: Vec<LabaRugiAkunRow> = Vec::new();
+        let mut total_pendapatan: i64 = 0;
+        let mut total_hpp: i64 = 0;
+        let mut total_beban: i64 = 0;
+
+        for raw in raw_iter {
+            let (kode, nama, kelompok, kelompok_lr, sub_kelompok, sum_d, sum_k) = raw?;
+            let seksi = match klasifikasi_seksi_lr(&kelompok, &kelompok_lr) {
+                Some(s) => s,
+                None => continue,
+            };
+            let nilai = match seksi {
+                "PENDAPATAN" => sum_k - sum_d,
+                _ => sum_d - sum_k,
+            };
+            match seksi {
+                "PENDAPATAN" => total_pendapatan += nilai,
+                "HPP" => total_hpp += nilai,
+                "BEBAN" => total_beban += nilai,
+                _ => {}
+            }
+            akun.push(LabaRugiAkunRow {
+                akun_kode: kode,
+                akun_nama: nama,
+                kelompok,
+                kelompok_lr,
+                sub_kelompok,
+                total_debit: sum_d,
+                total_kredit: sum_k,
+                nilai,
+                seksi: seksi.to_string(),
+            });
+        }
+
+        let laba_kotor = total_pendapatan - total_hpp;
+        let laba_bersih = laba_kotor - total_beban;
+
+        Ok(LabaRugiSnapshot {
+            tanggal_dari: dari.to_string(),
+            tanggal_sampai: sampai.to_string(),
+            akun,
+            total_pendapatan,
+            total_hpp,
+            laba_kotor,
+            total_beban,
+            laba_bersih,
+        })
+    })
+}
+
 #[tauri::command]
 pub fn jurnal_umum_list(
     state: State<DbState>,

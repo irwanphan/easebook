@@ -163,6 +163,7 @@ pub fn run() {
             master_commands::jurnal_konfigurasi_set,
             master_commands::jurnal_umum_list,
             master_commands::buku_besar_get,
+            master_commands::laba_rugi_get,
             master_commands::jurnal_umum_insert_transaksi,
             master_commands::jurnal_umum_insert_manual,
             master_commands::transfer_kas_list,

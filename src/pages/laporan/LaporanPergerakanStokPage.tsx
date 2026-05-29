@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Filter } from "lucide-react";
+import { ArrowLeft, Filter, Sheet } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -16,6 +16,7 @@ import {
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { tauriErrorMessage } from "@/lib/tauriError";
 import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
+import { useXlsxExport } from "@/lib/useXlsxExport";
 
 function toIsoDate(d: Date) {
   const y = d.getFullYear();
@@ -61,6 +62,13 @@ export function LaporanPergerakanStokPage() {
   const [error, setError] = useState<string | null>(null);
   /** Abaikan hasil invoke jika sudah ada permintaan muat yang lebih baru. */
   const loadRequestId = useRef(0);
+
+  const { exporting, exportNow } = useXlsxExport();
+
+  const rentangInvalid = useMemo(() => {
+    if (!tanggalDari || !tanggalSampai) return true;
+    return tanggalSampai < tanggalDari;
+  }, [tanggalDari, tanggalSampai]);
 
   const barangSorted = useMemo(
     () => [...barangItems].sort((a, b) => a.kode.localeCompare(b.kode, undefined, { sensitivity: "base" })),
@@ -139,6 +147,86 @@ export function LaporanPergerakanStokPage() {
     void load();
   }, []);
 
+  const handleExport = useCallback(async () => {
+    if (rentangInvalid || rows.length === 0) return;
+
+    const totalMasuk = rows.reduce((s, r) => s + r.qtyMasuk, 0);
+    const totalKeluar = rows.reduce((s, r) => s + r.qtyKeluar, 0);
+
+    const filterBarangLabel = filterBarangRow
+      ? `${filterBarangRow.kode} — ${filterBarangRow.nama}`
+      : filterBarang.trim()
+        ? filterBarang.trim()
+        : "Semua barang & jasa";
+
+    const fileSuffix = filterBarang.trim() ? `_${filterBarang.trim()}` : "";
+
+    await exportNow<StokMutasiRow>({
+      fileName: `laporan_pergerakan_stok_${tanggalDari}_sd_${tanggalSampai}${fileSuffix}`,
+      sheetName: "Pergerakan stok",
+      title: "Laporan Pergerakan Stok",
+      meta: [
+        { label: "Periode", value: `${formatTanggal(tanggalDari)} – ${formatTanggal(tanggalSampai)}` },
+        { label: "Barang", value: filterBarangLabel },
+        { label: "Jumlah mutasi", value: rows.length },
+        {
+          label: "Catatan",
+          value: filterBarang.trim()
+            ? `Qty dalam satuan terkecil (${filterSatuanMeta.satuanStok ?? "—"}).`
+            : "Qty dalam satuan terkecil tiap barang — lihat kolom Satuan stok per baris.",
+        },
+      ],
+      columns: [
+        { header: "Tanggal", value: (r) => r.tanggalTransaksi, type: "date" },
+        { header: "Waktu input", value: (r) => new Date(r.waktu * 1000), type: "dateTime" },
+        { header: "Kode barang", value: (r) => r.barangKode, type: "text", width: 16 },
+        { header: "Nama barang", value: (r) => r.barangNama, type: "text", width: 30 },
+        {
+          header: "Satuan stok",
+          value: (r) => {
+            const s = satuanStokUntukBaris(r.barangKode);
+            return s === "—" ? "" : s;
+          },
+          type: "text",
+          width: 12,
+        },
+        { header: "Jenis", value: (r) => labelJenisMutasi(r.jenis), type: "text", width: 20 },
+        { header: "Referensi", value: (r) => r.referensi, type: "text", width: 18 },
+        { header: "Kode gudang", value: (r) => r.gudangKode, type: "text", width: 14 },
+        { header: "Gudang", value: (r) => r.gudangNama, type: "text", width: 24 },
+        { header: "Qty masuk", value: (r) => r.qtyMasuk, type: "integer", width: 12 },
+        { header: "Qty keluar", value: (r) => r.qtyKeluar, type: "integer", width: 12 },
+        { header: "Saldo setelah", value: (r) => r.saldoSetelah, type: "integer", width: 14 },
+        { header: "Catatan", value: (r) => r.catatan, type: "text", width: 30 },
+      ],
+      data: rows,
+      footerRow: [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        { value: "TOTAL", type: "text" },
+        { value: totalMasuk, type: "integer" },
+        { value: totalKeluar, type: "integer" },
+        null,
+        null,
+      ],
+    });
+  }, [
+    exportNow,
+    filterBarang,
+    filterBarangRow,
+    filterSatuanMeta,
+    rentangInvalid,
+    rows,
+    tanggalDari,
+    tanggalSampai,
+  ]);
+
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <div>
@@ -156,49 +244,51 @@ export function LaporanPergerakanStokPage() {
       </div>
 
       <Card>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:items-end">
-          <div>
-            <label htmlFor="lap-dari" className="block text-sm font-medium text-zinc-700">
-              Tanggal mulai
-            </label>
-            <TokoInput
-              id="lap-dari"
-              type="date"
-              value={tanggalDari}
-              onChange={(e) => setTanggalDari(e.target.value)}
-            />
+        <div className="flex justify-between gap-4">
+          <div className="flex gap-4">
+            <div>
+              <label htmlFor="lap-dari" className="block text-sm font-medium text-zinc-700">
+                Tanggal mulai
+              </label>
+              <TokoInput
+                id="lap-dari"
+                type="date"
+                value={tanggalDari}
+                onChange={(e) => setTanggalDari(e.target.value)}
+              />
+            </div>
+            <div>
+              <label htmlFor="lap-sampai" className="block text-sm font-medium text-zinc-700">
+                Tanggal akhir
+              </label>
+              <TokoInput
+                id="lap-sampai"
+                type="date"
+                value={tanggalSampai}
+                onChange={(e) => setTanggalSampai(e.target.value)}
+              />
+            </div>
+            <div className="sm:col-span-2 lg:col-span-1">
+              <label htmlFor="lap-brg" className="block text-sm font-medium text-zinc-700">
+                Barang (opsional)
+              </label>
+              <TokoSelect
+                id="lap-brg"
+                value={filterBarang}
+                onChange={(e) => setFilterBarang(e.target.value)}
+                disabled={barangLoading}
+              >
+                <option value="">Semua barang &amp; jasa</option>
+                {barangSorted.map((b) => (
+                  <option key={b.kode} value={b.kode}>
+                    {b.kode} — {b.nama}
+                    {b.tipe === "Barang" ? ` (stok ${b.stok ?? 0} ${getSatuanStokBarang(b)})` : ""}
+                  </option>
+                ))}
+              </TokoSelect>
+            </div>
           </div>
-          <div>
-            <label htmlFor="lap-sampai" className="block text-sm font-medium text-zinc-700">
-              Tanggal akhir
-            </label>
-            <TokoInput
-              id="lap-sampai"
-              type="date"
-              value={tanggalSampai}
-              onChange={(e) => setTanggalSampai(e.target.value)}
-            />
-          </div>
-          <div className="sm:col-span-2 lg:col-span-1">
-            <label htmlFor="lap-brg" className="block text-sm font-medium text-zinc-700">
-              Barang (opsional)
-            </label>
-            <TokoSelect
-              id="lap-brg"
-              value={filterBarang}
-              onChange={(e) => setFilterBarang(e.target.value)}
-              disabled={barangLoading}
-            >
-              <option value="">Semua barang &amp; jasa</option>
-              {barangSorted.map((b) => (
-                <option key={b.kode} value={b.kode}>
-                  {b.kode} — {b.nama}
-                  {b.tipe === "Barang" ? ` (stok ${b.stok ?? 0} ${getSatuanStokBarang(b)})` : ""}
-                </option>
-              ))}
-            </TokoSelect>
-          </div>
-          <div className="flex sm:col-span-2 lg:col-span-1">
+          <div className="flex items-end gap-2">
             <Button
               type="button"
               variant="secondary"
@@ -208,6 +298,21 @@ export function LaporanPergerakanStokPage() {
             >
               <Filter className="h-4 w-4" aria-hidden />
               Terapkan
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              className="h-10 w-full whitespace-nowrap"
+              onClick={() => void handleExport()}
+              disabled={loading || sinkronBusy || exporting || rentangInvalid || rows.length === 0}
+              title={
+                rows.length === 0
+                  ? "Tidak ada data pada filter ini"
+                  : `Export ${rows.length} mutasi ke .xlsx`
+              }
+            >
+              <Sheet className="h-4 w-4" aria-hidden />
+              {exporting ? "Mengexport…" : "Export XLSX"}
             </Button>
           </div>
         </div>

@@ -206,6 +206,56 @@ export type LabaRugiSnapshot = {
   labaBersih: number;
 };
 
+/** Seksi pada laporan neraca. */
+export type NeracaSeksi =
+  | "AKTIVA_LANCAR"
+  | "AKTIVA_TETAP"
+  | "HUTANG_LANCAR"
+  | "HUTANG_JANGKA_PANJANG"
+  | "MODAL";
+
+/** Satu baris akun pada laporan neraca (saldo natural per tanggal cutoff). */
+export type NeracaAkunRow = {
+  akunKode: string;
+  akunNama: string;
+  kelompok: string;
+  /** "D" atau "K" — sisi normal akun. */
+  kolomNorm: string;
+  totalDebit: number;
+  totalKredit: number;
+  /** Saldo natural pada cutoff (positif = sisi normal akun). */
+  saldo: number;
+};
+
+/** Snapshot laporan neraca (balance sheet) per satu tanggal cutoff. */
+export type NeracaSnapshot = {
+  tanggal: string;
+  aktivaLancar: NeracaAkunRow[];
+  aktivaTetap: NeracaAkunRow[];
+  hutangLancar: NeracaAkunRow[];
+  hutangJangkaPanjang: NeracaAkunRow[];
+  modal: NeracaAkunRow[];
+  totalAktivaLancar: number;
+  totalAktivaTetap: number;
+  totalAktiva: number;
+  totalHutangLancar: number;
+  totalHutangJangkaPanjang: number;
+  totalHutang: number;
+  /** Jumlah saldo akun-akun MODAL yang tercatat di jurnal. */
+  totalModalTercatat: number;
+  /**
+   * Laba (positif) / rugi (negatif) berjalan periode-to-date, dihitung dari
+   * mutasi akun pendapatan/HPP/beban sampai dengan `tanggal`.
+   */
+  labaBerjalan: number;
+  /** = totalModalTercatat + labaBerjalan. */
+  totalModal: number;
+  /** = totalHutang + totalModal. */
+  totalPasiva: number;
+  /** totalAktiva − totalPasiva. Idealnya 0. */
+  selisih: number;
+};
+
 /** Snapshot buku besar untuk satu akun pada rentang tanggal tertentu. */
 export type BukuBesarSnapshot = {
   akunKode: string;

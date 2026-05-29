@@ -58,6 +58,7 @@ export const primaryNavEntries: PrimaryNavEntry[] = [
       { id: "lap-mutasi-gudang", label: "Mutasi antar gudang", path: "/laporan/mutasi-antar-gudang" },
       { id: "lap-hpp", label: "HPP", path: "/laporan/hpp" },
       { id: "lap-laba-rugi", label: "Laba rugi", path: "/laporan/laba-rugi" },
+      { id: "lap-neraca", label: "Neraca", path: "/laporan/neraca" },
       { id: "lap-log-shift-pos", label: "Log shift POS", path: "/laporan/log-shift-pos" },
     ],
   },

@@ -7477,6 +7477,222 @@ pub fn laba_rugi_get(
     })
 }
 
+/// Satu baris akun pada laporan neraca. `saldo` selalu dalam basis natural
+/// (positif = sisi normal akun).
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct NeracaAkunRow {
+    pub akun_kode: String,
+    pub akun_nama: String,
+    pub kelompok: String,
+    /// "D" atau "K" — sisi normal akun.
+    pub kolom_norm: String,
+    pub total_debit: i64,
+    pub total_kredit: i64,
+    /// Saldo natural per tanggal cutoff (positif = sisi normal).
+    pub saldo: i64,
+}
+
+/// Snapshot laporan neraca (balance sheet) per satu tanggal cutoff.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct NeracaSnapshot {
+    pub tanggal: String,
+    pub aktiva_lancar: Vec<NeracaAkunRow>,
+    pub aktiva_tetap: Vec<NeracaAkunRow>,
+    pub hutang_lancar: Vec<NeracaAkunRow>,
+    pub hutang_jangka_panjang: Vec<NeracaAkunRow>,
+    pub modal: Vec<NeracaAkunRow>,
+    pub total_aktiva_lancar: i64,
+    pub total_aktiva_tetap: i64,
+    pub total_aktiva: i64,
+    pub total_hutang_lancar: i64,
+    pub total_hutang_jangka_panjang: i64,
+    pub total_hutang: i64,
+    /// Jumlah saldo akun-akun MODAL yang tercatat di jurnal (belum termasuk
+    /// laba berjalan yang dihitung dari akun pendapatan & biaya).
+    pub total_modal_tercatat: i64,
+    /// Laba (positif) atau rugi (negatif) berjalan periode-to-date,
+    /// dihitung dari mutasi akun PENDAPATAN/HPP/BEBAN ≤ tanggal.
+    pub laba_berjalan: i64,
+    /// = total_modal_tercatat + laba_berjalan.
+    pub total_modal: i64,
+    /// Sisi pasiva = total_hutang + total_modal.
+    pub total_pasiva: i64,
+    /// total_aktiva − total_pasiva. Idealnya 0; nilai non-nol berarti ada
+    /// pembukuan yang belum seimbang (mis. saldo awal belum dijurnal lawan).
+    pub selisih: i64,
+}
+
+/// Laporan Neraca (Balance Sheet) per satu tanggal cutoff.
+///
+/// Mengagregasi saldo akun aset, kewajiban, dan ekuitas berdasarkan
+/// `jurnal_umum_line` dengan `j.tanggal <= ?`. Laba berjalan period-to-date
+/// dihitung dari akun pendapatan/HPP/beban dan otomatis ditambahkan ke sisi
+/// pasiva (modal), sehingga neraca tetap seimbang meskipun belum ada
+/// closing entry ke "Laba Ditahan".
+///
+/// Saldo dipresentasikan dalam basis natural (positif = sisi wajar akun).
+/// Akun tanpa mutasi sampai dengan tanggal cutoff dikecualikan supaya
+/// laporan ringkas.
+#[tauri::command]
+pub fn neraca_get(state: State<DbState>, tanggal: String) -> Result<NeracaSnapshot, String> {
+    let cutoff = tanggal.trim();
+    NaiveDate::parse_from_str(cutoff, "%Y-%m-%d")
+        .map_err(|_| "Tanggal tidak valid (gunakan YYYY-MM-DD).".to_string())?;
+
+    with_conn(&state, |conn| {
+        // ---------- 1. Akun-akun neraca (aktiva / hutang / modal) ----------
+        let mut stmt = conn.prepare(
+            "SELECT l.akun_kode, a.nama, COALESCE(a.kelompok, ''),
+                    COALESCE(a.kolom_norm, ''),
+                    COALESCE(SUM(l.debit), 0), COALESCE(SUM(l.kredit), 0)
+             FROM jurnal_umum_line l
+             INNER JOIN jurnal_umum j ON j.id = l.jurnal_id
+             INNER JOIN akun_keuangan a ON lower(a.kode) = lower(l.akun_kode)
+             WHERE j.tanggal <= ?
+               AND UPPER(COALESCE(a.kelompok, '')) IN (
+                   'AKTIVA_LANCAR','AKTIVA_TETAP',
+                   'HUTANG_LANCAR','HUTANG_JANGKA_PANJANG',
+                   'MODAL'
+               )
+             GROUP BY l.akun_kode, a.nama, a.kelompok, a.kolom_norm
+             HAVING SUM(l.debit) <> 0 OR SUM(l.kredit) <> 0
+             ORDER BY l.akun_kode COLLATE NOCASE ASC",
+        )?;
+
+        let raw_iter = stmt.query_map(params![cutoff], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, i64>(4)?,
+                r.get::<_, i64>(5)?,
+            ))
+        })?;
+
+        let mut aktiva_lancar: Vec<NeracaAkunRow> = Vec::new();
+        let mut aktiva_tetap: Vec<NeracaAkunRow> = Vec::new();
+        let mut hutang_lancar: Vec<NeracaAkunRow> = Vec::new();
+        let mut hutang_jangka_panjang: Vec<NeracaAkunRow> = Vec::new();
+        let mut modal: Vec<NeracaAkunRow> = Vec::new();
+
+        let mut total_aktiva_lancar: i64 = 0;
+        let mut total_aktiva_tetap: i64 = 0;
+        let mut total_hutang_lancar: i64 = 0;
+        let mut total_hutang_jangka_panjang: i64 = 0;
+        let mut total_modal_tercatat: i64 = 0;
+
+        for raw in raw_iter {
+            let (kode, nama, kelompok, kolom_norm_raw, sum_d, sum_k) = raw?;
+            let kn = kolom_norm_raw.trim().to_uppercase();
+            // Saldo natural: akun D-side = D − K, akun K-side = K − D.
+            let saldo = if kn == "K" { sum_k - sum_d } else { sum_d - sum_k };
+
+            let row = NeracaAkunRow {
+                akun_kode: kode,
+                akun_nama: nama,
+                kelompok: kelompok.clone(),
+                kolom_norm: kn,
+                total_debit: sum_d,
+                total_kredit: sum_k,
+                saldo,
+            };
+
+            match kelompok.trim().to_uppercase().as_str() {
+                "AKTIVA_LANCAR" => {
+                    total_aktiva_lancar += saldo;
+                    aktiva_lancar.push(row);
+                }
+                "AKTIVA_TETAP" => {
+                    total_aktiva_tetap += saldo;
+                    aktiva_tetap.push(row);
+                }
+                "HUTANG_LANCAR" => {
+                    total_hutang_lancar += saldo;
+                    hutang_lancar.push(row);
+                }
+                "HUTANG_JANGKA_PANJANG" => {
+                    total_hutang_jangka_panjang += saldo;
+                    hutang_jangka_panjang.push(row);
+                }
+                "MODAL" => {
+                    total_modal_tercatat += saldo;
+                    modal.push(row);
+                }
+                _ => {}
+            }
+        }
+
+        // ---------- 2. Laba berjalan period-to-date ----------
+        // Hitung dari semua mutasi akun pendapatan/HPP/beban sampai cutoff,
+        // pakai aturan klasifikasi yang sama dengan laporan laba rugi.
+        let mut lr_stmt = conn.prepare(
+            "SELECT COALESCE(a.kelompok, ''), COALESCE(a.kelompok_lr, ''),
+                    COALESCE(SUM(l.debit), 0), COALESCE(SUM(l.kredit), 0)
+             FROM jurnal_umum_line l
+             INNER JOIN jurnal_umum j ON j.id = l.jurnal_id
+             INNER JOIN akun_keuangan a ON lower(a.kode) = lower(l.akun_kode)
+             WHERE j.tanggal <= ?
+               AND (UPPER(COALESCE(a.kelompok,'')) IN ('PENDAPATAN','BIAYA')
+                    OR UPPER(COALESCE(a.kelompok_lr,'')) IN ('PENDAPATAN','HPP','BEBAN'))
+             GROUP BY l.akun_kode, a.kelompok, a.kelompok_lr",
+        )?;
+        let lr_iter = lr_stmt.query_map(params![cutoff], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, i64>(3)?,
+            ))
+        })?;
+        let mut total_pendapatan: i64 = 0;
+        let mut total_hpp: i64 = 0;
+        let mut total_beban: i64 = 0;
+        for raw in lr_iter {
+            let (kelompok, kelompok_lr, sum_d, sum_k) = raw?;
+            let seksi = match klasifikasi_seksi_lr(&kelompok, &kelompok_lr) {
+                Some(s) => s,
+                None => continue,
+            };
+            match seksi {
+                "PENDAPATAN" => total_pendapatan += sum_k - sum_d,
+                "HPP" => total_hpp += sum_d - sum_k,
+                "BEBAN" => total_beban += sum_d - sum_k,
+                _ => {}
+            }
+        }
+        let laba_berjalan = total_pendapatan - total_hpp - total_beban;
+
+        let total_aktiva = total_aktiva_lancar + total_aktiva_tetap;
+        let total_hutang = total_hutang_lancar + total_hutang_jangka_panjang;
+        let total_modal = total_modal_tercatat + laba_berjalan;
+        let total_pasiva = total_hutang + total_modal;
+        let selisih = total_aktiva - total_pasiva;
+
+        Ok(NeracaSnapshot {
+            tanggal: cutoff.to_string(),
+            aktiva_lancar,
+            aktiva_tetap,
+            hutang_lancar,
+            hutang_jangka_panjang,
+            modal,
+            total_aktiva_lancar,
+            total_aktiva_tetap,
+            total_aktiva,
+            total_hutang_lancar,
+            total_hutang_jangka_panjang,
+            total_hutang,
+            total_modal_tercatat,
+            laba_berjalan,
+            total_modal,
+            total_pasiva,
+            selisih,
+        })
+    })
+}
+
 #[tauri::command]
 pub fn jurnal_umum_list(
     state: State<DbState>,

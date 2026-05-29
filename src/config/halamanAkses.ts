@@ -174,6 +174,11 @@ export const halamanAksesGroups: HalamanAksesGroup[] = [
         label: "Buat pelunasan piutang",
         pathPattern: "keuangan/piutang/buat-pelunasan",
       },
+      {
+        key: "ke-piutang-aging",
+        label: "Laporan aging piutang",
+        pathPattern: "keuangan/piutang/aging",
+      },
       { key: "ke-hutang", label: "Daftar hutang", pathPattern: "keuangan/hutang/daftar-hutang" },
       {
         key: "ke-hutang-daftar",
@@ -189,6 +194,11 @@ export const halamanAksesGroups: HalamanAksesGroup[] = [
         key: "ke-hutang-buat",
         label: "Buat pelunasan hutang",
         pathPattern: "keuangan/hutang/buat-pelunasan",
+      },
+      {
+        key: "ke-hutang-aging",
+        label: "Laporan aging hutang",
+        pathPattern: "keuangan/hutang/aging",
       },
       { key: "ke-transfer", label: "Transfer", pathPattern: "keuangan/transfer" },
       { key: "ke-daftar-akun", label: "Daftar akun", pathPattern: "keuangan/daftar-akun" },

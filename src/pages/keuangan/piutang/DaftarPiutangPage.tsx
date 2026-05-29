@@ -9,7 +9,7 @@ import { PelunasanPiutangModal } from "@/features/keuangan/PelunasanPiutangModal
 import type { BuatPelunasanPiutangLocationState, PiutangBelumLunasRow } from "@/data/pelunasanPiutang";
 import { tauriErrorMessage } from "@/lib/tauriError";
 import { TokoSelect } from "@/components/ui/TokoInput";
-import { HandCoins, List, Plus, RefreshCcw, Sheet } from "lucide-react";
+import { HandCoins, Hourglass, List, Plus, RefreshCcw, Sheet } from "lucide-react";
 import { VerticalSeparator } from "@/components/ui/Separator";
 import { useXlsxExport } from "@/lib/useXlsxExport";
 
@@ -177,6 +177,10 @@ export function DaftarPiutangPage() {
         description="Faktur penjualan kredit (belum diterima tunai). Catat pembayaran pelanggan untuk melunasi piutang."
         actions={
           <>
+            <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/piutang/aging")}>
+              <Hourglass className="h-4 w-4" aria-hidden />
+              Aging piutang
+            </Button>
             <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/piutang/daftar-pelunasan")}>
               <List className="h-4 w-4" aria-hidden />
               Daftar pelunasan piutang

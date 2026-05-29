@@ -63,10 +63,12 @@ import { DaftarPiutangPage } from "@/pages/keuangan/piutang/DaftarPiutangPage";
 import { BuatPelunasanPiutangPage } from "@/pages/keuangan/piutang/BuatPelunasanPiutangPage";
 import { DaftarPelunasanPiutangPage } from "@/pages/keuangan/piutang/DaftarPelunasanPiutangPage";
 import { PelunasanPiutangDetailPage } from "@/pages/keuangan/piutang/PelunasanPiutangDetailPage";
+import { LaporanAgingPiutangPage } from "@/pages/keuangan/piutang/LaporanAgingPiutangPage";
 import { DaftarHutangPage } from "@/pages/keuangan/hutang/DaftarHutangPage";
 import { BuatPelunasanHutangPage } from "@/pages/keuangan/hutang/BuatPelunasanHutangPage";
 import { DaftarPelunasanHutangPage } from "@/pages/keuangan/hutang/DaftarPelunasanHutangPage";
 import { PelunasanHutangDetailPage } from "@/pages/keuangan/hutang/PelunasanHutangDetailPage";
+import { LaporanAgingHutangPage } from "@/pages/keuangan/hutang/LaporanAgingHutangPage";
 import { KeuanganTransferPage } from "@/pages/keuangan/KeuanganTransferPage";
 import { TransferKasDetailPage } from "@/pages/keuangan/TransferKasDetailPage";
 import { UbahTransferKasPage } from "@/pages/keuangan/UbahTransferKasPage";
@@ -175,11 +177,13 @@ export const mainRouter = createHashRouter([
       { path: "keuangan/piutang/daftar-pelunasan", element: <DaftarPelunasanPiutangPage /> },
       { path: "keuangan/piutang/daftar-pelunasan/:nomor", element: <PelunasanPiutangDetailPage /> },
       { path: "keuangan/piutang/buat-pelunasan", element: <BuatPelunasanPiutangPage /> },
+      { path: "keuangan/piutang/aging", element: <LaporanAgingPiutangPage /> },
       { path: "keuangan/hutang", element: <Navigate to="/keuangan/hutang/daftar-hutang" replace /> },
       { path: "keuangan/hutang/daftar-hutang", element: <DaftarHutangPage /> },
       { path: "keuangan/hutang/daftar-pelunasan", element: <DaftarPelunasanHutangPage /> },
       { path: "keuangan/hutang/daftar-pelunasan/:nomor", element: <PelunasanHutangDetailPage /> },
       { path: "keuangan/hutang/buat-pelunasan", element: <BuatPelunasanHutangPage /> },
+      { path: "keuangan/hutang/aging", element: <LaporanAgingHutangPage /> },
       { path: "keuangan/transfer/detail/:nomor", element: <TransferKasDetailPage /> },
       { path: "keuangan/transfer/ubah/:nomor", element: <UbahTransferKasPage /> },
       { path: "keuangan/transfer", element: <KeuanganTransferPage /> },

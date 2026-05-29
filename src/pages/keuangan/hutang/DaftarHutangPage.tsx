@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CreditCard, List, Plus, RefreshCcw, Sheet } from "lucide-react";
+import { CreditCard, Hourglass, List, Plus, RefreshCcw, Sheet } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -175,6 +175,10 @@ export function DaftarHutangPage() {
         description="Faktur pembelian kredit (belum dibayar tunai). Catat pembayaran ke supplier untuk melunasi hutang dagang."
         actions={
           <>
+            <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/hutang/aging")}>
+              <Hourglass className="h-4 w-4" aria-hidden />
+              Aging hutang
+            </Button>
             <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/hutang/daftar-pelunasan")}>
               <List className="h-4 w-4" aria-hidden />
               Daftar pelunasan hutang

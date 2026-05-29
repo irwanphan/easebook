@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Sheet } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import type { StokMutasiRow } from "@/data/stokMutasi";
 import { labelJenisMutasi } from "@/data/stokMutasi";
 import {
@@ -14,6 +15,7 @@ import {
 } from "@/data/barangJasa";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { useXlsxExport } from "@/lib/useXlsxExport";
 
 function formatTanggal(iso: string) {
   const d = new Date(iso + "T12:00:00");
@@ -47,6 +49,8 @@ export function KartuStokBarangPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const { exporting, exportNow } = useXlsxExport();
+
   const load = useCallback(async () => {
     if (!kode.trim()) return;
     setLoading(true);
@@ -67,6 +71,70 @@ export function KartuStokBarangPage() {
   }, [load]);
 
   const saldoTerakhir = rows.length > 0 ? rows[rows.length - 1]!.saldoSetelah : barang?.stok;
+
+  const handleExport = useCallback(async () => {
+    if (rows.length === 0) return;
+    const kodeBarang = barang?.kode ?? kode;
+    const namaBarang = barang?.nama ?? "—";
+    const totalMasuk = rows.reduce((acc, r) => acc + (r.qtyMasuk || 0), 0);
+    const totalKeluar = rows.reduce((acc, r) => acc + (r.qtyKeluar || 0), 0);
+
+    await exportNow<StokMutasiRow>({
+      fileName: `kartu_stok_${kodeBarang || "barang"}`,
+      sheetName: "Kartu stok",
+      title: `Kartu Stok — ${kodeBarang} ${namaBarang}`,
+      meta: [
+        { label: "Kode barang", value: kodeBarang },
+        { label: "Nama barang", value: namaBarang },
+        { label: "Satuan stok", value: satuanStok },
+        ...(satuanMeta.konversiRingkasan
+          ? [{ label: "Hirarki satuan", value: satuanMeta.konversiRingkasan }]
+          : []),
+        ...(saldoTerakhir != null
+          ? [{ label: "Saldo saat ini", value: `${saldoTerakhir} ${satuanStok}` }]
+          : []),
+        { label: "Jumlah mutasi", value: rows.length },
+      ],
+      columns: [
+        {
+          header: "Tanggal",
+          value: (r) => {
+            const d = new Date(`${r.tanggalTransaksi}T12:00:00`);
+            return Number.isNaN(d.getTime()) ? r.tanggalTransaksi : d;
+          },
+          type: "date",
+          width: 12,
+        },
+        {
+          header: "Waktu catat",
+          value: (r) => new Date(r.waktu * 1000),
+          type: "dateTime",
+          width: 18,
+        },
+        { header: "Jenis", value: (r) => labelJenisMutasi(r.jenis), type: "text", width: 22 },
+        { header: "Referensi", value: (r) => r.referensi, type: "text", width: 20 },
+        { header: "Kode gudang", value: (r) => r.gudangKode, type: "text", width: 14 },
+        { header: "Gudang", value: (r) => r.gudangNama, type: "text", width: 24 },
+        { header: `Masuk (${satuanStok})`, value: (r) => r.qtyMasuk || 0, type: "numeric", width: 14 },
+        { header: `Keluar (${satuanStok})`, value: (r) => r.qtyKeluar || 0, type: "numeric", width: 14 },
+        { header: `Saldo (${satuanStok})`, value: (r) => r.saldoSetelah || 0, type: "numeric", width: 14 },
+        { header: "Catatan", value: (r) => r.catatan || "", type: "text", width: 32 },
+      ],
+      data: rows,
+      footerRow: [
+        null,
+        null,
+        null,
+        null,
+        null,
+        "Total",
+        { value: totalMasuk, type: "numeric" },
+        { value: totalKeluar, type: "numeric" },
+        null,
+        null,
+      ],
+    });
+  }, [barang, exportNow, kode, rows, saldoTerakhir, satuanMeta.konversiRingkasan, satuanStok]);
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
@@ -90,25 +158,43 @@ export function KartuStokBarangPage() {
 
       {barang?.tipe === "Barang" ? (
         <Card className="flex flex-wrap items-start justify-between gap-4 border-brand-100/80 bg-brand-50/40">
-          <div className="space-y-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-brand-800">Satuan pencatatan stok</p>
-            <p className="text-lg font-semibold text-zinc-900">{satuanMeta.satuanStok}</p>
-            {satuanMeta.konversiRingkasan ? (
-              <p className="text-sm text-zinc-600">
-                Hirarki satuan: <span className="font-medium">{satuanMeta.konversiRingkasan}</span>
-              </p>
-            ) : (
-              <p className="text-sm text-zinc-500">Satu tingkat satuan — semua mutasi dalam {satuanMeta.satuanStok}.</p>
-            )}
-          </div>
-          {saldoTerakhir != null ? (
-            <div className="text-right">
-              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Saldo saat ini</p>
-              <p className="text-lg font-semibold text-zinc-900">
-                {formatQtyDenganSatuan(saldoTerakhir, satuanMeta.satuanStok, "saldo")}
-              </p>
+          <div className="flex w-full flex-wrap items-start justify-between gap-4">
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-brand-800">Satuan pencatatan stok</p>
+              <p className="text-lg font-semibold text-zinc-900">{satuanMeta.satuanStok}</p>
+              {satuanMeta.konversiRingkasan ? (
+                <p className="text-sm text-zinc-600">
+                  Hirarki satuan: <span className="font-medium">{satuanMeta.konversiRingkasan}</span>
+                </p>
+              ) : (
+                <p className="text-sm text-zinc-500">Satu tingkat satuan — semua mutasi dalam {satuanMeta.satuanStok}.</p>
+              )}
             </div>
-          ) : null}
+            <div className="flex flex-wrap items-start gap-4">
+              {saldoTerakhir != null ? (
+                <div className="text-right">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Saldo saat ini</p>
+                  <p className="text-lg font-semibold text-zinc-900">
+                    {formatQtyDenganSatuan(saldoTerakhir, satuanMeta.satuanStok, "saldo")}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void handleExport()}
+              disabled={loading || exporting || rows.length === 0}
+              title={
+                rows.length === 0
+                  ? "Belum ada mutasi untuk diexport"
+                  : `Export ${rows.length} mutasi ke .xlsx`
+              }
+            >
+              <Sheet className="h-4 w-4" aria-hidden />
+              {exporting ? "Mengexport…" : "Export XLSX"}
+            </Button>
+          </div>
         </Card>
       ) : null}
 

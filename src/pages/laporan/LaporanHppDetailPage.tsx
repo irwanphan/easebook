@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Info, RefreshCw } from "lucide-react";
+import { ArrowLeft, Info, RefreshCcw, RefreshCw } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -135,7 +135,8 @@ export function LaporanHppDetailPage() {
                 className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
                 aria-hidden
               />
-              Muat ulang
+              <RefreshCcw className="h-4 w-4" aria-hidden />
+              {loading ? "Memuat…" : "Refresh"}
             </Button>
           }
         />

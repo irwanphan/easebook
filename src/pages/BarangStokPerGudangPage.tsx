@@ -135,7 +135,7 @@ export function BarangStokPerGudangPage() {
           actions={
             <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>
               <RotateCcw className="h-4 w-4" aria-hidden />
-              {loading ? "Memuat…" : "Muat ulang"}
+              {loading ? "Memuat…" : "Refresh"}
             </Button>
           }
         />

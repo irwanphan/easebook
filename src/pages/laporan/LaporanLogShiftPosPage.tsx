@@ -5,13 +5,14 @@ import {
   LogIn,
   LogOut as LogOutIcon,
   RefreshCw,
+  Sheet,
   Warehouse,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { TokoInput } from "@/components/ui/TokoInput";
+import { TokoInput, TokoSelect } from "@/components/ui/TokoInput";
 import {
   POS_SHIFT_EVENT_CLOSED,
   POS_SHIFT_EVENT_GUDANG_CHANGED,
@@ -27,9 +28,7 @@ import type { PenggunaRow } from "@/data/pengguna";
 import { shiftEventLogList } from "@/features/pos/posInvoke";
 import { formatRupiah } from "@/lib/format";
 import { tauriErrorMessage } from "@/lib/tauriError";
-
-const inputClass =
-  "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
+import { useXlsxExport } from "@/lib/useXlsxExport";
 
 function toIsoDate(d: Date) {
   const y = d.getFullYear();
@@ -184,6 +183,8 @@ export function LaporanLogShiftPosPage() {
 
   const [penggunaList, setPenggunaList] = useState<PenggunaRow[]>([]);
 
+  const { exporting, exportNow } = useXlsxExport();
+
   const rentangInvalid = useMemo(() => {
     if (!tanggalDari || !tanggalSampai) return true;
     return tanggalSampai < tanggalDari;
@@ -233,83 +234,206 @@ export function LaporanLogShiftPosPage() {
     };
   }, []);
 
+  const handleExport = useCallback(async () => {
+    if (rentangInvalid || rows.length === 0) return;
+
+    const eventLabel = (t: string) => EVENT_DESCRIPTORS[t]?.label ?? t;
+    const filterEventLabel =
+      FILTER_EVENT_OPTIONS.find((o) => o.value === filterEvent)?.label ?? "Semua kejadian";
+    const filterKasirLabel = filterKasir
+      ? `${filterKasir}${
+          penggunaList.find((p) => p.username === filterKasir)?.namaLengkap
+            ? ` (${penggunaList.find((p) => p.username === filterKasir)?.namaLengkap})`
+            : ""
+        }`
+      : "Semua kasir";
+
+    await exportNow<PosShiftEventLogRow>({
+      fileName: `log_shift_pos_${tanggalDari}_sd_${tanggalSampai}`,
+      sheetName: "Log shift POS",
+      title: "Log Shift POS",
+      meta: [
+        { label: "Periode", value: `${tanggalDari} – ${tanggalSampai}` },
+        { label: "Jenis kejadian", value: filterEventLabel },
+        { label: "Kasir", value: filterKasirLabel },
+        { label: "Jumlah kejadian", value: rows.length },
+      ],
+      columns: [
+        { header: "Waktu", value: (r) => new Date(r.createdAt * 1000), type: "dateTime" },
+        { header: "Shift", value: (r) => r.shiftKode || `#${r.shiftId}`, type: "text", width: 14 },
+        { header: "Kasir (username)", value: (r) => r.kasirUsername, type: "text", width: 16 },
+        { header: "Kasir (nama)", value: (r) => r.kasirNama, type: "text", width: 24 },
+        { header: "Aktor (username)", value: (r) => r.actorUsername, type: "text", width: 16 },
+        { header: "Aktor (nama)", value: (r) => r.actorNama, type: "text", width: 24 },
+        { header: "Kejadian", value: (r) => eventLabel(r.eventType), type: "text", width: 18 },
+        {
+          header: "Modal awal",
+          value: (r) => {
+            if (r.eventType !== POS_SHIFT_EVENT_OPENED) return "";
+            const p = parsePosShiftEventPayload<PosShiftEventOpenedPayload>(r.payload);
+            return p?.modalAwal ?? 0;
+          },
+          type: "currency",
+          width: 14,
+        },
+        {
+          header: "Uang aktual",
+          value: (r) => {
+            if (r.eventType !== POS_SHIFT_EVENT_CLOSED) return "";
+            const p = parsePosShiftEventPayload<PosShiftEventClosedPayload>(r.payload);
+            return p?.uangAkhirAktual ?? 0;
+          },
+          type: "currency",
+          width: 14,
+        },
+        {
+          header: "Uang ekspektasi",
+          value: (r) => {
+            if (r.eventType !== POS_SHIFT_EVENT_CLOSED) return "";
+            const p = parsePosShiftEventPayload<PosShiftEventClosedPayload>(r.payload);
+            return p?.uangAkhirEkspektasi ?? 0;
+          },
+          type: "currency",
+          width: 16,
+        },
+        {
+          header: "Selisih",
+          value: (r) => {
+            if (r.eventType !== POS_SHIFT_EVENT_CLOSED) return "";
+            const p = parsePosShiftEventPayload<PosShiftEventClosedPayload>(r.payload);
+            return p?.selisih ?? 0;
+          },
+          type: "currency",
+          width: 14,
+        },
+        {
+          header: "Gudang",
+          value: (r) => {
+            if (r.eventType === POS_SHIFT_EVENT_OPENED) {
+              const p = parsePosShiftEventPayload<PosShiftEventOpenedPayload>(r.payload);
+              if (!p) return "";
+              return p.gudangNama
+                ? `${p.gudangKode} — ${p.gudangNama}`
+                : p.gudangKode;
+            }
+            if (r.eventType === POS_SHIFT_EVENT_GUDANG_CHANGED) {
+              const p = parsePosShiftEventPayload<PosShiftEventGudangChangedPayload>(r.payload);
+              if (!p) return "";
+              return p.toGudangNama
+                ? `${p.toGudangKode} — ${p.toGudangNama}`
+                : p.toGudangKode;
+            }
+            return "";
+          },
+          type: "text",
+          width: 28,
+        },
+        {
+          header: "Gudang asal",
+          value: (r) => {
+            if (r.eventType !== POS_SHIFT_EVENT_GUDANG_CHANGED) return "";
+            const p = parsePosShiftEventPayload<PosShiftEventGudangChangedPayload>(r.payload);
+            if (!p) return "";
+            return p.fromGudangNama
+              ? `${p.fromGudangKode} — ${p.fromGudangNama}`
+              : p.fromGudangKode;
+          },
+          type: "text",
+          width: 28,
+        },
+      ],
+      data: rows,
+    });
+  }, [exportNow, filterEvent, filterKasir, penggunaList, rentangInvalid, rows, tanggalDari, tanggalSampai]);
+
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Log shift POS"
         description="Audit trail kejadian shift kasir: buka, tutup, ganti gudang, dan ke depannya konfigurasi printer & lainnya."
+        actions={
+          <Button type="button" variant="secondary" disabled={loading} onClick={() => void fetchRows()}>
+            <RefreshCw className="h-4 w-4" aria-hidden />
+            {loading ? "Memuat…" : "Refresh"}
+          </Button>
+        }
       />
 
       <Card className="p-5">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
-            Tanggal mulai
-            <TokoInput
-              id="llp-dari"
-              type="date"
-              value={tanggalDari}
-              onChange={(e) => setTanggalDari(e.target.value)}
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
-            Tanggal akhir
-            <TokoInput
-              id="llp-sampai"
-              type="date"
-              value={tanggalSampai}
-              onChange={(e) => setTanggalSampai(e.target.value)}
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
-            Jenis kejadian
-            <select
-              className={inputClass}
-              value={filterEvent}
-              onChange={(e) => setFilterEvent(e.target.value as PosShiftEventType | "")}
+        <div className="flex justify-between gap-4">
+          <div className="flex gap-4">
+            <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
+              Tanggal mulai
+              <TokoInput
+                id="llp-dari"
+                type="date"
+                value={tanggalDari}
+                onChange={(e) => setTanggalDari(e.target.value)}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
+              Tanggal akhir
+              <TokoInput
+                id="llp-sampai"
+                type="date"
+                value={tanggalSampai}
+                onChange={(e) => setTanggalSampai(e.target.value)}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
+              Jenis kejadian
+              <TokoSelect
+                value={filterEvent}
+                onChange={(e) => setFilterEvent(e.target.value as PosShiftEventType | "")}
+              >
+                {FILTER_EVENT_OPTIONS.map((opt) => (
+                  <option key={opt.value || "all"} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </TokoSelect>
+            </label>
+            <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
+              Kasir
+              <TokoSelect
+                value={filterKasir}
+                onChange={(e) => setFilterKasir(e.target.value)}
+              >
+                <option value="">Semua kasir</option>
+                {penggunaList.map((p) => (
+                  <option key={p.username} value={p.username}>
+                    {p.namaLengkap || p.username}
+                  </option>
+                ))}
+              </TokoSelect>
+            </label>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Button type="button" variant="secondary" disabled={loading} onClick={() => void fetchRows()}>
+              <Filter className="h-4 w-4" aria-hidden />
+              {loading ? "Memuat…" : "Terapkan filter"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void handleExport()}
+              disabled={loading || exporting || rentangInvalid || rows.length === 0}
+              title={
+                rows.length === 0
+                  ? "Tidak ada data pada filter ini"
+                  : `Export ${rows.length} kejadian ke .xlsx`
+              }
             >
-              {FILTER_EVENT_OPTIONS.map((opt) => (
-                <option key={opt.value || "all"} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
-            Kasir
-            <select
-              className={inputClass}
-              value={filterKasir}
-              onChange={(e) => setFilterKasir(e.target.value)}
-            >
-              <option value="">Semua kasir</option>
-              {penggunaList.map((p) => (
-                <option key={p.username} value={p.username}>
-                  {p.namaLengkap || p.username}
-                </option>
-              ))}
-            </select>
-          </label>
+              <Sheet className="h-4 w-4" aria-hidden />
+              {exporting ? "Mengexport…" : "Export XLSX"}
+            </Button>
+          </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Button type="button" variant="secondary" disabled={loading} onClick={() => void fetchRows()}>
-            <Filter className="h-4 w-4" aria-hidden />
-            {loading ? "Memuat…" : "Terapkan filter"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={loading}
-            onClick={() => void fetchRows()}
-            title="Muat ulang"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} aria-hidden />
-            Muat ulang
-          </Button>
-          {!loading && !error && rows.length > 0 ? (
-            <p className="text-sm text-zinc-600">{rows.length} kejadian pada periode ini.</p>
-          ) : null}
-        </div>
+
+        {!loading && !error && rows.length > 0 ? (
+          <p className="text-sm text-zinc-600 mt-3">{rows.length} shift pada periode ini.</p>
+        ) : null}
 
         {error ? (
           <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">

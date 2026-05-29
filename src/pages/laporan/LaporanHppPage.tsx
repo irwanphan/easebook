@@ -88,7 +88,7 @@ export function LaporanHppPage() {
                 className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
                 aria-hidden
               />
-              Muat ulang
+              {loading ? "Memuat…" : "Refresh"}
             </Button>
           }
         />

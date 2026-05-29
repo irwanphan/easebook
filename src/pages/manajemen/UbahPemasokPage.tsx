@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Save, X } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -57,7 +57,10 @@ export function UbahPemasokPage() {
   if (ready && !loading && !found) {
     return (
       <div className="mx-auto flex max-w-2xl flex-col gap-6">
-        <PageHeader title="Pemasok tidak ditemukan" description="Kode tidak ada di daftar pemasok." />
+        <PageHeader 
+          title="Pemasok tidak ditemukan" 
+          description="Perbarui data kontak; kode tidak dapat diubah." 
+        />
         <Button type="button" variant="ghost" className="self-start" onClick={() => navigate("/manajemen/pemasok")}>
           Kembali ke daftar
         </Button>
@@ -96,10 +99,12 @@ export function UbahPemasokPage() {
           )}
 
           <div className="flex flex-wrap items-center justify-end gap-3 border-t border-zinc-100 pt-5">
-            <Button type="button" variant="ghost" onClick={() => navigate("/manajemen/pemasok")}>
+            <Button type="button" variant="outline" onClick={() => navigate("/manajemen/pemasok")}>
+              <X className="h-4 w-4" aria-hidden />
               Batal
             </Button>
             <Button type="submit" disabled={loading || !ready || !found}>
+              <Save className="h-4 w-4" aria-hidden />
               Simpan perubahan
             </Button>
           </div>

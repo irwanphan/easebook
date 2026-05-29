@@ -1,7 +1,9 @@
-import { Link } from "react-router-dom";
+import type { ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import type { KontakMasterRow } from "@/data/kontakMaster";
+import { Pencil, Trash } from "lucide-react";
 
 export type KontakMasterListTableProps = {
   rows: KontakMasterRow[];
@@ -9,6 +11,11 @@ export type KontakMasterListTableProps = {
   editPathForKode: (kode: string) => string;
   onDelete: (row: KontakMasterRow) => void;
   emptyMessage: string;
+  /**
+   * Slot opsional untuk filter bar (mis. `<ListFilterBar />`). Dirender
+   * sebagai bagian Card yang sama dengan tabel, di atas tabel.
+   */
+  filterBar?: ReactNode;
 };
 
 function cellText(v: string) {
@@ -22,13 +29,16 @@ export function KontakMasterListTable({
   editPathForKode,
   onDelete,
   emptyMessage,
+  filterBar,
 }: KontakMasterListTableProps) {
+  const navigate = useNavigate();
   return (
     <>
-      {loading ? (
+      {loading && !filterBar ? (
         <p className="text-sm text-zinc-500">Memuat data dari database lokal…</p>
       ) : null}
       <Card className="overflow-hidden p-0">
+        {filterBar ?? null}
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead>
@@ -69,20 +79,26 @@ export function KontakMasterListTable({
                       )}
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <Link
-                        to={editPathForKode(row.kode)}
-                        className="mr-1 inline-flex items-center justify-center rounded-xl px-2 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400"
-                      >
-                        Ubah
-                      </Link>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 hover:text-rose-800"
-                        onClick={() => onDelete(row)}
-                      >
-                        Hapus
-                      </Button>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-8 text-xs"
+                          onClick={() => navigate(editPathForKode(row.kode))}
+                        >
+                          <Pencil className="h-4 w-4" aria-hidden />
+                          Ubah
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="danger"
+                          className="h-8 text-xs"
+                          onClick={() => onDelete(row)}
+                        >
+                          <Trash className="h-4 w-4" aria-hidden />
+                          Hapus
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))

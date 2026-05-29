@@ -9,7 +9,8 @@ import {
   KasTransaksiDetailView,
   type KasTransaksiDetailVariant,
 } from "@/features/keuangan/KasTransaksiDetailView";
-import { buildKasTransaksiPrintHtml } from "@/features/keuangan/kasTransaksiPrintTemplate";
+import { buildKasTransaksiPrintHtml } from "@/features/templates/kasTransaksiPrintTemplate";
+import type { SignatureColumn } from "@/features/keuangan/printSignature";
 import type { PengeluaranDetail } from "@/data/pengeluaran";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
@@ -19,6 +20,14 @@ const PENGELUARAN_VARIANT: KasTransaksiDetailVariant = {
   baristTitle: "Rincian biaya",
   arahJurnal: "Debit akun biaya per baris · Kredit kas (total).",
 };
+
+// Pengeluaran kas (uang keluar): kiri = kasir kita yang membayar,
+// kanan = pihak luar yang menerima (supplier, karyawan, dll).
+// Konvensi: pemberi uang di kiri, penerima uang di kanan.
+const PENGELUARAN_SIGNATURES: SignatureColumn[] = [
+  { label: "Yang Membayar" },
+  { label: "Yang Menerima" },
+];
 
 const DAFTAR_HREF = "/keuangan/pengeluaran";
 
@@ -83,7 +92,14 @@ export function PengeluaranDetailPage() {
             label="Cetak"
             filenameHint={`pengeluaran-${detail.nomor}`}
             htmlBuilder={({ paperSize }) =>
-              buildKasTransaksiPrintHtml(detail, PENGELUARAN_VARIANT, "Bukti pengeluaran", paperSize)
+              buildKasTransaksiPrintHtml(
+                detail,
+                PENGELUARAN_VARIANT,
+                "Bukti pengeluaran",
+                paperSize,
+                PENGELUARAN_SIGNATURES,
+                "paraf"
+              )
             }
             onError={(msg) => setError(msg)}
           />

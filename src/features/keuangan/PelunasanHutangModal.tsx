@@ -5,9 +5,9 @@ import { Button } from "@/components/ui/Button";
 import type { AkunKeuanganRow } from "@/data/keuangan";
 import type { HutangBelumLunasRow, PelunasanHutangPayload } from "@/data/pelunasanHutang";
 import { tauriErrorMessage } from "@/lib/tauriError";
-
-const inputClass =
-  "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
+import { Save, X } from "lucide-react";
+import { TokoInput } from "@/components/ui/TokoInput";
+import { TokoLookup } from "@/components/ui/TokoLookup";
 
 const FORM_ID = "pelunasan-hutang-form";
 
@@ -120,9 +120,11 @@ export function PelunasanHutangModal({ open, faktur, onClose, onSaved }: Pelunas
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button type="button" variant="ghost" disabled={submitting} onClick={onClose}>
+            <X className="h-4 w-4" aria-hidden />
             Batal
           </Button>
           <Button type="submit" form={FORM_ID} disabled={disabled || akunKasList.length === 0}>
+            <Save className="h-4 w-4" aria-hidden />
             {submitting ? "Menyimpan…" : "Simpan pelunasan"}
           </Button>
         </div>
@@ -152,36 +154,32 @@ export function PelunasanHutangModal({ open, faktur, onClose, onSaved }: Pelunas
             <label htmlFor="ph-tgl" className="block text-sm font-medium text-zinc-700">
               Tanggal pelunasan
             </label>
-            <input
+            <TokoInput
               id="ph-tgl"
               type="date"
               value={tanggal}
               onChange={(e) => setTanggal(e.target.value)}
-              className={inputClass}
               disabled={disabled}
               required
             />
           </div>
 
           <div>
-            <label htmlFor="ph-kas" className="block text-sm font-medium text-zinc-700">
-              Dibayar dari (kas / bank)
-            </label>
-            <select
+            <TokoLookup<AkunKeuanganRow>
               id="ph-kas"
-              value={kasKode}
-              onChange={(e) => setKasKode(e.target.value)}
-              className={inputClass}
+              label="Dibayar dari (kas / bank)"
+              options={akunKasList}
+              value={kasKode || null}
+              getKey={(a) => a.kode}
+              getLabel={(a) => `${a.kode} — ${a.nama}`}
+              getDescription={(a) => `Saldo: ${formatRupiah(a.saldo)}`}
+              onChange={(opt) => setKasKode(opt ? opt.kode : "")}
+              placeholder="— Pilih akun kas —"
+              searchPlaceholder="Cari kode atau nama akun kas…"
+              emptyMessage="Akun kas tidak ditemukan."
               disabled={disabled}
               required
-            >
-              <option value="">— Pilih akun kas —</option>
-              {akunKasList.map((a) => (
-                <option key={a.kode} value={a.kode}>
-                  {a.kode} — {a.nama}
-                </option>
-              ))}
-            </select>
+            />
             {akunKasLoading ? (
               <p className="mt-1.5 text-xs text-zinc-400">Memuat akun kas…</p>
             ) : akunKasList.length === 0 ? (
@@ -193,12 +191,11 @@ export function PelunasanHutangModal({ open, faktur, onClose, onSaved }: Pelunas
             <label htmlFor="ph-catatan" className="block text-sm font-medium text-zinc-700">
               Catatan
             </label>
-            <input
+            <TokoInput
               id="ph-catatan"
               type="text"
               value={catatan}
               onChange={(e) => setCatatan(e.target.value)}
-              className={inputClass}
               disabled={disabled}
               placeholder="opsional"
             />

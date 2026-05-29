@@ -8,6 +8,10 @@ import { Badge } from "@/components/ui/Badge";
 import { PelunasanPiutangModal } from "@/features/keuangan/PelunasanPiutangModal";
 import type { BuatPelunasanPiutangLocationState, PiutangBelumLunasRow } from "@/data/pelunasanPiutang";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { TokoSelect } from "@/components/ui/TokoInput";
+import { HandCoins, List, Plus, RefreshCcw, Sheet } from "lucide-react";
+import { VerticalSeparator } from "@/components/ui/Separator";
+import { useXlsxExport } from "@/lib/useXlsxExport";
 
 function todayLocalISODate(): string {
   const d = new Date();
@@ -37,9 +41,6 @@ function isJatuhTempoLewat(jatuhTempo: string) {
 
 type FilterTampilan = "semua" | "jatuh_tempo";
 
-const inputClass =
-  "rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
-
 export function KeuanganPelunasanPiutangPage() {
   const navigate = useNavigate();
   const [rows, setRows] = useState<PiutangBelumLunasRow[]>([]);
@@ -48,6 +49,7 @@ export function KeuanganPelunasanPiutangPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modalFaktur, setModalFaktur] = useState<PiutangBelumLunasRow | null>(null);
+  const { exporting, exportNow } = useXlsxExport();
 
   const pelangganOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -118,11 +120,78 @@ export function KeuanganPelunasanPiutangPage() {
     );
   }
 
+  const handleExport = useCallback(async () => {
+    if (filteredRows.length === 0) return;
+
+    const pelangganLabel = filterPelangganKode
+      ? `${filterPelangganKode} — ${pelangganOptions.find((p) => p.kode === filterPelangganKode)?.nama ?? ""}`
+      : "Semua pelanggan";
+    const jatuhTempoLabel =
+      filter === "jatuh_tempo" ? "Hanya jatuh tempo lewat" : "Semua piutang belum lunas";
+    const today = todayLocalISODate();
+
+    await exportNow<PiutangBelumLunasRow>({
+      fileName: `piutang_belum_lunas${filterPelangganKode ? `_${filterPelangganKode}` : ""}`,
+      sheetName: "Piutang belum lunas",
+      title: "Daftar Piutang Belum Lunas",
+      meta: [
+        { label: "Tanggal cetak", value: formatTanggal(today) },
+        { label: "Filter pelanggan", value: pelangganLabel },
+        { label: "Filter jatuh tempo", value: jatuhTempoLabel },
+        { label: "Jumlah faktur", value: filteredRows.length },
+        { label: "Total piutang", value: formatRupiah(totalPiutang) },
+      ],
+      columns: [
+        { header: "No. faktur", value: (r) => r.nomor, type: "text", width: 18 },
+        { header: "Tanggal faktur", value: (r) => r.tanggalFaktur, type: "date" },
+        { header: "Jatuh tempo", value: (r) => r.jatuhTempo, type: "date" },
+        {
+          header: "Status",
+          value: (r) => (isJatuhTempoLewat(r.jatuhTempo) ? "Lewat tempo" : "Dalam tempo"),
+          type: "text",
+          width: 14,
+        },
+        { header: "Kode pelanggan", value: (r) => r.pelangganKode, type: "text", width: 14 },
+        { header: "Pelanggan", value: (r) => r.pelangganNama, type: "text", width: 30 },
+        { header: "Total piutang", value: (r) => r.total, type: "currency", width: 18 },
+        { header: "Catatan faktur", value: (r) => r.catatanFaktur, type: "text", width: 40 },
+      ],
+      data: filteredRows,
+      footerRow: [
+        null,
+        null,
+        null,
+        null,
+        null,
+        { value: "TOTAL", type: "text" },
+        { value: totalPiutang, type: "currency" },
+        null,
+      ],
+    });
+  }, [exportNow, filter, filterPelangganKode, filteredRows, pelangganOptions, totalPiutang]);
+
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Pelunasan piutang"
         description="Faktur penjualan kredit (belum diterima tunai). Catat pembayaran pelanggan untuk melunasi piutang."
+        actions={
+          <>
+            <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/pelunasan-piutang/daftar")}>
+              <List className="h-4 w-4" aria-hidden />
+              Daftar pelunasan
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
+              <RefreshCcw className="h-4 w-4" aria-hidden />
+              {loading ? "Memuat…" : "Refresh"}
+            </Button>
+            <VerticalSeparator />
+            <Button type="button" onClick={() => openPelunasanBaru()} disabled={loading || rows.length === 0}>
+              <Plus className="h-4 w-4" aria-hidden />
+              Buat pelunasan
+            </Button>
+          </>
+        }
       />
 
       {error ? (
@@ -132,75 +201,78 @@ export function KeuanganPelunasanPiutangPage() {
       ) : null}
 
       <Card className="overflow-hidden p-0">
-        <div className="flex flex-col gap-4 border-b border-zinc-100 p-6 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-zinc-900">Piutang belum lunas</h2>
-            <p className="mt-1 text-sm text-zinc-500">
-              {loading
-                ? "Memuat…"
-                : rows.length === 0
-                  ? "Tidak ada piutang terbuka."
-                  : filteredRows.length === 0
-                    ? rowsByPelanggan.length === 0
-                      ? filterPelangganKode
-                        ? "Tidak ada piutang untuk pelanggan ini."
-                        : filter === "jatuh_tempo"
-                          ? `Tidak ada faktur jatuh tempo (${rows.length} piutang lain masih dalam tempo).`
-                          : "Tidak ada faktur sesuai filter."
-                      : filter === "jatuh_tempo"
-                        ? `Tidak ada faktur jatuh tempo untuk filter ini (${rowsByPelanggan.length} faktur masih dalam tempo).`
-                        : "Tidak ada faktur sesuai filter."
-                    : `${filteredRows.length} faktur ditampilkan · total ${formatRupiah(totalPiutang)}`}
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <Button type="button" onClick={() => openPelunasanBaru()} disabled={loading || rows.length === 0}>
-              Buat pelunasan
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/pelunasan-piutang/daftar")}>
-              Daftar pelunasan
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
-              {loading ? "Memuat…" : "Refresh"}
-            </Button>
-          </div>
-        </div>
-
-        <div className="border-b border-zinc-100 px-6 pb-5">
-          <div className="grid gap-4 sm:grid-cols-2 lg:max-w-3xl">
-            <div>
-              <label htmlFor="pp-pelanggan" className="block text-sm font-medium text-zinc-700">
-                Pelanggan
-              </label>
-              <select
-                id="pp-pelanggan"
-                value={filterPelangganKode}
-                onChange={(e) => setFilterPelangganKode(e.target.value)}
-                className={`${inputClass} mt-1 w-full`}
-                disabled={loading}
-              >
-                <option value="">Semua pelanggan</option>
-                {pelangganOptions.map((p) => (
-                  <option key={p.kode} value={p.kode}>
-                    {p.kode} — {p.nama}
-                  </option>
-                ))}
-              </select>
+        <div className="border-b border-zinc-100 pb-3 mb-3">
+          <div className="flex justify-between gap-4">
+            <div className="flex gap-4">
+              <div>
+                <label htmlFor="pp-pelanggan" className="block text-sm font-medium text-zinc-700">
+                  Pelanggan
+                </label>
+                <TokoSelect
+                  id="pp-pelanggan"
+                  value={filterPelangganKode}
+                  onChange={(e) => setFilterPelangganKode(e.target.value)}
+                  disabled={loading}
+                >
+                  <option value="">Semua pelanggan</option>
+                  {pelangganOptions.map((p) => (
+                    <option key={p.kode} value={p.kode}>
+                      {p.kode} — {p.nama}
+                    </option>
+                  ))}
+                </TokoSelect>
+              </div>
+              <div>
+                <label htmlFor="pp-filter" className="block text-sm font-medium text-zinc-700">
+                  Jatuh tempo
+                </label>
+                <TokoSelect
+                  id="pp-filter"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value as FilterTampilan)}
+                  disabled={loading}
+                >
+                  <option value="semua">Semua piutang belum lunas</option>
+                  <option value="jatuh_tempo">Hanya jatuh tempo lewat ({jatuhTempoCount})</option>
+                </TokoSelect>
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-zinc-700">Piutang belum lunas</h2>
+                <p className="mt-1 text-sm text-zinc-500">
+                  {loading
+                    ? "Memuat…"
+                    : rows.length === 0
+                      ? "Tidak ada piutang terbuka."
+                      : filteredRows.length === 0
+                        ? rowsByPelanggan.length === 0
+                          ? filterPelangganKode
+                            ? "Tidak ada piutang untuk pelanggan ini."
+                            : filter === "jatuh_tempo"
+                              ? `Tidak ada faktur jatuh tempo (${rows.length} piutang lain masih dalam tempo).`
+                              : "Tidak ada faktur sesuai filter."
+                          : filter === "jatuh_tempo"
+                            ? `Tidak ada faktur jatuh tempo untuk filter ini (${rowsByPelanggan.length} faktur masih dalam tempo).`
+                            : "Tidak ada faktur sesuai filter."
+                        : `${filteredRows.length} faktur ditampilkan · total ${formatRupiah(totalPiutang)}`}
+                </p>
+              </div>
             </div>
-            <div>
-              <label htmlFor="pp-filter" className="block text-sm font-medium text-zinc-700">
-                Jatuh tempo
-              </label>
-              <select
-                id="pp-filter"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value as FilterTampilan)}
-                className={`${inputClass} mt-1 w-full`}
-                disabled={loading}
+            <div className="mt-4 flex gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-9 self-end"
+                onClick={() => void handleExport()}
+                disabled={loading || exporting || filteredRows.length === 0}
+                title={
+                  filteredRows.length === 0
+                    ? "Tidak ada data pada filter ini"
+                    : `Export ${filteredRows.length} faktur ke .xlsx`
+                }
               >
-                <option value="semua">Semua piutang belum lunas</option>
-                <option value="jatuh_tempo">Hanya jatuh tempo lewat ({jatuhTempoCount})</option>
-              </select>
+                <Sheet className="h-4 w-4" aria-hidden />
+                {exporting ? "Mengexport…" : "Export XLSX"}
+              </Button>
             </div>
           </div>
         </div>
@@ -261,6 +333,9 @@ export function KeuanganPelunasanPiutangPage() {
                       </td>
                       <td className="px-5 py-3 text-right">
                         <Button type="button" variant="secondary" className="!px-3 !py-1.5 text-xs" onClick={() => openPelunasan(row)}>
+                          <HandCoins
+                            className="h-4 w-4"
+                            aria-hidden />
                           Lunaskan
                         </Button>
                       </td>

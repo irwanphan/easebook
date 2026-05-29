@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { CreditCard, List, Plus, RefreshCcw, Sheet } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -8,6 +9,9 @@ import { Badge } from "@/components/ui/Badge";
 import { PelunasanHutangModal } from "@/features/keuangan/PelunasanHutangModal";
 import type { BuatPelunasanHutangLocationState, HutangBelumLunasRow } from "@/data/pelunasanHutang";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { TokoSelect } from "@/components/ui/TokoInput";
+import { VerticalSeparator } from "@/components/ui/Separator";
+import { useXlsxExport } from "@/lib/useXlsxExport";
 
 function todayLocalISODate(): string {
   const d = new Date();
@@ -37,9 +41,6 @@ function isJatuhTempoLewat(jatuhTempo: string) {
 
 type FilterTampilan = "semua" | "jatuh_tempo";
 
-const inputClass =
-  "rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
-
 export function KeuanganPelunasanHutangPage() {
   const navigate = useNavigate();
   const [rows, setRows] = useState<HutangBelumLunasRow[]>([]);
@@ -48,6 +49,7 @@ export function KeuanganPelunasanHutangPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modalFaktur, setModalFaktur] = useState<HutangBelumLunasRow | null>(null);
+  const { exporting, exportNow } = useXlsxExport();
 
   const pemasokOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -116,11 +118,78 @@ export function KeuanganPelunasanHutangPage() {
     goBuatPelunasan(filterPemasokKode ? { pemasokKode: filterPemasokKode } : undefined);
   }
 
+  const handleExport = useCallback(async () => {
+    if (filteredRows.length === 0) return;
+
+    const pemasokLabel = filterPemasokKode
+      ? `${filterPemasokKode} — ${pemasokOptions.find((p) => p.kode === filterPemasokKode)?.nama ?? ""}`
+      : "Semua pemasok";
+    const jatuhTempoLabel =
+      filter === "jatuh_tempo" ? "Hanya jatuh tempo lewat" : "Semua hutang belum lunas";
+    const today = todayLocalISODate();
+
+    await exportNow<HutangBelumLunasRow>({
+      fileName: `hutang_belum_lunas${filterPemasokKode ? `_${filterPemasokKode}` : ""}`,
+      sheetName: "Hutang belum lunas",
+      title: "Daftar Hutang Belum Lunas",
+      meta: [
+        { label: "Tanggal cetak", value: formatTanggal(today) },
+        { label: "Filter pemasok", value: pemasokLabel },
+        { label: "Filter jatuh tempo", value: jatuhTempoLabel },
+        { label: "Jumlah faktur", value: filteredRows.length },
+        { label: "Total hutang", value: formatRupiah(totalHutang) },
+      ],
+      columns: [
+        { header: "No. faktur", value: (r) => r.nomor, type: "text", width: 18 },
+        { header: "Tanggal faktur", value: (r) => r.tanggalFaktur, type: "date" },
+        { header: "Jatuh tempo", value: (r) => r.jatuhTempo, type: "date" },
+        {
+          header: "Status",
+          value: (r) => (isJatuhTempoLewat(r.jatuhTempo) ? "Lewat tempo" : "Dalam tempo"),
+          type: "text",
+          width: 14,
+        },
+        { header: "Kode pemasok", value: (r) => r.pemasokKode, type: "text", width: 14 },
+        { header: "Pemasok", value: (r) => r.pemasokNama, type: "text", width: 30 },
+        { header: "Total hutang", value: (r) => r.total, type: "currency", width: 18 },
+        { header: "Metode pembayaran", value: (r) => r.metodePembayaran, type: "text", width: 18 },
+      ],
+      data: filteredRows,
+      footerRow: [
+        null,
+        null,
+        null,
+        null,
+        null,
+        { value: "TOTAL", type: "text" },
+        { value: totalHutang, type: "currency" },
+        null,
+      ],
+    });
+  }, [exportNow, filter, filterPemasokKode, filteredRows, pemasokOptions, totalHutang]);
+
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Pelunasan hutang"
         description="Faktur pembelian kredit (belum dibayar tunai). Catat pembayaran ke supplier untuk melunasi hutang dagang."
+        actions={
+          <>
+            <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/pelunasan-hutang/daftar")}>
+              <List className="h-4 w-4" aria-hidden />
+              Daftar pelunasan hutang
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
+              <RefreshCcw className="h-4 w-4" aria-hidden />
+              {loading ? "Memuat…" : "Refresh"}
+            </Button>
+            <VerticalSeparator />
+            <Button type="button" onClick={() => openPelunasanBaru()} disabled={loading || rows.length === 0}>
+              <Plus className="h-4 w-4" aria-hidden />
+              Buat pelunasan
+            </Button>
+          </>
+        }
       />
 
       {error ? (
@@ -130,75 +199,79 @@ export function KeuanganPelunasanHutangPage() {
       ) : null}
 
       <Card className="overflow-hidden p-0">
-        <div className="flex flex-col gap-4 border-b border-zinc-100 p-6 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-zinc-900">Hutang belum lunas</h2>
-            <p className="mt-1 text-sm text-zinc-500">
-              {loading
-                ? "Memuat…"
-                : rows.length === 0
-                  ? "Tidak ada hutang terbuka."
-                  : filteredRows.length === 0
-                    ? rowsByPemasok.length === 0
-                      ? filterPemasokKode
-                        ? "Tidak ada hutang untuk pemasok ini."
-                        : filter === "jatuh_tempo"
-                          ? `Tidak ada faktur jatuh tempo (${rows.length} hutang lain masih dalam tempo).`
-                          : "Tidak ada faktur sesuai filter."
-                      : filter === "jatuh_tempo"
-                        ? `Tidak ada faktur jatuh tempo untuk filter ini (${rowsByPemasok.length} faktur masih dalam tempo).`
-                        : "Tidak ada faktur sesuai filter."
-                    : `${filteredRows.length} faktur ditampilkan · total ${formatRupiah(totalHutang)}`}
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <Button type="button" onClick={() => openPelunasanBaru()} disabled={loading || rows.length === 0}>
-              Buat pelunasan
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => navigate("/keuangan/pelunasan-hutang/daftar")}>
-              Daftar pelunasan hutang
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
-              {loading ? "Memuat…" : "Refresh"}
-            </Button>
-          </div>
-        </div>
+        <div className="border-b border-zinc-100 pb-3 mb-3">
+          <div className="flex justify-between gap-4">
+            <div className="flex gap-4">
 
-        <div className="border-b border-zinc-100 px-6 pb-5">
-          <div className="grid gap-4 sm:grid-cols-2 lg:max-w-3xl">
-            <div>
-              <label htmlFor="ph-pemasok" className="block text-sm font-medium text-zinc-700">
-                Pemasok
-              </label>
-              <select
-                id="ph-pemasok"
-                value={filterPemasokKode}
-                onChange={(e) => setFilterPemasokKode(e.target.value)}
-                className={`${inputClass} mt-1 w-full`}
-                disabled={loading}
-              >
-                <option value="">Semua pemasok</option>
-                {pemasokOptions.map((p) => (
-                  <option key={p.kode} value={p.kode}>
-                    {p.kode} — {p.nama}
-                  </option>
-                ))}
-              </select>
+              <div>
+                <label htmlFor="ph-pemasok" className="block text-sm font-medium text-zinc-700">
+                  Pemasok
+                </label>
+                <TokoSelect
+                  id="ph-pemasok"
+                  value={filterPemasokKode}
+                  onChange={(e) => setFilterPemasokKode(e.target.value)}
+                  disabled={loading}
+                >
+                  <option value="">Semua pemasok</option>
+                  {pemasokOptions.map((p) => (
+                    <option key={p.kode} value={p.kode}>
+                      {p.kode} — {p.nama}
+                    </option>
+                  ))}
+                </TokoSelect>
+              </div>
+              <div>
+                <label htmlFor="ph-filter" className="block text-sm font-medium text-zinc-700">
+                  Jatuh tempo
+                </label>
+                <TokoSelect
+                  id="ph-filter"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value as FilterTampilan)}
+                  disabled={loading}
+                >
+                  <option value="semua">Semua hutang belum lunas</option>
+                  <option value="jatuh_tempo">Hanya jatuh tempo lewat ({jatuhTempoCount})</option>
+                </TokoSelect>
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-zinc-900">Hutang belum lunas</h2>
+                <p className="mt-1 text-sm text-zinc-500">
+                  {loading
+                    ? "Memuat…"
+                    : rows.length === 0
+                      ? "Tidak ada hutang terbuka."
+                      : filteredRows.length === 0
+                        ? rowsByPemasok.length === 0
+                          ? filterPemasokKode
+                            ? "Tidak ada hutang untuk pemasok ini."
+                            : filter === "jatuh_tempo"
+                              ? `Tidak ada faktur jatuh tempo (${rows.length} hutang lain masih dalam tempo).`
+                              : "Tidak ada faktur sesuai filter."
+                          : filter === "jatuh_tempo"
+                            ? `Tidak ada faktur jatuh tempo untuk filter ini (${rowsByPemasok.length} faktur masih dalam tempo).`
+                            : "Tidak ada faktur sesuai filter."
+                        : `${filteredRows.length} faktur ditampilkan · total ${formatRupiah(totalHutang)}`}
+                </p>
+              </div>
             </div>
-            <div>
-              <label htmlFor="ph-filter" className="block text-sm font-medium text-zinc-700">
-                Jatuh tempo
-              </label>
-              <select
-                id="ph-filter"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value as FilterTampilan)}
-                className={`${inputClass} mt-1 w-full`}
-                disabled={loading}
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-9 self-end"
+                onClick={() => void handleExport()}
+                disabled={loading || exporting || filteredRows.length === 0}
+                title={
+                  filteredRows.length === 0
+                    ? "Tidak ada data pada filter ini"
+                    : `Export ${filteredRows.length} faktur ke .xlsx`
+                }
               >
-                <option value="semua">Semua hutang belum lunas</option>
-                <option value="jatuh_tempo">Hanya jatuh tempo lewat ({jatuhTempoCount})</option>
-              </select>
+                <Sheet className="h-4 w-4" aria-hidden />
+                {exporting ? "Mengexport…" : "Export XLSX"}
+              </Button>
             </div>
           </div>
         </div>
@@ -259,9 +332,10 @@ export function KeuanganPelunasanHutangPage() {
                         <Button
                           type="button"
                           variant="secondary"
-                          className="!px-3 !py-1.5 text-xs"
+                          className="px-2 py-1 text-xs"
                           onClick={() => openPelunasan(row)}
                         >
+                          <CreditCard className="h-4 w-4" aria-hidden />
                           Lunaskan
                         </Button>
                       </td>

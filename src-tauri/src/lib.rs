@@ -1,6 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 
 mod activation;
+mod backup_commands;
 mod db;
 mod master_commands;
 mod print_commands;
@@ -18,16 +19,33 @@ pub struct DbState {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             let dir = app.path().app_data_dir().expect("app_data_dir");
             std::fs::create_dir_all(&dir).expect("create app data dir");
             let db_path = dir.join("easybook.db");
+
+            // Finalize pending restore (jika ada) SEBELUM open connection,
+            // supaya DB yang dibuka adalah hasil restore. Kegagalan finalize
+            // tidak menghentikan startup — user tetap masuk ke DB lama dan
+            // bisa coba ulang restore.
+            if let Err(e) = db::finalize_pending_restore_if_any(&dir, &db_path) {
+                eprintln!("[backup] finalize_pending_restore_if_any gagal: {e}");
+            }
+
             let mut conn = db::open_connection(&db_path).expect("open sqlite");
             db::migrate(&conn).expect("db migrate");
             db::seed_if_empty(&mut conn).expect("db seed");
             let ts = chrono::Utc::now().timestamp();
             seed_akun_keuangan::seed_akun_keuangan_if_empty(&mut conn, ts)
                 .expect("seed akun keuangan");
+
+            // Catat log RESTORE jika finalize tadi meninggalkan jejak followup.
+            if let Err(e) = db::log_pending_restore_followup_if_any(&conn, &dir) {
+                eprintln!("[backup] log_pending_restore_followup_if_any gagal: {e}");
+            }
+
             drop(conn);
             app.manage(DbState { path: db_path });
 
@@ -41,12 +59,18 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             master_commands::kategori_list,
             master_commands::kategori_insert,
+            master_commands::kategori_update,
+            master_commands::kategori_delete,
             master_commands::kategori_kode_exists,
             master_commands::merek_list,
             master_commands::merek_insert,
+            master_commands::merek_update,
+            master_commands::merek_delete,
             master_commands::merek_kode_exists,
             master_commands::gudang_list,
             master_commands::gudang_insert,
+            master_commands::gudang_update,
+            master_commands::gudang_delete,
             master_commands::gudang_kode_exists,
             master_commands::barang_jasa_list,
             master_commands::barang_jasa_insert,
@@ -58,6 +82,23 @@ pub fn run() {
             master_commands::barang_foto_remove,
             master_commands::barang_stok_per_gudang_matrix,
             master_commands::stok_barang_di_gudang,
+            master_commands::barang_hpp_list,
+            master_commands::barang_hpp_detail,
+            master_commands::koreksi_stok_insert,
+            master_commands::pesanan_penjualan_list,
+            master_commands::pesanan_penjualan_detail,
+            master_commands::pesanan_penjualan_insert,
+            master_commands::pesanan_penjualan_update,
+            master_commands::pesanan_penjualan_delete,
+            master_commands::pesanan_penjualan_batalkan,
+            master_commands::pesanan_penjualan_konversi_ke_faktur,
+            master_commands::pesanan_pembelian_list,
+            master_commands::pesanan_pembelian_detail,
+            master_commands::pesanan_pembelian_insert,
+            master_commands::pesanan_pembelian_update,
+            master_commands::pesanan_pembelian_delete,
+            master_commands::pesanan_pembelian_batalkan,
+            master_commands::pesanan_pembelian_konversi_ke_faktur,
             master_commands::mutasi_antar_gudang_apply,
             master_commands::mutasi_antar_gudang_riwayat_list,
             master_commands::mutasi_antar_gudang_riwayat_detail,
@@ -81,6 +122,7 @@ pub fn run() {
             master_commands::pengguna_foto_save,
             master_commands::pengguna_foto_remove,
             master_commands::pengguna_login,
+            master_commands::pengguna_verifikasi_kata_sandi,
             master_commands::pengguna_session_get,
             master_commands::pembelian_list,
             master_commands::pembelian_insert,
@@ -120,18 +162,56 @@ pub fn run() {
             master_commands::jurnal_konfigurasi_get,
             master_commands::jurnal_konfigurasi_set,
             master_commands::jurnal_umum_list,
+            master_commands::buku_besar_get,
             master_commands::jurnal_umum_insert_transaksi,
             master_commands::jurnal_umum_insert_manual,
             master_commands::transfer_kas_list,
             master_commands::transfer_kas_detail,
             master_commands::transfer_kas_insert,
             master_commands::transfer_kas_update,
+            master_commands::pos_metode_bayar_list,
+            master_commands::pos_metode_bayar_insert,
+            master_commands::pos_metode_bayar_update,
+            master_commands::pos_metode_bayar_delete,
+            master_commands::pos_konfigurasi_get,
+            master_commands::pos_konfigurasi_set,
+            master_commands::operasional_konfigurasi_get,
+            master_commands::operasional_konfigurasi_set,
+            master_commands::kas_awal_get,
+            master_commands::kas_awal_set,
+            master_commands::stok_awal_get,
+            master_commands::stok_awal_set,
+            master_commands::pos_shift_active_for,
+            master_commands::pos_shift_carry_modal,
+            master_commands::pos_shift_open,
+            master_commands::pos_shift_change_gudang,
+            master_commands::pos_shift_close,
+            master_commands::pos_shift_rekap,
+            master_commands::pos_shift_list,
+            master_commands::pos_shift_event_log_list,
+            master_commands::pos_catalog_list,
+            master_commands::pos_transaksi_create,
+            master_commands::produksi_list,
+            master_commands::produksi_detail,
+            master_commands::produksi_hpp_snapshot,
+            master_commands::produksi_insert,
+            master_commands::produksi_update,
+            master_commands::produksi_delete,
+            master_commands::produksi_tandai_selesai,
+            master_commands::produksi_batalkan,
             activation::activation_get_license_info,
             activation::activation_get_device_code,
             activation::activation_get_status,
             activation::activation_save,
             activation::activation_apply_offline_code,
             print_commands::print_open_html,
+            backup_commands::backup_folder_path,
+            backup_commands::backup_create,
+            backup_commands::backup_list,
+            backup_commands::backup_delete,
+            backup_commands::backup_restore_stage,
+            backup_commands::backup_restore_cancel,
+            backup_commands::backup_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

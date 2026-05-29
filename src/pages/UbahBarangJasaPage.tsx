@@ -135,7 +135,10 @@ export function UbahBarangJasaPage() {
   if (ready && !loading && !found) {
     return (
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <PageHeader title="Item tidak ditemukan" description="Kode tidak ada di daftar barang & jasa." />
+        <PageHeader 
+          title="Item tidak ditemukan" 
+          // description="Kode tidak ada di daftar barang & jasa." 
+        />
         <Button type="button" variant="ghost" className="self-start" onClick={() => navigate("/barang-jasa")}>
           Kembali ke daftar
         </Button>

@@ -1,14 +1,20 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { ClipboardList, FileText, Plus, Sheet, Store } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { ListFilterBar } from "@/components/ui/ListFilterBar";
+import { VerticalSeparator } from "@/components/ui/Separator";
+import { openPOSWindow } from "@/lib/posWindow";
 import type { PenjualanListRow } from "@/data/penjualan";
+import type { PesananPenjualanListRow } from "@/data/pesananPenjualan";
 import { TransactionGateBanner } from "@/features/activation/TransactionGateBanner";
 import { useLicenseGate } from "@/features/activation/useLicenseGate";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { useXlsxExport } from "@/lib/useXlsxExport";
 
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -31,12 +37,42 @@ function statusVariant(s: string) {
   return "neutral" as const;
 }
 
+function toIsoDate(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function defaultTanggalDari() {
+  const now = new Date();
+  return toIsoDate(new Date(now.getFullYear(), now.getMonth(), 1));
+}
+
+function defaultTanggalSampai() {
+  const now = new Date();
+  return toIsoDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+}
+
+const INITIAL_TANGGAL_DARI = defaultTanggalDari();
+const INITIAL_TANGGAL_SAMPAI = defaultTanggalSampai();
+
 export function PenjualanPage() {
   const navigate = useNavigate();
   const { license, loading: licenseLoading, canCreateTransaction } = useLicenseGate();
   const [rows, setRows] = useState<PenjualanListRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [tanggalDari, setTanggalDari] = useState(INITIAL_TANGGAL_DARI);
+  const [tanggalSampai, setTanggalSampai] = useState(INITIAL_TANGGAL_SAMPAI);
+  const [query, setQuery] = useState("");
+
+  // Jumlah pesanan aktif (status Draft / belum difakturkan) untuk ditampilkan
+  // sebagai bubble pada tombol "Pesanan".
+  const [pesananAktif, setPesananAktif] = useState(0);
+
+  const { exporting, exportNow } = useXlsxExport();
 
   const refresh = useCallback(async () => {
     setLoadError(null);
@@ -51,23 +87,152 @@ export function PenjualanPage() {
     }
   }, []);
 
+  const refreshPesananAktif = useCallback(async () => {
+    try {
+      const list = await invoke<PesananPenjualanListRow[]>(
+        "pesanan_penjualan_list",
+      );
+      setPesananAktif(list.filter((r) => r.status === "Draft").length);
+    } catch {
+      setPesananAktif(0);
+    }
+  }, []);
+
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+    void refreshPesananAktif();
+  }, [refresh, refreshPesananAktif]);
+
+  const rentangInvalid = useMemo(() => {
+    if (!tanggalDari || !tanggalSampai) return false;
+    return tanggalSampai < tanggalDari;
+  }, [tanggalDari, tanggalSampai]);
+
+  const filteredRows = useMemo(() => {
+    if (rentangInvalid) return [];
+    const q = query.trim().toLowerCase();
+    return rows.filter((row) => {
+      if (tanggalDari && row.tanggalFaktur < tanggalDari) return false;
+      if (tanggalSampai && row.tanggalFaktur > tanggalSampai) return false;
+      if (q) {
+        const hay =
+          `${row.nomor} ${row.pelangganNama} ${row.salesman} ${row.status}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [rows, query, tanggalDari, tanggalSampai, rentangInvalid]);
+
+  const totalPeriode = useMemo(
+    () => filteredRows.reduce((s, r) => s + r.total, 0),
+    [filteredRows],
+  );
+
+  const isDefault =
+    tanggalDari === INITIAL_TANGGAL_DARI &&
+    tanggalSampai === INITIAL_TANGGAL_SAMPAI &&
+    query === "";
+
+  const handleReset = useCallback(() => {
+    setTanggalDari(INITIAL_TANGGAL_DARI);
+    setTanggalSampai(INITIAL_TANGGAL_SAMPAI);
+    setQuery("");
+  }, []);
+
+  const handleExport = useCallback(async () => {
+    if (rentangInvalid || filteredRows.length === 0) return;
+    await exportNow<PenjualanListRow>({
+      fileName: `penjualan_${tanggalDari}_sd_${tanggalSampai}`,
+      sheetName: "Penjualan",
+      title: "Daftar Faktur Penjualan",
+      meta: [
+        { label: "Periode", value: `${formatTanggal(tanggalDari)} – ${formatTanggal(tanggalSampai)}` },
+        { label: "Pencarian", value: query.trim() || "—" },
+        { label: "Jumlah faktur", value: filteredRows.length },
+        { label: "Total periode", value: formatRupiah(totalPeriode) },
+      ],
+      columns: [
+        { header: "No. faktur", value: (r) => r.nomor, type: "text", width: 18 },
+        { header: "Tanggal", value: (r) => r.tanggalFaktur, type: "date" },
+        { header: "Pelanggan", value: (r) => r.pelangganNama, type: "text", width: 30 },
+        { header: "Salesman", value: (r) => r.salesman, type: "text", width: 20 },
+        { header: "Total", value: (r) => r.total, type: "currency", width: 18 },
+        { header: "Status", value: (r) => r.status, type: "text", width: 14 },
+      ],
+      data: filteredRows,
+      footerRow: [
+        null,
+        null,
+        null,
+        { value: "TOTAL", type: "text" },
+        { value: totalPeriode, type: "currency" },
+        null,
+      ],
+    });
+  }, [
+    exportNow,
+    filteredRows,
+    query,
+    rentangInvalid,
+    tanggalDari,
+    tanggalSampai,
+    totalPeriode,
+  ]);
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
         title="Penjualan"
-        description="Faktur jual ke pelanggan — mengurangi stok barang fisik dan tercatat di pergerakan stok."
+        description="Faktur jual ke pelanggan"
         actions={
-          <Button
-            type="button"
-            disabled={!canCreateTransaction}
-            onClick={() => navigate("/penjualan/tambah")}
-          >
-            Penjualan baru
-          </Button>
+          <>
+            <button
+              type="button"
+              disabled={!canCreateTransaction}
+              className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-1.5 text-sm font-semibold transition cursor-pointer bg-cyan-200/60 text-cyan-700 hover:bg-cyan-200 ring-1 ring-inset ring-slate-600"
+              onClick={() => {
+                void openPOSWindow().catch((e) => {
+                  console.error("openPOSWindow failed", e);
+                });
+              }}
+              title="Buka kasir di window baru"
+            >
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-cyan-50 text-amber-600 ring-1 ring-inset ring-green-400">
+                <Store className="h-4 w-4" aria-hidden />
+              </span>
+              Buka POS
+            </button>
+            <VerticalSeparator />
+            <div className="relative inline-flex">
+              <Button
+                type="button"
+                disabled={!canCreateTransaction}
+                variant="secondary"
+                onClick={() => navigate("/penjualan/pesanan")}
+              >
+                <ClipboardList className="h-4 w-4" aria-hidden />
+                Pesanan
+              </Button>
+              {pesananAktif > 0 ? (
+                <span
+                  className="pointer-events-none absolute -right-2.5 -top-2.5 inline-flex p-2.5 h-4 w-4 items-center justify-center rounded-full border-2 border-white bg-rose-600 text-xs font-bold leading-none text-white shadow-sm"
+                  aria-label={`${pesananAktif} pesanan aktif menunggu difakturkan`}
+                  title={`${pesananAktif} pesanan aktif menunggu difakturkan`}
+                >
+                  {pesananAktif > 99 ? "99+" : pesananAktif}
+                </span>
+              ) : null}
+            </div>
+            <VerticalSeparator />
+            <Button
+              type="button"
+              disabled={!canCreateTransaction}
+              onClick={() => navigate("/penjualan/tambah")}
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+              Faktur jual baru
+            </Button>
+          </>
         }
       />
 
@@ -82,9 +247,51 @@ export function PenjualanPage() {
         </div>
       ) : null}
 
-      {loading ? <p className="text-sm text-zinc-500">Memuat daftar faktur…</p> : null}
-
       <Card className="overflow-hidden p-0">
+        <div className="flex justify-between gap-4">
+          <ListFilterBar
+            dateRange={{
+              from: tanggalDari,
+              to: tanggalSampai,
+              onFromChange: setTanggalDari,
+              onToChange: setTanggalSampai,
+            }}
+            search={{
+              value: query,
+              onChange: setQuery,
+              placeholder: "Cari no. faktur, pelanggan, salesman, atau status…",
+            }}
+            onReset={handleReset}
+            canReset={!isDefault}
+            errorMessage={
+              rentangInvalid
+                ? "Tanggal akhir tidak boleh sebelum tanggal mulai."
+                : null
+            }
+            summary={
+              loading
+                ? "Memuat daftar faktur…"
+                : filteredRows.length === 0
+                  ? rows.length === 0
+                    ? "Belum ada faktur penjualan."
+                    : "Tidak ada faktur pada periode/pencarian ini."
+                  : `${filteredRows.length} faktur · total ${formatRupiah(totalPeriode)}`
+            }
+          >
+            <Button 
+              type="button"
+              variant="secondary"
+              className="h-9 self-end"
+              onClick={() => void handleExport()}
+              disabled={loading || exporting || filteredRows.length === 0}
+              title={filteredRows.length === 0 ? "Tidak ada data pada filter ini" : `Export ${filteredRows.length} faktur ke .xlsx`}
+            >
+              <Sheet className="h-4 w-4" aria-hidden />
+              {exporting ? "Mengexport…" : "Export XLSX"}
+            </Button>
+          </ListFilterBar>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full min-w-[800px] text-left text-sm">
             <thead>
@@ -99,22 +306,36 @@ export function PenjualanPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {!loading && rows.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="px-5 py-10 text-center text-sm text-zinc-500">
+                    Memuat faktur penjualan…
+                  </td>
+                </tr>
+              ) : filteredRows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-5 py-12 text-center text-sm text-zinc-500">
-                    Belum ada faktur penjualan.{" "}
-                    <button
-                      type="button"
-                      className="font-semibold text-brand-600 hover:text-brand-700"
-                      onClick={() => navigate("/penjualan/tambah")}
-                    >
-                      Buat penjualan baru
-                    </button>
-                    .
+                    {rows.length === 0 ? (
+                      <>
+                        Belum ada faktur penjualan.{" "}
+                        <Button
+                          type="button"
+                          variant="primary"
+                          className="px-2 py-1 text-xs"
+                          onClick={() => navigate("/penjualan/tambah")}
+                        >
+                          <Plus className="h-4 w-4" aria-hidden />
+                          Faktur jual baru
+                        </Button>
+                        .
+                      </>
+                    ) : (
+                      "Tidak ada faktur yang cocok dengan filter."
+                    )}
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => (
+                filteredRows.map((row) => (
                   <tr key={row.nomor} className="bg-white hover:bg-zinc-50/50">
                     <td className="px-5 py-3 font-mono text-xs font-semibold text-brand-700">{row.nomor}</td>
                     <td className="px-5 py-3 text-zinc-600">{formatTanggal(row.tanggalFaktur)}</td>
@@ -125,12 +346,14 @@ export function PenjualanPage() {
                       <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
                     </td>
                     <td className="px-5 py-3 text-right">
-                      <Link
-                        to={`/penjualan/detail/${encodeURIComponent(row.nomor)}`}
-                        className="inline-flex rounded-xl px-2 py-1 text-xs font-semibold text-brand-700 transition hover:bg-brand-50"
+                      <Button
+                        onClick={() => navigate(`/penjualan/detail/${encodeURIComponent(row.nomor)}`)}
+                        variant="outline"
+                        className="px-2 py-1 text-xs"
                       >
+                        <FileText className="h-4 w-4" aria-hidden />
                         Detail
-                      </Link>
+                      </Button>
                     </td>
                   </tr>
                 ))

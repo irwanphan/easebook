@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Save, Trash2, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -9,9 +9,8 @@ import type { AkunKeuanganRow, JurnalKonfigurasi } from "@/data/keuangan";
 import type { PengeluaranInsertPayload } from "@/data/pengeluaran";
 import { filterAkunBiayaPengeluaran } from "@/lib/akunBiayaPengeluaran";
 import { tauriErrorMessage } from "@/lib/tauriError";
-
-const inputClass =
-  "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
+import { TokoInput } from "@/components/ui/TokoInput";
+import { TokoLookup } from "@/components/ui/TokoLookup";
 
 function todayLocalISODate(): string {
   const d = new Date();
@@ -182,35 +181,30 @@ export function PengeluaranForm({ cancelHref, onSuccess }: PengeluaranFormProps)
               <label htmlFor="pg-tgl" className="block text-sm font-medium text-zinc-700">
                 Tanggal
               </label>
-              <input
+              <TokoInput
                 id="pg-tgl"
-                type="date"
                 value={tanggal}
                 onChange={(e) => setTanggal(e.target.value)}
-                className={inputClass}
                 disabled={disabled}
                 required
               />
             </div>
             <div>
-              <label htmlFor="pg-kas" className="block text-sm font-medium text-zinc-700">
-                Dibayar dari (kas / bank)
-              </label>
-              <select
+              <TokoLookup<AkunKeuanganRow>
                 id="pg-kas"
-                value={kasKode}
-                onChange={(e) => setKasKode(e.target.value)}
-                className={inputClass}
+                label="Dibayar dari (kas / bank)"
+                options={akunKasList}
+                value={kasKode || null}
+                getKey={(a) => a.kode}
+                getLabel={(a) => `${a.kode} — ${a.nama}`}
+                getDescription={(a) => `Saldo: ${formatRupiah(a.saldo)}`}
+                onChange={(opt) => setKasKode(opt ? opt.kode : "")}
+                placeholder="— Pilih akun kas —"
+                searchPlaceholder="Cari kode atau nama akun kas…"
+                emptyMessage="Akun kas tidak ditemukan."
                 disabled={disabled}
                 required
-              >
-                <option value="">— Pilih akun kas —</option>
-                {akunKasList.map((a) => (
-                  <option key={a.kode} value={a.kode}>
-                    {a.kode} — {a.nama}
-                  </option>
-                ))}
-              </select>
+              />
               {masterLoading ? (
                 <p className="mt-1.5 text-xs text-zinc-400">Memuat akun kas…</p>
               ) : akunKasList.length === 0 ? (
@@ -221,21 +215,19 @@ export function PengeluaranForm({ cancelHref, onSuccess }: PengeluaranFormProps)
               <label htmlFor="pg-catatan" className="block text-sm font-medium text-zinc-700">
                 Catatan
               </label>
-              <input
+              <TokoInput
                 id="pg-catatan"
-                type="text"
                 value={catatan}
                 onChange={(e) => setCatatan(e.target.value)}
-                className={inputClass}
                 disabled={disabled}
-                placeholder="opsional"
+                placeholder="Catatan pengeluaran"
               />
             </div>
           </div>
         </Card>
 
         <Card className="overflow-hidden p-0">
-          <div className="flex flex-col gap-4 border-b border-zinc-100 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
+          <div className="flex flex-col gap-4 border-b border-zinc-100 sm:flex-row sm:items-start sm:justify-between pb-4">
             <div>
               <h2 className="text-sm font-semibold text-zinc-900">Baris biaya</h2>
               <p className="mt-1 text-sm text-zinc-500">
@@ -274,24 +266,24 @@ export function PengeluaranForm({ cancelHref, onSuccess }: PengeluaranFormProps)
                 <tbody className="divide-y divide-zinc-100">
                   {lines.map((line) => (
                     <tr key={line.id} className="bg-white">
-                      <td className="px-4 py-3">
-                        <select
-                          value={line.akunKode}
-                          onChange={(e) => updateLine(line.id, { akunKode: e.target.value })}
-                          className={`${inputClass} mt-0`}
+                      <td className="px-2 py-1">
+                        <TokoLookup<AkunKeuanganRow>
+                          options={akunBiayaList}
+                          value={line.akunKode || null}
+                          getKey={(a) => a.kode}
+                          getLabel={(a) => `${a.kode} — ${a.nama}`}
+                          onChange={(opt) =>
+                            updateLine(line.id, { akunKode: opt ? opt.kode : "" })
+                          }
+                          placeholder="— Pilih akun —"
+                          searchPlaceholder="Cari akun biaya…"
+                          emptyMessage="Akun biaya tidak ditemukan."
                           disabled={disabled}
                           required
-                        >
-                          <option value="">— Pilih akun —</option>
-                          {akunBiayaList.map((a) => (
-                            <option key={a.kode} value={a.kode}>
-                              {a.kode} — {a.nama}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </td>
-                      <td className="px-4 py-3">
-                        <input
+                      <td className="px-2 py-1">
+                        <TokoInput
                           type="number"
                           min={1}
                           step={1}
@@ -299,31 +291,30 @@ export function PengeluaranForm({ cancelHref, onSuccess }: PengeluaranFormProps)
                           onChange={(e) =>
                             updateLine(line.id, { jumlah: Math.max(0, Math.round(Number(e.target.value) || 0)) })
                           }
-                          className={`${inputClass} mt-0 text-right`}
                           disabled={disabled}
                           required
                         />
                       </td>
-                      <td className="px-4 py-3">
-                        <input
+                      <td className="px-2 py-1">
+                        <TokoInput
                           type="text"
                           value={line.catatan}
                           onChange={(e) => updateLine(line.id, { catatan: e.target.value })}
-                          className={`${inputClass} mt-0`}
                           disabled={disabled}
-                          placeholder="opsional"
+                          placeholder="Catatan per baris"
                         />
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
+                      <td className="px-2 py-1 text-right">
+                        <Button
                           type="button"
-                          className="rounded-lg p-2 text-zinc-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                          variant="danger"
+                          className="h-10"
                           onClick={() => removeLine(line.id)}
                           disabled={disabled || lines.length <= 1}
                           aria-label="Hapus baris"
                         >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                          <Trash2 className="h-4 w-4" aria-hidden />
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -344,14 +335,16 @@ export function PengeluaranForm({ cancelHref, onSuccess }: PengeluaranFormProps)
         </Card>
 
         <div className="flex flex-wrap justify-end gap-3">
-          <Button type="button" variant="ghost" onClick={() => navigate(cancelHref)} disabled={submitting}>
+          <Button type="button" variant="outline" onClick={() => navigate(cancelHref)} disabled={submitting}>
+            <X className="h-4 w-4" aria-hidden />
             Batal
           </Button>
           <Button
             type="submit"
             disabled={disabled || total <= 0 || akunKasList.length === 0 || akunBiayaList.length === 0}
           >
-            {submitting ? "Menyimpan…" : "Simpan pengeluaran"}
+            <Save className="h-4 w-4" aria-hidden />
+            {submitting ? "Menyimpan…" : "Simpan"}
           </Button>
         </div>
       </form>

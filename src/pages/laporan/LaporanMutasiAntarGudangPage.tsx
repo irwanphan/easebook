@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRightLeft } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, FileText, Filter, Sheet, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -18,6 +18,27 @@ import {
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { tauriErrorMessage } from "@/lib/tauriError";
 import { TokoInput } from "@/components/ui/TokoInput";
+import { useXlsxExport } from "@/lib/useXlsxExport";
+
+/**
+ * Satu baris flatten untuk export — gabungan header dokumen mutasi
+ * dengan satu item barang di dalamnya. Dokumen tanpa item tetap
+ * direpresentasikan satu baris (item null) supaya tetap muncul.
+ */
+type FlatMutasiRow = {
+  referensi: string;
+  tanggal: string;
+  createdAt: number;
+  gudangAsalKode: string;
+  gudangAsalNama: string;
+  gudangTujuanKode: string;
+  gudangTujuanNama: string;
+  catatan: string;
+  barangKode: string;
+  barangNama: string;
+  satuan: string;
+  qty: number;
+};
 
 function toIsoDate(d: Date) {
   const y = d.getFullYear();
@@ -70,6 +91,8 @@ export function LaporanMutasiAntarGudangPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detail, setDetail] = useState<MutasiAntarGudangDetail | null>(null);
+
+  const { exporting, exportNow } = useXlsxExport();
 
   const rentangInvalid = useMemo(() => {
     if (!tanggalDari || !tanggalSampai) return true;
@@ -136,6 +159,97 @@ export function LaporanMutasiAntarGudangPage() {
     void fetchRows();
   }, [fetchRows]);
 
+  const handleExport = useCallback(async () => {
+    if (rentangInvalid || rows.length === 0) return;
+
+    // Flatten: 1 baris Excel = 1 item barang di dalam dokumen mutasi.
+    // Header dokumen di-duplikasi di setiap baris item supaya gampang
+    // di-pivot / di-sort di Excel. Dokumen tanpa item tetap tampil.
+    const flatRows: FlatMutasiRow[] = rows.flatMap((row) => {
+      const baris = row.baris ?? [];
+      if (baris.length === 0) {
+        return [{
+          referensi: row.referensi,
+          tanggal: row.tanggal,
+          createdAt: row.createdAt,
+          gudangAsalKode: row.gudangAsalKode,
+          gudangAsalNama: row.gudangAsalNama,
+          gudangTujuanKode: row.gudangTujuanKode,
+          gudangTujuanNama: row.gudangTujuanNama,
+          catatan: row.catatan,
+          barangKode: "",
+          barangNama: "",
+          satuan: "",
+          qty: 0,
+        }];
+      }
+      return baris.map((b) => ({
+        referensi: row.referensi,
+        tanggal: row.tanggal,
+        createdAt: row.createdAt,
+        gudangAsalKode: row.gudangAsalKode,
+        gudangAsalNama: row.gudangAsalNama,
+        gudangTujuanKode: row.gudangTujuanKode,
+        gudangTujuanNama: row.gudangTujuanNama,
+        catatan: row.catatan,
+        barangKode: b.barangKode,
+        barangNama: b.barangNama,
+        // Gunakan satuan stok dari katalog kalau tersedia (lebih konsisten
+        // dengan tampilan UI), fallback ke satuan di payload.
+        satuan: (() => {
+          const barang = barangByKode.get(b.barangKode.toLowerCase());
+          return barang ? getSatuanStokBarang(barang) : b.satuan || "";
+        })(),
+        qty: b.qty,
+      }));
+    });
+
+    const totalQty = flatRows.reduce((s, r) => s + r.qty, 0);
+
+    await exportNow<FlatMutasiRow>({
+      fileName: `laporan_mutasi_antar_gudang_${tanggalDari}_sd_${tanggalSampai}`,
+      sheetName: "Mutasi antar gudang",
+      title: "Laporan Mutasi Antar Gudang",
+      meta: [
+        { label: "Periode", value: `${formatTanggal(tanggalDari)} – ${formatTanggal(tanggalSampai)}` },
+        { label: "Jumlah dokumen", value: rows.length },
+        { label: "Jumlah baris item", value: flatRows.length },
+        { label: "Total qty agregat", value: formatQtyAngka(totalQty) },
+        {
+          label: "Catatan",
+          value: "Qty dijumlahkan lintas barang & satuan; gunakan kolom Satuan per baris untuk konteks unit.",
+        },
+      ],
+      columns: [
+        { header: "Referensi", value: (r) => r.referensi, type: "text", width: 18 },
+        { header: "Tanggal", value: (r) => r.tanggal, type: "date" },
+        { header: "Asal kode", value: (r) => r.gudangAsalKode, type: "text", width: 14 },
+        { header: "Asal nama", value: (r) => r.gudangAsalNama, type: "text", width: 24 },
+        { header: "Tujuan kode", value: (r) => r.gudangTujuanKode, type: "text", width: 14 },
+        { header: "Tujuan nama", value: (r) => r.gudangTujuanNama, type: "text", width: 24 },
+        { header: "Kode barang", value: (r) => r.barangKode, type: "text", width: 16 },
+        { header: "Nama barang", value: (r) => r.barangNama, type: "text", width: 30 },
+        { header: "Satuan", value: (r) => r.satuan, type: "text", width: 10 },
+        { header: "Qty", value: (r) => r.qty, type: "integer", width: 12 },
+        { header: "Catatan", value: (r) => r.catatan, type: "text", width: 30 },
+      ],
+      data: flatRows,
+      footerRow: [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        { value: "TOTAL", type: "text" },
+        { value: totalQty, type: "integer" },
+        null,
+      ],
+    });
+  }, [barangByKode, exportNow, rentangInvalid, rows, tanggalDari, tanggalSampai]);
+
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <div>
@@ -162,27 +276,45 @@ export function LaporanMutasiAntarGudangPage() {
       />
 
       <Card className="p-5">
-        <div className="flex flex-wrap items-end gap-4">
-          <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
-            Tanggal mulai
-            <TokoInput
-              id="lmag-dari"
-              type="date"
-              value={tanggalDari}
-              onChange={(e) => setTanggalDari(e.target.value)}
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
-            Tanggal akhir
-            <TokoInput
-              id="lmag-sampai"
-              type="date"
-              value={tanggalSampai}
-              onChange={(e) => setTanggalSampai(e.target.value)}
-            />
-          </label>
-          <Button type="button" variant="secondary" disabled={loading} onClick={() => void fetchRows()}>
-            {loading ? "Memuat…" : "Terapkan filter"}
+        <div className="flex justify-between gap-4">
+          <div className="flex gap-4">
+            <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
+              Tanggal mulai
+              <TokoInput
+                id="lmag-dari"
+                type="date"
+                value={tanggalDari}
+                onChange={(e) => setTanggalDari(e.target.value)}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
+              Tanggal akhir
+              <TokoInput
+                id="lmag-sampai"
+                type="date"
+                value={tanggalSampai}
+                onChange={(e) => setTanggalSampai(e.target.value)}
+              />
+            </label>
+            <Button type="button" variant="secondary" className="h-10 self-end" disabled={loading} onClick={() => void fetchRows()}>
+              <Filter className="h-4 w-4" aria-hidden />
+              {loading ? "Memuat…" : "Terapkan filter"}
+            </Button>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            className="h-9 self-end"
+            onClick={() => void handleExport()}
+            disabled={loading || exporting || rentangInvalid || rows.length === 0}
+            title={
+              rows.length === 0
+                ? "Tidak ada data pada filter ini"
+                : `Export ${rows.length} dokumen mutasi ke .xlsx`
+            }
+          >
+            <Sheet className="h-4 w-4" aria-hidden />
+            {exporting ? "Mengexport…" : "Export XLSX"}
           </Button>
         </div>
 
@@ -286,10 +418,11 @@ export function LaporanMutasiAntarGudangPage() {
                       <td className="px-4 py-3 text-right">
                         <Button
                           type="button"
-                          variant="secondary"
-                          className="px-2 py-1 text-xs"
+                          variant="outline"
+                          className="h-8 text-xs"
                           onClick={() => void openDetail(row.referensi)}
                         >
+                          <FileText className="h-4 w-4" aria-hidden />
                           Detail
                         </Button>
                       </td>
@@ -308,7 +441,8 @@ export function LaporanMutasiAntarGudangPage() {
         onClose={closeDetail}
         panelClassName="max-w-2xl"
         footer={
-          <Button type="button" variant="secondary" onClick={closeDetail}>
+          <Button type="button" variant="outline" onClick={closeDetail}>
+            <X className="h-4 w-4" aria-hidden />
             Tutup
           </Button>
         }

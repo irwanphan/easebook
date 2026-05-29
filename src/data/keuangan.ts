@@ -80,6 +80,9 @@ export type JurnalKonfigurasi = {
   akunPembelian: string | null;
   akunPenerimaanLainnya: string | null;
   akunPengeluaranLainnya: string | null;
+  /** Akun lawan untuk semua jurnal pembuka (saldo awal kas, stok, dll.)
+   *  yang tanggalnya = `operasional_konfigurasi.awal_periode`. */
+  akunHistoricalBalance: string | null;
 };
 
 export type JurnalKonfigurasiSetPayload = {
@@ -89,6 +92,7 @@ export type JurnalKonfigurasiSetPayload = {
   akunPembelian: string | null;
   akunPenerimaanLainnya: string | null;
   akunPengeluaranLainnya: string | null;
+  akunHistoricalBalance: string | null;
 };
 
 export type JurnalJenisTransaksi =
@@ -138,4 +142,40 @@ export type JurnalManualInsertPayload = {
   referensi: string;
   catatan: string;
   lines: JurnalManualLinePayload[];
+};
+
+/** Satu baris mutasi di buku besar (general ledger) + saldo running. */
+export type BukuBesarRow = {
+  lineId: number;
+  jurnalId: number;
+  tanggal: string;
+  jenis: string;
+  referensi: string;
+  catatan: string;
+  debit: number;
+  kredit: number;
+  /**
+   * Saldo kumulatif setelah baris ini, dalam basis natural akun (positif =
+   * sisi normal). Untuk `kolomNorm = "D"`, ini = Σ debit − Σ kredit kumulatif.
+   * Untuk `kolomNorm = "K"`, ini = Σ kredit − Σ debit kumulatif.
+   */
+  saldoRunning: number;
+};
+
+/** Snapshot buku besar untuk satu akun pada rentang tanggal tertentu. */
+export type BukuBesarSnapshot = {
+  akunKode: string;
+  akunNama: string;
+  kelompok: string;
+  /** "D" atau "K" — arah saldo natural akun. */
+  kolomNorm: string;
+  tanggalDari: string;
+  tanggalSampai: string;
+  /** Saldo akun per awal `tanggalDari` (sebelum hari pertama), basis natural. */
+  saldoAwal: number;
+  totalDebit: number;
+  totalKredit: number;
+  /** Saldo akhir = saldoAwal + Σ delta natural, basis natural. */
+  saldoAkhir: number;
+  entries: BukuBesarRow[];
 };

@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { Eye } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { FileText, Filter, Plus, Sheet } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import type { PengeluaranListRow } from "@/data/pengeluaran";
 import { tauriErrorMessage } from "@/lib/tauriError";
-
-const inputClass =
-  "rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
+import { TokoInput } from "@/components/ui/TokoInput";
+import { useXlsxExport } from "@/lib/useXlsxExport";
 
 function toIsoDate(d: Date) {
   const y = d.getFullYear();
@@ -49,6 +48,7 @@ export function KeuanganPengeluaranPage() {
   const [rows, setRows] = useState<PengeluaranListRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { exporting, exportNow } = useXlsxExport();
 
   const rentangInvalid = useMemo(() => {
     if (!tanggalDari || !tanggalSampai) return true;
@@ -84,6 +84,47 @@ export function KeuanganPengeluaranPage() {
     void fetchRows();
   }, [fetchRows]);
 
+  const handleExport = useCallback(async () => {
+    if (rentangInvalid) {
+      setError("Tanggal akhir tidak boleh sebelum tanggal mulai.");
+      return;
+    }
+    if (rows.length === 0) {
+      setError("Tidak ada data pada filter saat ini untuk diexport.");
+      return;
+    }
+    setError(null);
+    await exportNow<PengeluaranListRow>({
+      fileName: `pengeluaran_${tanggalDari}_sd_${tanggalSampai}`,
+      sheetName: "Pengeluaran",
+      title: "Daftar Pengeluaran",
+      meta: [
+        { label: "Periode", value: `${formatTanggal(tanggalDari)} – ${formatTanggal(tanggalSampai)}` },
+        { label: "Jumlah transaksi", value: rows.length },
+        { label: "Total periode", value: formatRupiah(totalPeriode) },
+      ],
+      columns: [
+        { header: "No. bukti", value: (r) => r.nomor, type: "text", width: 18 },
+        { header: "Tanggal", value: (r) => r.tanggal, type: "date" },
+        { header: "Akun kas (kode)", value: (r) => r.akunKasKode, type: "text", width: 14 },
+        { header: "Akun kas (nama)", value: (r) => r.akunKasNama, type: "text", width: 28 },
+        { header: "Jumlah baris", value: (r) => r.jumlahBaris, type: "integer", width: 12 },
+        { header: "Total", value: (r) => r.total, type: "currency", width: 18 },
+        { header: "Catatan", value: (r) => r.catatan, type: "text", width: 40 },
+      ],
+      data: rows,
+      footerRow: [
+        null,
+        null,
+        null,
+        null,
+        { value: "TOTAL", type: "text" },
+        { value: totalPeriode, type: "currency" },
+        null,
+      ],
+    });
+  }, [exportNow, rentangInvalid, rows, tanggalDari, tanggalSampai, totalPeriode]);
+
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
@@ -91,6 +132,7 @@ export function KeuanganPengeluaranPage() {
         description="Catat dan kelola pengeluaran kas / bank perusahaan."
         actions={
           <Button type="button" onClick={() => navigate("/keuangan/pengeluaran/tambah")}>
+            <Plus className="h-4 w-4" aria-hidden />
             Tambah pengeluaran
           </Button>
         }
@@ -103,36 +145,51 @@ export function KeuanganPengeluaranPage() {
       ) : null}
 
       <Card className="overflow-hidden p-0">
-        <div className="flex flex-col gap-4 border-b border-zinc-100 p-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-4 border-b border-zinc-100 pb-3 mb-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="grid gap-4 sm:grid-cols-2 lg:max-w-xl">
             <div>
               <label htmlFor="pg-dari" className="block text-sm font-medium text-zinc-700">
                 Tanggal mulai
               </label>
-              <input
+              <TokoInput
                 id="pg-dari"
                 type="date"
                 value={tanggalDari}
                 onChange={(e) => setTanggalDari(e.target.value)}
-                className={`${inputClass} mt-1`}
               />
             </div>
             <div>
               <label htmlFor="pg-sampai" className="block text-sm font-medium text-zinc-700">
                 Tanggal akhir
               </label>
-              <input
+              <TokoInput
                 id="pg-sampai"
                 type="date"
                 value={tanggalSampai}
                 onChange={(e) => setTanggalSampai(e.target.value)}
-                className={`${inputClass} mt-1`}
               />
             </div>
           </div>
-          <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
-            {loading ? "Memuat…" : "Terapkan filter"}
-          </Button>
+          <div className="flex gap-2">
+            <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
+              <Filter className="h-4 w-4" aria-hidden />
+              {loading ? "Memuat…" : "Terapkan filter"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void handleExport()}
+              disabled={loading || exporting || rentangInvalid || rows.length === 0}
+              title={
+                rows.length === 0
+                  ? "Tidak ada data pada filter ini"
+                  : `Export ${rows.length} transaksi ke .xlsx`
+              }
+            >
+              <Sheet className="h-4 w-4" aria-hidden />
+              {exporting ? "Mengexport…" : "Export XLSX"}
+            </Button>
+          </div>
         </div>
 
         <div className="border-b border-zinc-100 px-6 py-3">
@@ -188,14 +245,15 @@ export function KeuanganPengeluaranPage() {
                       {row.catatan || "—"}
                     </td>
                     <td className="px-5 py-3 text-right">
-                      <Link
-                        to={`/keuangan/pengeluaran/detail/${encodeURIComponent(row.nomor)}`}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
+                      <Button
+                        onClick={() => navigate(`/keuangan/pengeluaran/detail/${encodeURIComponent(row.nomor)}`)}
+                        variant="outline"
+                        className="px-2 py-1 text-xs"
                         aria-label={`Lihat detail pengeluaran ${row.nomor}`}
                       >
-                        <Eye className="h-3.5 w-3.5" aria-hidden />
+                        <FileText className="h-3.5 w-3.5" aria-hidden />
                         Detail
-                      </Link>
+                      </Button>
                     </td>
                   </tr>
                 ))

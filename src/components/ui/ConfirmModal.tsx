@@ -33,7 +33,7 @@ export function ConfirmModal({
       }}
       footer={
         <div className="flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="ghost" disabled={loading} onClick={onCancel}>
+          <Button type="button" variant="outline" disabled={loading} onClick={onCancel}>
             {cancelLabel}
           </Button>
           <Button

@@ -612,15 +612,15 @@ export function PenjualanFakturForm({ mode, nomor, cancelHref, onSuccess }: Penj
                         <span className="inline-block pt-2.5">{formatRupiah(sub)}</span>
                       </td>
                       <td className="px-2 py-2 align-top text-center">
-                        <button
+                        <Button
                           type="button"
+                          variant="danger"
                           onClick={() => removeLine(row.id)}
-                          className="mt-1.5 inline-flex rounded-lg p-2 text-zinc-400 transition hover:bg-rose-50 hover:text-rose-600"
                           aria-label="Hapus baris"
                           disabled={busy}
                         >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                          <Trash2 className="h-4 w-4" aria-hidden />
+                        </Button>
                       </td>
                     </tr>
                   );
@@ -696,7 +696,7 @@ export function PenjualanFakturForm({ mode, nomor, cancelHref, onSuccess }: Penj
         </Card>
 
         <div className="flex flex-wrap justify-end gap-3">
-          <Button type="button" variant="ghost" onClick={() => navigate(cancelHref)} disabled={busy}>
+          <Button type="button" variant="outline" onClick={() => navigate(cancelHref)} disabled={busy}>
             Batal
           </Button>
           <Button type="submit" disabled={busy}>

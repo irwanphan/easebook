@@ -5,8 +5,31 @@ import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { PrintButton } from "@/components/ui/PrintButton";
+import {
+  buildPelunasanPrintHtml,
+  type PelunasanPrintConfig,
+} from "@/features/templates/pelunasanPrintTemplate";
+import type { SignatureColumn } from "@/features/keuangan/printSignature";
 import type { PelunasanPiutangDetail } from "@/data/pelunasanPiutang";
 import { tauriErrorMessage } from "@/lib/tauriError";
+
+// Pelunasan piutang (pelanggan bayar ke kita):
+// kiri = pelanggan (yang membayar), kanan = kasir kita (yang menerima).
+const PELUNASAN_PIUTANG_SIGNATURES: SignatureColumn[] = [
+  { label: "Yang Membayar" },
+  { label: "Yang Menerima" },
+];
+
+const PELUNASAN_PIUTANG_PRINT_CONFIG: PelunasanPrintConfig = {
+  judulDokumen: "Kuitansi pelunasan piutang",
+  pihakLabel: "Pelanggan",
+  kasLabel: "Diterima ke kas",
+  fakturTitle: "Faktur penjualan yang dilunasi",
+  fakturNomorLabel: "No. faktur penjualan",
+  signatures: PELUNASAN_PIUTANG_SIGNATURES,
+  signatureMode: "paraf",
+};
 
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -85,18 +108,46 @@ export function PelunasanPiutangDetailPage() {
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
-      <div>
-        <Link
-          to={daftarHref}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          Kembali ke daftar pelunasan
-        </Link>
-        <PageHeader
-          title="Detail pelunasan piutang"
-          description={detail ? `Nomor ${detail.nomor}` : "Memuat data pelunasan…"}
-        />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <Link
+            to={daftarHref}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 print:hidden"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            Kembali ke daftar pelunasan
+          </Link>
+          <PageHeader
+            title="Detail pelunasan piutang"
+            description={detail ? `Nomor ${detail.nomor}` : "Memuat data pelunasan…"}
+          />
+        </div>
+        {detail ? (
+          <PrintButton
+            mode="browser"
+            label="Cetak"
+            filenameHint={`pelunasan-piutang-${detail.nomor}`}
+            htmlBuilder={({ paperSize }) =>
+              buildPelunasanPrintHtml(
+                {
+                  nomor: detail.nomor,
+                  tanggal: detail.tanggal,
+                  pihakKode: detail.pelangganKode,
+                  pihakNama: detail.pelangganNama,
+                  akunKasKode: detail.akunKasKode,
+                  akunKasNama: detail.akunKasNama,
+                  total: detail.total,
+                  catatan: detail.catatan,
+                  createdAt: detail.createdAt,
+                  faktur: detail.faktur,
+                },
+                PELUNASAN_PIUTANG_PRINT_CONFIG,
+                paperSize,
+              )
+            }
+            onError={(msg) => setError(msg)}
+          />
+        ) : null}
       </div>
 
       {error ? (
@@ -142,17 +193,7 @@ export function PelunasanPiutangDetailPage() {
                 <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Total pelunasan</p>
                 <p className="mt-1 text-lg font-semibold text-zinc-900">{formatRupiah(detail.total)}</p>
               </div>
-              {detail.jurnalId != null ? (
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Jurnal umum</p>
-                  <Link
-                    to="/keuangan/jurnal-umum"
-                    className="mt-1 inline-block text-sm font-medium text-brand-600 hover:text-brand-700"
-                  >
-                    Lihat di jurnal umum (ID {detail.jurnalId})
-                  </Link>
-                </div>
-              ) : null}
+              
               {detail.catatan.trim() ? (
                 <div className="sm:col-span-2">
                   <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Catatan</p>
@@ -211,6 +252,20 @@ export function PelunasanPiutangDetailPage() {
                 ) : null}
               </table>
             </div>
+          </Card>
+
+          <Card>
+            {detail.jurnalId != null ? (
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Jurnal umum</p>
+                <Link
+                  to="/keuangan/jurnal-umum"
+                  className="mt-1 inline-block text-sm font-medium text-brand-600 hover:text-brand-700"
+                >
+                  Lihat di jurnal umum (ID {detail.jurnalId})
+                </Link>
+              </div>
+            ) : null}
           </Card>
         </>
       ) : null}

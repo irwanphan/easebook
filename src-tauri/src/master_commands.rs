@@ -3,7 +3,7 @@
 use crate::db;
 use crate::DbState;
 use chrono::{Datelike, Local, NaiveDate, TimeZone, Utc};
-use rusqlite::{params, Connection, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -114,6 +114,73 @@ pub fn kategori_insert(state: State<DbState>, row: KategoriInsert) -> Result<(),
     })
 }
 
+#[tauri::command]
+pub fn kategori_delete(state: State<DbState>, kode: String) -> Result<(), String> {
+    let kode = kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode wajib diisi.".into());
+    }
+    with_conn_app(&state, |conn| {
+        let dipakai: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM barang_jasa WHERE kategori_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if dipakai > 0 {
+            return Err(format!(
+                "Kategori tidak dapat dihapus karena masih dipakai oleh {dipakai} barang/jasa. Ubah dulu kategori pada item terkait sebelum menghapus."
+            ));
+        }
+        let n = conn
+            .execute(
+                "DELETE FROM kategori WHERE kode = ? COLLATE NOCASE",
+                params![kode],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Kategori tidak ditemukan.".into());
+        }
+        Ok(())
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KategoriUpdate {
+    pub nama: String,
+    pub deskripsi: String,
+}
+
+#[tauri::command]
+pub fn kategori_update(
+    state: State<DbState>,
+    kode: String,
+    row: KategoriUpdate,
+) -> Result<(), String> {
+    let kode = kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode wajib diisi.".into());
+    }
+    if row.nama.trim().is_empty() {
+        return Err("Nama wajib diisi.".into());
+    }
+    let ts = now_ts();
+    with_conn_app(&state, |conn| {
+        let n = conn
+            .execute(
+                "UPDATE kategori SET nama = ?, deskripsi = ?, updated_at = ? WHERE kode = ? COLLATE NOCASE",
+                params![row.nama.trim(), row.deskripsi.trim(), ts, kode],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Kategori tidak ditemukan.".into());
+        }
+        Ok(())
+    })
+}
+
 // --- Merek ---
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -177,6 +244,73 @@ pub fn merek_insert(state: State<DbState>, row: MerekInsert) -> Result<(), Strin
         } else {
             e
         }
+    })
+}
+
+#[tauri::command]
+pub fn merek_delete(state: State<DbState>, kode: String) -> Result<(), String> {
+    let kode = kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode wajib diisi.".into());
+    }
+    with_conn_app(&state, |conn| {
+        let dipakai: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM barang_jasa WHERE merek_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if dipakai > 0 {
+            return Err(format!(
+                "Merek tidak dapat dihapus karena masih dipakai oleh {dipakai} barang/jasa. Ubah dulu merek pada item terkait sebelum menghapus."
+            ));
+        }
+        let n = conn
+            .execute(
+                "DELETE FROM merek WHERE kode = ? COLLATE NOCASE",
+                params![kode],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Merek tidak ditemukan.".into());
+        }
+        Ok(())
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MerekUpdate {
+    pub nama: String,
+    pub deskripsi: String,
+}
+
+#[tauri::command]
+pub fn merek_update(
+    state: State<DbState>,
+    kode: String,
+    row: MerekUpdate,
+) -> Result<(), String> {
+    let kode = kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode wajib diisi.".into());
+    }
+    if row.nama.trim().is_empty() {
+        return Err("Nama wajib diisi.".into());
+    }
+    let ts = now_ts();
+    with_conn_app(&state, |conn| {
+        let n = conn
+            .execute(
+                "UPDATE merek SET nama = ?, deskripsi = ?, updated_at = ? WHERE kode = ? COLLATE NOCASE",
+                params![row.nama.trim(), row.deskripsi.trim(), ts, kode],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Merek tidak ditemukan.".into());
+        }
+        Ok(())
     })
 }
 
@@ -274,6 +408,153 @@ pub fn gudang_insert(state: State<DbState>, row: GudangInsert) -> Result<(), Str
         } else {
             e
         }
+    })
+}
+
+#[tauri::command]
+pub fn gudang_delete(state: State<DbState>, kode: String) -> Result<(), String> {
+    let kode = kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode wajib diisi.".into());
+    }
+    with_conn_app(&state, |conn| {
+        // Hitung stok per barang di gudang ini (positif = ada fisik).
+        // Pakai stok_mutasi sebagai single source of truth untuk pergerakan
+        // stok (semua transaksi: pembelian/penjualan/mutasi antar gudang
+        // menulis ke sini).
+        let barang_dengan_stok: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM (
+                    SELECT barang_kode
+                    FROM stok_mutasi
+                    WHERE gudang_kode = ? COLLATE NOCASE
+                    GROUP BY barang_kode
+                    HAVING COALESCE(SUM(qty_masuk - qty_keluar), 0) > 0
+                )",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if barang_dengan_stok > 0 {
+            return Err(format!(
+                "Gudang tidak dapat dihapus karena masih ada {barang_dengan_stok} barang di dalamnya. Kosongkan dulu stok lewat mutasi antar gudang sebelum menghapus."
+            ));
+        }
+
+        // Cek default_gudang_kode pada barang_jasa — meskipun FK-nya SET NULL,
+        // user-experience-wise lebih baik kasih tahu agar mereka cabut dulu.
+        let default_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM barang_jasa WHERE default_gudang_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if default_count > 0 {
+            return Err(format!(
+                "Gudang ini dipakai sebagai gudang default oleh {default_count} barang/jasa. Ubah dulu gudang default pada item terkait sebelum menghapus."
+            ));
+        }
+
+        // Cek histori transaksi (pembelian/penjualan/mutasi) — meskipun stok
+        // 0, kalau pernah dipakai akan menyebabkan FK constraint error.
+        let mutasi_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM stok_mutasi WHERE gudang_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        let pembelian_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pembelian WHERE gudang_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        let penjualan_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM penjualan WHERE gudang_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if mutasi_count > 0 || pembelian_count > 0 || penjualan_count > 0 {
+            return Err(format!(
+                "Gudang ini memiliki histori transaksi ({pembelian_count} pembelian, {penjualan_count} penjualan, {mutasi_count} mutasi stok). Histori tidak boleh dihapus, sehingga gudang juga tidak dapat dihapus."
+            ));
+        }
+
+        let n = conn
+            .execute(
+                "DELETE FROM gudang WHERE kode = ? COLLATE NOCASE",
+                params![kode],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Gudang tidak ditemukan.".into());
+        }
+        Ok(())
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GudangUpdate {
+    pub nama: String,
+    pub alamat: String,
+    pub lokasi: String,
+    pub pic: String,
+    pub nomor_kontak: String,
+    pub luas_m2: f64,
+    pub kapasitas_penyimpanan: String,
+}
+
+#[tauri::command]
+pub fn gudang_update(
+    state: State<DbState>,
+    kode: String,
+    row: GudangUpdate,
+) -> Result<(), String> {
+    let kode = kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode wajib diisi.".into());
+    }
+    if row.nama.trim().is_empty() || row.alamat.trim().is_empty() {
+        return Err("Nama dan alamat wajib diisi.".into());
+    }
+    if row.pic.trim().is_empty() || row.nomor_kontak.trim().is_empty() {
+        return Err("PIC dan nomor kontak wajib diisi.".into());
+    }
+    if row.luas_m2 <= 0.0 {
+        return Err("Luas harus lebih dari 0.".into());
+    }
+    if row.kapasitas_penyimpanan.trim().is_empty() {
+        return Err("Kapasitas penyimpanan wajib diisi.".into());
+    }
+    let ts = now_ts();
+    with_conn_app(&state, |conn| {
+        let n = conn
+            .execute(
+                "UPDATE gudang SET nama = ?, alamat = ?, lokasi = ?, pic = ?, nomor_kontak = ?, luas_m2 = ?, kapasitas_penyimpanan = ?, updated_at = ?
+                 WHERE kode = ? COLLATE NOCASE",
+                params![
+                    row.nama.trim(),
+                    row.alamat.trim(),
+                    row.lokasi.trim(),
+                    row.pic.trim(),
+                    row.nomor_kontak.trim(),
+                    row.luas_m2,
+                    row.kapasitas_penyimpanan.trim(),
+                    ts,
+                    kode,
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Gudang tidak ditemukan.".into());
+        }
+        Ok(())
     })
 }
 
@@ -1169,7 +1450,32 @@ pub fn pelanggan_update(
 
 #[tauri::command]
 pub fn pelanggan_delete(state: State<DbState>, kode: String) -> Result<(), String> {
+    let kode = kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode wajib diisi.".into());
+    }
     with_conn_app(&state, |conn| {
+        // Cek faktur penjualan (FK RESTRICT — kalau ada, FK akan gagal juga).
+        let penjualan_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM penjualan WHERE pelanggan_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        // Cek pelunasan piutang (tanpa FK — harus dicek manual).
+        let pelunasan_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pelunasan_piutang WHERE pelanggan_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if penjualan_count > 0 || pelunasan_count > 0 {
+            return Err(format!(
+                "Pelanggan tidak dapat dihapus karena sudah memiliki transaksi ({penjualan_count} faktur penjualan, {pelunasan_count} pelunasan piutang). Histori transaksi tidak boleh dihapus."
+            ));
+        }
         let n = kontak_delete_conn(conn, "pelanggan", &kode).map_err(|e| e.to_string())?;
         if n == 0 {
             return Err("Pelanggan tidak ditemukan.".into());
@@ -1224,7 +1530,32 @@ pub fn pemasok_update(
 
 #[tauri::command]
 pub fn pemasok_delete(state: State<DbState>, kode: String) -> Result<(), String> {
+    let kode = kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode wajib diisi.".into());
+    }
     with_conn_app(&state, |conn| {
+        // Cek faktur pembelian (FK RESTRICT — kalau ada, FK akan gagal juga).
+        let pembelian_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pembelian WHERE pemasok_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        // Cek pelunasan hutang (tanpa FK — harus dicek manual).
+        let pelunasan_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pelunasan_hutang WHERE pemasok_kode = ? COLLATE NOCASE",
+                params![kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if pembelian_count > 0 || pelunasan_count > 0 {
+            return Err(format!(
+                "Pemasok tidak dapat dihapus karena sudah memiliki transaksi ({pembelian_count} faktur pembelian, {pelunasan_count} pelunasan hutang). Histori transaksi tidak boleh dihapus."
+            ));
+        }
         let n = kontak_delete_conn(conn, "pemasok", &kode).map_err(|e| e.to_string())?;
         if n == 0 {
             return Err("Pemasok tidak ditemukan.".into());
@@ -1588,6 +1919,46 @@ pub fn pengguna_login(
     })
 }
 
+/// Verifikasi kata sandi pengguna saat ini — dipakai sebagai pengaman tambahan
+/// untuk aksi sensitif (mis. mengubah pengaturan operasional awal periode).
+///
+/// Beda dengan `pengguna_login`: tidak mengembalikan session, hanya `()` saat
+/// berhasil. Tetap mensyaratkan akun aktif dan password cocok via bcrypt.
+#[tauri::command]
+pub fn pengguna_verifikasi_kata_sandi(
+    state: State<DbState>,
+    username: String,
+    password: String,
+) -> Result<(), String> {
+    let key = username.trim();
+    if key.is_empty() {
+        return Err("Username wajib diisi.".into());
+    }
+    if password.is_empty() {
+        return Err("Kata sandi wajib diisi.".into());
+    }
+
+    with_conn_app(&state, |conn| {
+        let row: (i64, String) = conn
+            .query_row(
+                "SELECT aktif, password_hash FROM pengguna WHERE lower(username) = lower(?)",
+                params![key],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(|_| "Pengguna tidak ditemukan.".to_string())?;
+
+        if row.0 == 0 {
+            return Err("Akun pengguna tidak aktif.".into());
+        }
+
+        let ok = bcrypt::verify(password.as_str(), &row.1).map_err(|e| e.to_string())?;
+        if !ok {
+            return Err("Kata sandi salah.".into());
+        }
+        Ok(())
+    })
+}
+
 #[tauri::command]
 pub fn pengguna_halaman_akses_get(state: State<DbState>, username: String) -> Result<Vec<String>, String> {
     let key = username.trim();
@@ -1748,6 +2119,26 @@ pub fn pengguna_delete(state: State<DbState>, username: String) -> Result<(), St
             if admin_count == 0 {
                 return Err("Tidak dapat menghapus admin terakhir.".into());
             }
+        }
+
+        // Block hard-delete kalau user pernah punya aktivitas tercatat
+        // (transaksi, perubahan master data, dst.). `activity_log` adalah
+        // single source of truth untuk jejak aktor — semua transaksi
+        // melewati `activity_log_record_tx` saat dibuat / diubah / dihapus.
+        // Histori audit tidak boleh "menggantung" ke username yang tidak ada,
+        // jadi user dengan riwayat hanya boleh dinonaktifkan via menu Ubah
+        // (toggle aktif), bukan dihapus permanen.
+        let aktivitas_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM activity_log WHERE lower(aktor_username) = lower(?)",
+                params![key],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if aktivitas_count > 0 {
+            return Err(format!(
+                "Pengguna tidak dapat dihapus karena sudah memiliki {aktivitas_count} aktivitas tercatat (transaksi / perubahan data). Untuk membatasi akses, buka menu Ubah lalu set status menjadi Nonaktif."
+            ));
         }
 
         let n = conn
@@ -6371,6 +6762,9 @@ pub struct JurnalKonfigurasiRow {
     pub akun_pembelian: Option<String>,
     pub akun_penerimaan_lainnya: Option<String>,
     pub akun_pengeluaran_lainnya: Option<String>,
+    /// Akun lawan untuk jurnal pembuka (saldo awal kas/stok/dll) di periode
+    /// sebelum awal periode operasional.
+    pub akun_historical_balance: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -6382,6 +6776,7 @@ pub struct JurnalKonfigurasiSetPayload {
     pub akun_pembelian: Option<String>,
     pub akun_penerimaan_lainnya: Option<String>,
     pub akun_pengeluaran_lainnya: Option<String>,
+    pub akun_historical_balance: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -6423,7 +6818,8 @@ fn konfigurasi_ensure_row(tx: &Transaction<'_>, ts: i64) -> Result<(), String> {
 
 fn konfigurasi_get_row(tx: &Transaction<'_>) -> Result<JurnalKonfigurasiRow, String> {
     tx.query_row(
-        "SELECT akun_piutang, akun_hutang, akun_pendapatan, akun_pembelian, akun_penerimaan_lainnya, akun_pengeluaran_lainnya
+        "SELECT akun_piutang, akun_hutang, akun_pendapatan, akun_pembelian,
+                akun_penerimaan_lainnya, akun_pengeluaran_lainnya, akun_historical_balance
          FROM jurnal_konfigurasi
          WHERE id = 1",
         [],
@@ -6435,6 +6831,7 @@ fn konfigurasi_get_row(tx: &Transaction<'_>) -> Result<JurnalKonfigurasiRow, Str
                 akun_pembelian: r.get(3)?,
                 akun_penerimaan_lainnya: r.get(4)?,
                 akun_pengeluaran_lainnya: r.get(5)?,
+                akun_historical_balance: r.get(6)?,
             })
         },
     )
@@ -6668,9 +7065,10 @@ pub fn akun_keuangan_delete(state: State<DbState>, kode: String) -> Result<(), S
              akun_pendapatan = CASE WHEN lower(akun_pendapatan) = lower(?) THEN NULL ELSE akun_pendapatan END,
              akun_pembelian = CASE WHEN lower(akun_pembelian) = lower(?) THEN NULL ELSE akun_pembelian END,
              akun_penerimaan_lainnya = CASE WHEN lower(akun_penerimaan_lainnya) = lower(?) THEN NULL ELSE akun_penerimaan_lainnya END,
-             akun_pengeluaran_lainnya = CASE WHEN lower(akun_pengeluaran_lainnya) = lower(?) THEN NULL ELSE akun_pengeluaran_lainnya END
+             akun_pengeluaran_lainnya = CASE WHEN lower(akun_pengeluaran_lainnya) = lower(?) THEN NULL ELSE akun_pengeluaran_lainnya END,
+             akun_historical_balance = CASE WHEN lower(akun_historical_balance) = lower(?) THEN NULL ELSE akun_historical_balance END
          WHERE id = 1",
-        params![kode, kode, kode, kode, kode, kode],
+        params![kode, kode, kode, kode, kode, kode, kode],
     )
     .map_err(|e| e.to_string())?;
 
@@ -6718,7 +7116,8 @@ pub fn jurnal_konfigurasi_set(
     tx.execute(
         "UPDATE jurnal_konfigurasi
          SET akun_piutang = ?, akun_hutang = ?, akun_pendapatan = ?, akun_pembelian = ?,
-             akun_penerimaan_lainnya = ?, akun_pengeluaran_lainnya = ?, updated_at = ?
+             akun_penerimaan_lainnya = ?, akun_pengeluaran_lainnya = ?,
+             akun_historical_balance = ?, updated_at = ?
          WHERE id = 1",
         params![
             payload.akun_piutang.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()),
@@ -6727,6 +7126,7 @@ pub fn jurnal_konfigurasi_set(
             payload.akun_pembelian.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()),
             payload.akun_penerimaan_lainnya.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()),
             payload.akun_pengeluaran_lainnya.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()),
+            payload.akun_historical_balance.map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()),
             ts
         ],
     )
@@ -6734,6 +7134,188 @@ pub fn jurnal_konfigurasi_set(
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Satu baris di buku besar (mutasi + saldo running setelah baris ini).
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BukuBesarRow {
+    pub line_id: i64,
+    pub jurnal_id: i64,
+    pub tanggal: String,
+    pub jenis: String,
+    pub referensi: String,
+    pub catatan: String,
+    pub debit: i64,
+    pub kredit: i64,
+    /// Saldo running setelah baris ini diaplikasikan, dalam basis natural
+    /// akun (positif = sisi normal). Untuk kolom_norm "D" = D - K
+    /// kumulatif, untuk "K" = K - D kumulatif.
+    pub saldo_running: i64,
+}
+
+/// Snapshot buku besar untuk satu akun dalam rentang tanggal tertentu.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BukuBesarSnapshot {
+    pub akun_kode: String,
+    pub akun_nama: String,
+    pub kelompok: String,
+    /// "D" atau "K" — menentukan arah saldo natural.
+    pub kolom_norm: String,
+    pub tanggal_dari: String,
+    pub tanggal_sampai: String,
+    /// Saldo akun per awal `tanggal_dari` (sebelum hari pertama), basis natural.
+    pub saldo_awal: i64,
+    /// Total debet pada rentang.
+    pub total_debit: i64,
+    /// Total kredit pada rentang.
+    pub total_kredit: i64,
+    /// Saldo akhir = saldo_awal + Σ mutasi (basis natural).
+    pub saldo_akhir: i64,
+    pub entries: Vec<BukuBesarRow>,
+}
+
+/// Buku besar (general ledger) per akun. Menghitung saldo awal periode dari
+/// akumulasi semua mutasi sebelum `tanggal_dari`, lalu mereplay mutasi pada
+/// rentang untuk menghasilkan saldo running per baris.
+///
+/// Saldo dipresentasikan dalam basis "natural" akun:
+/// - Akun dengan `kolom_norm = "D"` (Aset, Beban): saldo = Σ debit − Σ kredit
+/// - Akun dengan `kolom_norm = "K"` (Hutang, Modal, Pendapatan): saldo = Σ kredit − Σ debit
+///
+/// Dengan begitu, nilai positif selalu berarti "saldo wajar" untuk akun
+/// tersebut, dan UI dapat menampilkan label D/K konsisten.
+#[tauri::command]
+pub fn buku_besar_get(
+    state: State<DbState>,
+    akun_kode: String,
+    tanggal_dari: String,
+    tanggal_sampai: String,
+) -> Result<BukuBesarSnapshot, String> {
+    let kode = akun_kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Akun wajib dipilih.".into());
+    }
+    let dari = tanggal_dari.trim();
+    let sampai = tanggal_sampai.trim();
+    let d1 = NaiveDate::parse_from_str(dari, "%Y-%m-%d")
+        .map_err(|_| "Tanggal mulai tidak valid (YYYY-MM-DD).".to_string())?;
+    let d2 = NaiveDate::parse_from_str(sampai, "%Y-%m-%d")
+        .map_err(|_| "Tanggal akhir tidak valid (YYYY-MM-DD).".to_string())?;
+    if d2 < d1 {
+        return Err("Tanggal akhir tidak boleh sebelum tanggal mulai.".into());
+    }
+
+    with_conn_app(&state, |conn| {
+        // Ambil meta akun (nama, kelompok, kolom_norm).
+        let meta = conn
+            .query_row(
+                "SELECT nama, COALESCE(kelompok, ''), COALESCE(kolom_norm, '')
+                 FROM akun_keuangan WHERE lower(kode) = lower(?)",
+                params![&kode],
+                |r| Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                )),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        let (nama, kelompok, kolom_norm) = meta
+            .ok_or_else(|| format!("Akun '{kode}' tidak ditemukan."))?;
+
+        // Pengali untuk konversi mutasi (D, K) ke delta natural saldo.
+        // Akun D-side: delta = debit - kredit. Akun K-side: delta = kredit - debit.
+        let kn = kolom_norm.trim().to_uppercase();
+        let sign_for_natural = |debit: i64, kredit: i64| -> i64 {
+            if kn == "K" { kredit - debit } else { debit - kredit }
+        };
+
+        // Saldo awal = akumulasi semua mutasi sebelum tanggal_dari.
+        let saldo_awal: i64 = {
+            let (sum_d, sum_k): (i64, i64) = conn
+                .query_row(
+                    "SELECT COALESCE(SUM(l.debit), 0), COALESCE(SUM(l.kredit), 0)
+                     FROM jurnal_umum_line l
+                     INNER JOIN jurnal_umum j ON j.id = l.jurnal_id
+                     WHERE lower(l.akun_kode) = lower(?) AND j.tanggal < ?",
+                    params![&kode, dari],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap_or((0, 0));
+            sign_for_natural(sum_d, sum_k)
+        };
+
+        // Mutasi dalam rentang — diurut ASC supaya running balance benar.
+        let raw_rows: Vec<(i64, i64, String, String, String, String, i64, i64)> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT l.id, j.id, j.tanggal, j.jenis, j.referensi,
+                            COALESCE(NULLIF(TRIM(l.catatan), ''), j.catatan),
+                            l.debit, l.kredit
+                     FROM jurnal_umum_line l
+                     INNER JOIN jurnal_umum j ON j.id = l.jurnal_id
+                     WHERE lower(l.akun_kode) = lower(?) AND j.tanggal >= ? AND j.tanggal <= ?
+                     ORDER BY j.tanggal ASC, j.id ASC, l.id ASC",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(params![&kode, dari, sampai], |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, String>(4)?,
+                        r.get::<_, String>(5)?,
+                        r.get::<_, i64>(6)?,
+                        r.get::<_, i64>(7)?,
+                    ))
+                })
+                .map_err(|e| e.to_string())?;
+            let mut out = Vec::new();
+            for row in rows {
+                out.push(row.map_err(|e| e.to_string())?);
+            }
+            out
+        };
+
+        let mut entries: Vec<BukuBesarRow> = Vec::with_capacity(raw_rows.len());
+        let mut running = saldo_awal;
+        let mut total_d: i64 = 0;
+        let mut total_k: i64 = 0;
+        for (line_id, jurnal_id, tanggal, jenis, referensi, catatan, debit, kredit) in raw_rows {
+            running += sign_for_natural(debit, kredit);
+            total_d += debit;
+            total_k += kredit;
+            entries.push(BukuBesarRow {
+                line_id,
+                jurnal_id,
+                tanggal,
+                jenis,
+                referensi,
+                catatan,
+                debit,
+                kredit,
+                saldo_running: running,
+            });
+        }
+
+        Ok(BukuBesarSnapshot {
+            akun_kode: kode,
+            akun_nama: nama,
+            kelompok,
+            kolom_norm: kn,
+            tanggal_dari: dari.to_string(),
+            tanggal_sampai: sampai.to_string(),
+            saldo_awal,
+            total_debit: total_d,
+            total_kredit: total_k,
+            saldo_akhir: running,
+            entries,
+        })
+    })
 }
 
 #[tauri::command]
@@ -7734,3 +8316,6386 @@ pub fn transfer_kas_update(
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
+
+// --- HPP (moving average) ------------------------------------------------
+//
+// Konsep
+// ------
+// HPP per barang dihitung dengan metode **moving average (rata-rata
+// bergerak)** secara global per item (digabung lintas gudang). Setiap
+// pembelian merekalkulasi HPP:
+//
+//   hpp_baru = (stok_lama * hpp_lama + qty_masuk * harga_beli_per_unit) /
+//              (stok_lama + qty_masuk)
+//
+// Penjualan dan mutasi antar gudang TIDAK mengubah HPP — hanya mengubah
+// posisi stok. Pendekatan "global per item" dipilih karena standar &
+// paling familiar untuk laporan keuangan HPP; kalau di masa depan butuh
+// HPP per gudang, hitungan dapat dipindah ke key (barang_kode, gudang_kode).
+//
+// Sumber data
+// -----------
+// - `stok_mutasi`  : timeline event stok per barang (kronologis).
+// - `pembelian_line.subtotal`  : nilai bersih (net diskon line) per baris
+//   faktur. `subtotal / qty_smallest` = harga beli per satuan terkecil.
+//   Catatan: belum prorata diskon faktur & pajak — bisa di-refine nanti.
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct HppListRow {
+    pub kode: String,
+    pub nama: String,
+    pub satuan: String,
+    pub stok: i64,
+    /// HPP per satuan terkecil (Rp), dibulatkan ke integer.
+    pub hpp: i64,
+    /// Total nilai persediaan (Rp) = stok × hpp (kurang lebih).
+    pub total_nilai: i64,
+    /// Jumlah event yang pernah mempengaruhi HPP (info ringan untuk UI).
+    pub jumlah_event: i64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct HppHistoryEvent {
+    pub waktu: i64,
+    pub tanggal_transaksi: String,
+    pub jenis: String,
+    pub referensi: String,
+    pub gudang_kode: String,
+    pub gudang_nama: String,
+    pub qty_masuk: i64,
+    pub qty_keluar: i64,
+    /// Harga beli per satuan terkecil (Rp) — hanya untuk jenis PEMBELIAN.
+    pub harga_satuan_beli: Option<i64>,
+    /// Nilai event (Rp): + untuk masuk (qty × harga), − untuk keluar (qty × hpp_saat_itu).
+    pub nilai_event: i64,
+    pub stok_setelah: i64,
+    pub hpp_setelah: i64,
+    pub total_nilai_setelah: i64,
+    pub catatan: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct HppDetail {
+    pub kode: String,
+    pub nama: String,
+    pub satuan: String,
+    pub stok_akhir: i64,
+    pub hpp_akhir: i64,
+    pub total_nilai_akhir: i64,
+    pub events: Vec<HppHistoryEvent>,
+}
+
+/// State internal saat replay event per barang.
+struct HppState {
+    stok: i64,
+    /// Total nilai persediaan (Rp). Disimpan presisi tinggi (i128) untuk
+    /// menghindari error akumulasi saat banyak event.
+    total_nilai: i128,
+}
+
+impl HppState {
+    fn new() -> Self {
+        Self {
+            stok: 0,
+            total_nilai: 0,
+        }
+    }
+
+    fn hpp(&self) -> i64 {
+        if self.stok <= 0 {
+            0
+        } else {
+            (self.total_nilai / self.stok as i128) as i64
+        }
+    }
+}
+
+/// Ambil mapping `(referensi, barang_kode) -> subtotal` pembelian sekali muat
+/// untuk hindari N+1 query saat replay banyak event.
+fn hpp_load_pembelian_subtotals(
+    conn: &Connection,
+    barang_kode: Option<&str>,
+) -> Result<HashMap<(String, String), i64>, String> {
+    let mut map: HashMap<(String, String), i64> = HashMap::new();
+    if let Some(kode) = barang_kode {
+        let mut stmt = conn
+            .prepare(
+                "SELECT nomor, barang_kode, subtotal FROM pembelian_line WHERE lower(barang_kode) = lower(?)",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![kode], |r| {
+                let nomor: String = r.get(0)?;
+                let barang: String = r.get(1)?;
+                let sub: i64 = r.get(2)?;
+                Ok((nomor, barang, sub))
+            })
+            .map_err(|e| e.to_string())?;
+        for r in rows {
+            let (nomor, barang, sub) = r.map_err(|e| e.to_string())?;
+            map.entry((nomor.to_uppercase(), barang.to_uppercase()))
+                .and_modify(|v| *v += sub)
+                .or_insert(sub);
+        }
+    } else {
+        let mut stmt = conn
+            .prepare("SELECT nomor, barang_kode, subtotal FROM pembelian_line")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                let nomor: String = r.get(0)?;
+                let barang: String = r.get(1)?;
+                let sub: i64 = r.get(2)?;
+                Ok((nomor, barang, sub))
+            })
+            .map_err(|e| e.to_string())?;
+        for r in rows {
+            let (nomor, barang, sub) = r.map_err(|e| e.to_string())?;
+            map.entry((nomor.to_uppercase(), barang.to_uppercase()))
+                .and_modify(|v| *v += sub)
+                .or_insert(sub);
+        }
+    }
+    Ok(map)
+}
+
+/// Ambil mapping `(nomor_produksi, barang_kode) -> subtotal_nilai` untuk
+/// baris hasil produksi (PRODUKSI_MASUK). Bahan baku (PRODUKSI_KELUAR) tidak
+/// pakai map ini — nilai keluarnya dihitung dari HPP saat itu, sama dengan
+/// PENJUALAN/KOREKSI_KELUAR.
+fn hpp_load_produksi_hasil_subtotals(
+    conn: &Connection,
+    barang_kode: Option<&str>,
+) -> Result<HashMap<(String, String), i64>, String> {
+    let mut map: HashMap<(String, String), i64> = HashMap::new();
+    let sql_all =
+        "SELECT produksi_nomor, barang_kode, subtotal_nilai FROM produksi_hasil";
+    let sql_one =
+        "SELECT produksi_nomor, barang_kode, subtotal_nilai FROM produksi_hasil WHERE lower(barang_kode) = lower(?)";
+    let collect = |rows: Vec<(String, String, i64)>, m: &mut HashMap<(String, String), i64>| {
+        for (nomor, barang, sub) in rows {
+            m.entry((nomor.to_uppercase(), barang.to_uppercase()))
+                .and_modify(|v| *v += sub)
+                .or_insert(sub);
+        }
+    };
+    if let Some(kode) = barang_kode {
+        let mut stmt = conn.prepare(sql_one).map_err(|e| e.to_string())?;
+        let rows: Vec<(String, String, i64)> = stmt
+            .query_map(params![kode], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<_, _>>()
+            .map_err(|e| e.to_string())?;
+        collect(rows, &mut map);
+    } else {
+        let mut stmt = conn.prepare(sql_all).map_err(|e| e.to_string())?;
+        let rows: Vec<(String, String, i64)> = stmt
+            .query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<_, _>>()
+            .map_err(|e| e.to_string())?;
+        collect(rows, &mut map);
+    }
+    Ok(map)
+}
+
+/// Ambil mapping `(barang_kode_upper, gudang_kode_upper) -> subtotal_nilai`
+/// dari `stok_awal_line`. Dipakai oleh `hpp_apply_event` untuk event
+/// `STOK_AWAL` — karena STOK_AWAL adalah jurnal pembuka per (barang, gudang),
+/// kuncinya bukan (referensi, barang) seperti pembelian/koreksi melainkan
+/// (barang, gudang) — satu pasangan = satu baris.
+fn hpp_load_stok_awal_subtotals(
+    conn: &Connection,
+    barang_kode: Option<&str>,
+) -> Result<HashMap<(String, String), i64>, String> {
+    let mut map: HashMap<(String, String), i64> = HashMap::new();
+    let sql_all = "SELECT barang_kode, gudang_kode, subtotal_nilai FROM stok_awal_line";
+    let sql_one =
+        "SELECT barang_kode, gudang_kode, subtotal_nilai FROM stok_awal_line WHERE lower(barang_kode) = lower(?)";
+    let collect = |rows: Vec<(String, String, i64)>, m: &mut HashMap<(String, String), i64>| {
+        for (barang, gudang, sub) in rows {
+            m.insert((barang.to_uppercase(), gudang.to_uppercase()), sub);
+        }
+    };
+    if let Some(kode) = barang_kode {
+        let mut stmt = conn.prepare(sql_one).map_err(|e| e.to_string())?;
+        let rows: Vec<(String, String, i64)> = stmt
+            .query_map(params![kode], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<_, _>>()
+            .map_err(|e| e.to_string())?;
+        collect(rows, &mut map);
+    } else {
+        let mut stmt = conn.prepare(sql_all).map_err(|e| e.to_string())?;
+        let rows: Vec<(String, String, i64)> = stmt
+            .query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<_, _>>()
+            .map_err(|e| e.to_string())?;
+        collect(rows, &mut map);
+    }
+    Ok(map)
+}
+
+/// Ambil mapping `(nomor_koreksi, barang_kode) -> subtotal_nilai` koreksi stok.
+/// Subtotal selalu positif; arah (MASUK/KELUAR) ditentukan dari jenis event di
+/// `stok_mutasi` saat replay.
+fn hpp_load_koreksi_subtotals(
+    conn: &Connection,
+    barang_kode: Option<&str>,
+) -> Result<HashMap<(String, String), i64>, String> {
+    let mut map: HashMap<(String, String), i64> = HashMap::new();
+    let sql_all = "SELECT nomor, barang_kode, subtotal_nilai FROM koreksi_stok_line";
+    let sql_one =
+        "SELECT nomor, barang_kode, subtotal_nilai FROM koreksi_stok_line WHERE lower(barang_kode) = lower(?)";
+    let collect = |rows: Vec<(String, String, i64)>, m: &mut HashMap<(String, String), i64>| {
+        for (nomor, barang, sub) in rows {
+            m.entry((nomor.to_uppercase(), barang.to_uppercase()))
+                .and_modify(|v| *v += sub)
+                .or_insert(sub);
+        }
+    };
+    if let Some(kode) = barang_kode {
+        let mut stmt = conn.prepare(sql_one).map_err(|e| e.to_string())?;
+        let rows: Vec<(String, String, i64)> = stmt
+            .query_map(params![kode], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<_, _>>()
+            .map_err(|e| e.to_string())?;
+        collect(rows, &mut map);
+    } else {
+        let mut stmt = conn.prepare(sql_all).map_err(|e| e.to_string())?;
+        let rows: Vec<(String, String, i64)> = stmt
+            .query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<_, _>>()
+            .map_err(|e| e.to_string())?;
+        collect(rows, &mut map);
+    }
+    Ok(map)
+}
+
+/// Replay satu event ke state HPP. Mengembalikan info event yang sudah
+/// terdekorasi (harga_satuan_beli, nilai_event, snapshot setelah).
+#[allow(clippy::too_many_arguments)]
+fn hpp_apply_event(
+    state: &mut HppState,
+    waktu: i64,
+    tanggal: &str,
+    jenis_raw: &str,
+    referensi: &str,
+    gudang_kode: &str,
+    gudang_nama: &str,
+    qty_masuk: i64,
+    qty_keluar: i64,
+    catatan: &str,
+    pembelian_subtotal_map: &HashMap<(String, String), i64>,
+    koreksi_subtotal_map: &HashMap<(String, String), i64>,
+    produksi_subtotal_map: &HashMap<(String, String), i64>,
+    // `stok_awal_subtotal_map` di-key oleh (barang_upper, gudang_upper) →
+    // subtotal nilai. Dipakai khusus untuk jenis event STOK_AWAL.
+    stok_awal_subtotal_map: &HashMap<(String, String), i64>,
+    barang_kode: &str,
+) -> HppHistoryEvent {
+    let jenis = jenis_raw.trim().to_uppercase();
+    let mut harga_satuan_beli: Option<i64> = None;
+    let mut nilai_event: i64 = 0;
+
+    match jenis.as_str() {
+        "PEMBELIAN" | "PEMBELIAN_TUNAI" => {
+            if qty_masuk > 0 {
+                let key = (
+                    referensi.trim().to_uppercase(),
+                    barang_kode.trim().to_uppercase(),
+                );
+                if let Some(sub) = pembelian_subtotal_map.get(&key) {
+                    let harga_per_unit = sub / qty_masuk; // round-down jika tidak habis
+                    harga_satuan_beli = Some(harga_per_unit);
+                    // Pakai subtotal asli untuk akurasi nilai_event (hindari
+                    // pembulatan harga_per_unit × qty).
+                    state.total_nilai += *sub as i128;
+                    state.stok += qty_masuk;
+                    nilai_event = *sub;
+                } else {
+                    // Pembelian line tidak ketemu (kemungkinan data lama /
+                    // sudah dihapus) — fallback pakai 0, biar saldo tetap konsisten.
+                    state.stok += qty_masuk;
+                }
+            }
+        }
+        "PENJUALAN" | "PENJUALAN_TUNAI" => {
+            if qty_keluar > 0 {
+                let hpp_saat_ini = state.hpp();
+                let nilai_keluar = (qty_keluar as i128) * (hpp_saat_ini as i128);
+                state.total_nilai -= nilai_keluar;
+                state.stok -= qty_keluar;
+                nilai_event = -(nilai_keluar as i64);
+            }
+        }
+        "MUTASI_GUDANG" => {
+            // Per-item agnostik gudang: mutasi antar gudang netral terhadap
+            // total stok & nilai (qty keluar di sumber + qty masuk di tujuan
+            // = 0). Tetap dicatat di histori untuk transparansi.
+            nilai_event = 0;
+        }
+        "KOREKSI_MASUK" => {
+            // Koreksi masuk = nilai yang user input adalah basis valuasi
+            // tambahan persediaan (mirip pembelian dengan harga manual).
+            if qty_masuk > 0 {
+                let key = (
+                    referensi.trim().to_uppercase(),
+                    barang_kode.trim().to_uppercase(),
+                );
+                if let Some(sub) = koreksi_subtotal_map.get(&key) {
+                    let harga_per_unit = sub / qty_masuk;
+                    harga_satuan_beli = Some(harga_per_unit);
+                    state.total_nilai += *sub as i128;
+                    state.stok += qty_masuk;
+                    nilai_event = *sub;
+                } else {
+                    // Tidak ada nilai (data lama / nilai 0) — masukkan qty
+                    // tanpa mengubah total nilai (HPP rata-rata jadi turun).
+                    state.stok += qty_masuk;
+                }
+            }
+        }
+        "STOK_AWAL" => {
+            // Saldo awal stok di tanggal awal periode operasional —
+            // nilai per (barang, gudang) tersimpan di `stok_awal_line`.
+            // Diperlakukan sama dengan PEMBELIAN/KOREKSI_MASUK untuk modul
+            // HPP: menambah stok + total nilai sehingga HPP rata-rata
+            // ter-init dari saldo pembuka.
+            if qty_masuk > 0 {
+                let key = (
+                    barang_kode.trim().to_uppercase(),
+                    gudang_kode.trim().to_uppercase(),
+                );
+                if let Some(sub) = stok_awal_subtotal_map.get(&key) {
+                    let harga_per_unit = sub / qty_masuk;
+                    harga_satuan_beli = Some(harga_per_unit);
+                    state.total_nilai += *sub as i128;
+                    state.stok += qty_masuk;
+                    nilai_event = *sub;
+                } else {
+                    // Defensif: data hilang — tambah qty tanpa mengubah nilai.
+                    state.stok += qty_masuk;
+                }
+            }
+        }
+        "KOREKSI_KELUAR" => {
+            // Koreksi keluar = barang dihilangkan dari persediaan. Untuk
+            // konsistensi akuntansi HPP rata-rata, nilai yang dikeluarkan =
+            // qty × HPP saat itu (HPP tidak berubah). Nilai per unit yang
+            // user input disimpan di `koreksi_stok_line` sebagai referensi
+            // valuasi kerugian, tetapi tidak dipakai untuk HPP module.
+            if qty_keluar > 0 {
+                let hpp_saat_ini = state.hpp();
+                let nilai_keluar = (qty_keluar as i128) * (hpp_saat_ini as i128);
+                state.total_nilai -= nilai_keluar;
+                state.stok -= qty_keluar;
+                nilai_event = -(nilai_keluar as i64);
+            }
+        }
+        "PRODUKSI_MASUK" => {
+            // Barang jadi masuk = HPP baru yang ditentukan saat produksi
+            // diselesaikan. Nilai-nya disimpan di `produksi_hasil.subtotal_nilai`
+            // (mekanisme paralel dengan PEMBELIAN/KOREKSI_MASUK).
+            if qty_masuk > 0 {
+                let key = (
+                    referensi.trim().to_uppercase(),
+                    barang_kode.trim().to_uppercase(),
+                );
+                if let Some(sub) = produksi_subtotal_map.get(&key) {
+                    let harga_per_unit = sub / qty_masuk;
+                    harga_satuan_beli = Some(harga_per_unit);
+                    state.total_nilai += *sub as i128;
+                    state.stok += qty_masuk;
+                    nilai_event = *sub;
+                } else {
+                    // Data hasil produksi tidak ketemu (mis. baris dihapus
+                    // setelah dokumen diselesaikan — secara aturan tidak
+                    // boleh, tapi defensif). Tambah qty tanpa mengubah nilai
+                    // agar HPP rata-rata tidak rusak.
+                    state.stok += qty_masuk;
+                }
+            }
+        }
+        "PRODUKSI_KELUAR" => {
+            // Bahan baku keluar pakai HPP saat itu (sama dengan PENJUALAN
+            // & KOREKSI_KELUAR). HPP item tidak berubah dari sisi keluar.
+            if qty_keluar > 0 {
+                let hpp_saat_ini = state.hpp();
+                let nilai_keluar = (qty_keluar as i128) * (hpp_saat_ini as i128);
+                state.total_nilai -= nilai_keluar;
+                state.stok -= qty_keluar;
+                nilai_event = -(nilai_keluar as i64);
+            }
+        }
+        _ => {
+            // Jenis lain (ADJUSTMENT, dst.): perlakukan masuk/keluar tanpa
+            // mengubah HPP — masuk dengan asumsi pakai HPP sekarang
+            // (opening-like), keluar dengan HPP sekarang (sale-like).
+            let hpp_saat_ini = state.hpp();
+            if qty_masuk > 0 {
+                let nilai_masuk = (qty_masuk as i128) * (hpp_saat_ini as i128);
+                state.total_nilai += nilai_masuk;
+                state.stok += qty_masuk;
+                nilai_event = nilai_masuk as i64;
+            } else if qty_keluar > 0 {
+                let nilai_keluar = (qty_keluar as i128) * (hpp_saat_ini as i128);
+                state.total_nilai -= nilai_keluar;
+                state.stok -= qty_keluar;
+                nilai_event = -(nilai_keluar as i64);
+            }
+        }
+    }
+
+    HppHistoryEvent {
+        waktu,
+        tanggal_transaksi: tanggal.to_string(),
+        jenis: jenis_raw.to_string(),
+        referensi: referensi.to_string(),
+        gudang_kode: gudang_kode.to_string(),
+        gudang_nama: gudang_nama.to_string(),
+        qty_masuk,
+        qty_keluar,
+        harga_satuan_beli,
+        nilai_event,
+        stok_setelah: state.stok,
+        hpp_setelah: state.hpp(),
+        total_nilai_setelah: state.total_nilai as i64,
+        catatan: catatan.to_string(),
+    }
+}
+
+#[tauri::command]
+pub fn barang_hpp_list(state: State<DbState>) -> Result<Vec<HppListRow>, String> {
+    with_conn_app(&state, |conn| {
+        // 1. Ambil semua barang tipe "Barang" (skip Jasa — tidak punya stok).
+        let mut stmt = conn
+            .prepare(
+                "SELECT kode, nama, satuan FROM barang_jasa WHERE tipe = 'Barang' ORDER BY kode COLLATE NOCASE",
+            )
+            .map_err(|e| e.to_string())?;
+        let barangs: Vec<(String, String, String)> = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+
+        // 2. Preload semua subtotal pembelian, koreksi, hasil produksi, dan
+        //    stok-awal sekali (hindari N+1 query).
+        let pembelian_map = hpp_load_pembelian_subtotals(conn, None)?;
+        let koreksi_map = hpp_load_koreksi_subtotals(conn, None)?;
+        let produksi_map = hpp_load_produksi_hasil_subtotals(conn, None)?;
+        let stok_awal_map = hpp_load_stok_awal_subtotals(conn, None)?;
+
+        // 3. Replay event per barang & ambil snapshot akhir.
+        let mut result: Vec<HppListRow> = Vec::with_capacity(barangs.len());
+        let mut event_stmt = conn
+            .prepare(
+                "SELECT waktu, tanggal_transaksi, jenis, referensi, gudang_kode, qty_masuk, qty_keluar, catatan
+                 FROM stok_mutasi
+                 WHERE lower(barang_kode) = lower(?)
+                 ORDER BY waktu ASC, id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+
+        for (kode, nama, satuan) in barangs {
+            let mut state_hpp = HppState::new();
+            let mut jumlah_event: i64 = 0;
+            let rows = event_stmt
+                .query_map(params![&kode], |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, String>(4)?,
+                        r.get::<_, i64>(5)?,
+                        r.get::<_, i64>(6)?,
+                        r.get::<_, String>(7)?,
+                    ))
+                })
+                .map_err(|e| e.to_string())?;
+            for r in rows {
+                let (waktu, tanggal, jenis, referensi, gudang_kode, qm, qk, catatan) =
+                    r.map_err(|e| e.to_string())?;
+                hpp_apply_event(
+                    &mut state_hpp,
+                    waktu,
+                    &tanggal,
+                    &jenis,
+                    &referensi,
+                    &gudang_kode,
+                    "",
+                    qm,
+                    qk,
+                    &catatan,
+                    &pembelian_map,
+                    &koreksi_map,
+                    &produksi_map,
+                    &stok_awal_map,
+                    &kode,
+                );
+                jumlah_event += 1;
+            }
+            result.push(HppListRow {
+                kode,
+                nama,
+                satuan,
+                stok: state_hpp.stok,
+                hpp: state_hpp.hpp(),
+                total_nilai: state_hpp.total_nilai as i64,
+                jumlah_event,
+            });
+        }
+
+        Ok(result)
+    })
+}
+
+#[tauri::command]
+pub fn barang_hpp_detail(state: State<DbState>, kode: String) -> Result<HppDetail, String> {
+    let kode = kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode barang wajib diisi.".into());
+    }
+    with_conn_app(&state, |conn| {
+        // 1. Validasi barang ada & tipe Barang.
+        let (kode_db, nama, satuan, tipe): (String, String, String, String) = conn
+            .query_row(
+                "SELECT kode, nama, satuan, tipe FROM barang_jasa WHERE lower(kode) = lower(?)",
+                params![&kode],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .map_err(|_| "Barang tidak ditemukan.".to_string())?;
+        if tipe != "Barang" {
+            return Err(
+                "HPP hanya berlaku untuk barang fisik (tipe Barang). Jasa tidak punya stok.".into(),
+            );
+        }
+
+        // 2. Preload subtotal pembelian, koreksi, dan hasil produksi khusus
+        //    barang ini.
+        let pembelian_map = hpp_load_pembelian_subtotals(conn, Some(&kode_db))?;
+        let koreksi_map = hpp_load_koreksi_subtotals(conn, Some(&kode_db))?;
+        let produksi_map = hpp_load_produksi_hasil_subtotals(conn, Some(&kode_db))?;
+        let stok_awal_map = hpp_load_stok_awal_subtotals(conn, Some(&kode_db))?;
+
+        // 3. Replay event + simpan setiap snapshot ke vektor.
+        let mut stmt = conn
+            .prepare(
+                "SELECT m.waktu, m.tanggal_transaksi, m.jenis, m.referensi, m.gudang_kode,
+                        COALESCE(g.nama, m.gudang_kode) AS gudang_nama,
+                        m.qty_masuk, m.qty_keluar, m.catatan
+                 FROM stok_mutasi m
+                 LEFT JOIN gudang g ON lower(g.kode) = lower(m.gudang_kode)
+                 WHERE lower(m.barang_kode) = lower(?)
+                 ORDER BY m.waktu ASC, m.id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![&kode_db], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, String>(5)?,
+                    r.get::<_, i64>(6)?,
+                    r.get::<_, i64>(7)?,
+                    r.get::<_, String>(8)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut state_hpp = HppState::new();
+        let mut events: Vec<HppHistoryEvent> = Vec::new();
+        for r in rows {
+            let (waktu, tanggal, jenis, referensi, gudang_kode, gudang_nama, qm, qk, catatan) =
+                r.map_err(|e| e.to_string())?;
+            let ev = hpp_apply_event(
+                &mut state_hpp,
+                waktu,
+                &tanggal,
+                &jenis,
+                &referensi,
+                &gudang_kode,
+                &gudang_nama,
+                qm,
+                qk,
+                &catatan,
+                &pembelian_map,
+                &koreksi_map,
+                &produksi_map,
+                &stok_awal_map,
+                &kode_db,
+            );
+            events.push(ev);
+        }
+
+        Ok(HppDetail {
+            kode: kode_db,
+            nama,
+            satuan,
+            stok_akhir: state_hpp.stok,
+            hpp_akhir: state_hpp.hpp(),
+            total_nilai_akhir: state_hpp.total_nilai as i64,
+            events,
+        })
+    })
+}
+
+// --- Koreksi stok --------------------------------------------------------
+//
+// Dokumen koreksi mencatat penyesuaian persediaan manual (stok opname,
+// barang rusak/hilang/ditemukan, reklasifikasi, dll.) untuk satu gudang
+// dengan banyak baris campuran masuk/keluar. Saat insert, setiap baris
+// dijabarkan menjadi entri `stok_mutasi` (`KOREKSI_MASUK`/`KOREKSI_KELUAR`),
+// sehingga modul HPP dan laporan pergerakan stok tetap konsisten.
+
+const KOREKSI_ALASAN_VALID: &[&str] = &[
+    "STOK_OPNAME",
+    "RUSAK",
+    "HILANG",
+    "DITEMUKAN",
+    "REKLASIFIKASI",
+    "LAINNYA",
+];
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KoreksiStokLinePayload {
+    pub barang_kode: String,
+    /// "MASUK" atau "KELUAR".
+    pub arah: String,
+    pub qty: i64,
+    pub satuan_tingkat: u8,
+    /// Nilai per satuan yang dipilih user (mis. per Dus / per Pcs).
+    pub nilai_per_unit: i64,
+    pub catatan: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KoreksiStokInsertPayload {
+    pub tanggal: String,
+    pub gudang_kode: String,
+    pub alasan: String,
+    pub catatan: String,
+    pub actor_username: String,
+    pub actor_nama: String,
+    pub lines: Vec<KoreksiStokLinePayload>,
+}
+
+#[tauri::command]
+pub fn koreksi_stok_insert(
+    state: State<DbState>,
+    payload: KoreksiStokInsertPayload,
+) -> Result<String, String> {
+    // --- Validasi header ringan di luar tx --------------------------------
+    let tanggal = payload.tanggal.trim().to_string();
+    NaiveDate::parse_from_str(&tanggal, "%Y-%m-%d")
+        .map_err(|_| "Tanggal koreksi tidak valid (YYYY-MM-DD).".to_string())?;
+    let gudang_kode = payload.gudang_kode.trim().to_string();
+    if gudang_kode.is_empty() {
+        return Err("Gudang wajib dipilih.".into());
+    }
+    let alasan = payload.alasan.trim().to_uppercase();
+    if !KOREKSI_ALASAN_VALID.iter().any(|a| *a == alasan) {
+        return Err("Alasan koreksi tidak dikenali.".into());
+    }
+    if payload.lines.is_empty() {
+        return Err("Minimal satu baris barang harus diisi.".into());
+    }
+    let actor_username = payload.actor_username.trim().to_string();
+    if actor_username.is_empty() {
+        return Err("Sesi pengguna tidak terbaca — silakan login ulang.".into());
+    }
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    // --- Validasi gudang ada ---------------------------------------------
+    let gudang_ada: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM gudang WHERE lower(kode) = lower(?)",
+            params![&gudang_kode],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if gudang_ada == 0 {
+        return Err(format!("Gudang {gudang_kode} tidak ditemukan."));
+    }
+
+    let now = now_ts();
+    let waktu_mutasi = waktu_mutasi_dari_tgl_faktur(&tanggal)?;
+    let nomor = format!("KOR-{}", Utc::now().timestamp_millis());
+
+    // --- Insert header ----------------------------------------------------
+    tx.execute(
+        "INSERT INTO koreksi_stok (nomor, tanggal, gudang_kode, alasan, catatan, dibuat_oleh, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
+            &nomor,
+            &tanggal,
+            &gudang_kode,
+            &alasan,
+            payload.catatan.trim(),
+            &actor_username,
+            now,
+            now
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // --- Per-baris: validasi, konversi qty, terapkan ke stok ------------
+    let mut barang_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut total_masuk_qty: i64 = 0;
+    let mut total_keluar_qty: i64 = 0;
+    let mut total_masuk_nilai: i64 = 0;
+    let mut total_keluar_nilai: i64 = 0;
+
+    for (idx, line) in payload.lines.iter().enumerate() {
+        let nomor_line = idx + 1;
+        let kode_b = line.barang_kode.trim().to_string();
+        if kode_b.is_empty() {
+            return Err(format!("Baris {nomor_line}: kode barang kosong."));
+        }
+        let key = kode_b.to_lowercase();
+        if !barang_seen.insert(key.clone()) {
+            return Err(format!(
+                "Baris {nomor_line}: barang {kode_b} muncul lebih dari satu kali. Gabungkan menjadi satu baris."
+            ));
+        }
+        let arah = line.arah.trim().to_uppercase();
+        if arah != "MASUK" && arah != "KELUAR" {
+            return Err(format!("Baris {nomor_line}: arah harus MASUK atau KELUAR."));
+        }
+        if line.qty <= 0 {
+            return Err(format!("Baris {nomor_line}: qty harus > 0."));
+        }
+        if line.nilai_per_unit < 0 {
+            return Err(format!(
+                "Baris {nomor_line}: nilai per satuan tidak boleh negatif."
+            ));
+        }
+
+        // Pastikan barang tipe Barang (Jasa tidak punya stok untuk dikoreksi).
+        let tipe: String = tx
+            .query_row(
+                "SELECT tipe FROM barang_jasa WHERE lower(kode) = lower(?)",
+                params![&kode_b],
+                |r| r.get(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    format!("Baris {nomor_line}: barang {kode_b} tidak ditemukan.")
+                }
+                _ => e.to_string(),
+            })?;
+        if tipe != "Barang" {
+            return Err(format!(
+                "Baris {nomor_line}: koreksi stok hanya berlaku untuk barang fisik (tipe Barang). {kode_b} bertipe {tipe}."
+            ));
+        }
+
+        let qty_smallest =
+            barang_line_qty_to_smallest_conn(&*tx, &kode_b, line.qty, line.satuan_tingkat)?;
+        if qty_smallest <= 0 {
+            return Err(format!(
+                "Baris {nomor_line}: hasil konversi qty ke satuan terkecil tidak valid."
+            ));
+        }
+        let subtotal_nilai = line
+            .qty
+            .checked_mul(line.nilai_per_unit)
+            .ok_or_else(|| format!("Baris {nomor_line}: subtotal nilai melimpahi batas."))?;
+
+        // Update master stok (gabungan lintas gudang) & catat mutasi.
+        let prev_stok: i64 = tx
+            .query_row(
+                "SELECT COALESCE(stok, 0) FROM barang_jasa WHERE lower(kode) = lower(?)",
+                params![&kode_b],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        let next_stok = if arah == "MASUK" {
+            prev_stok
+                .checked_add(qty_smallest)
+                .ok_or_else(|| format!("Baris {nomor_line}: stok melimpahi batas."))?
+        } else {
+            // Validasi stok cukup di gudang ini.
+            let stok_gudang: i64 = tx
+                .query_row(
+                    "SELECT COALESCE(SUM(qty_masuk) - SUM(qty_keluar), 0)
+                     FROM stok_mutasi
+                     WHERE lower(barang_kode) = lower(?) AND lower(gudang_kode) = lower(?)",
+                    params![&kode_b, &gudang_kode],
+                    |r| r.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            if stok_gudang < qty_smallest {
+                return Err(format!(
+                    "Baris {nomor_line}: stok {kode_b} di gudang {gudang_kode} cuma {stok_gudang}, tidak cukup untuk mengurangi {qty_smallest}."
+                ));
+            }
+            if prev_stok < qty_smallest {
+                return Err(format!(
+                    "Baris {nomor_line}: stok global {kode_b} cuma {prev_stok}, tidak cukup untuk mengurangi {qty_smallest}."
+                ));
+            }
+            prev_stok - qty_smallest
+        };
+
+        tx.execute(
+            "UPDATE barang_jasa SET stok = ?, updated_at = ? WHERE lower(kode) = lower(?)",
+            params![next_stok, now, &kode_b],
+        )
+        .map_err(|e| e.to_string())?;
+
+        let (qm_mutasi, qk_mutasi, jenis_mutasi) = if arah == "MASUK" {
+            (qty_smallest, 0_i64, "KOREKSI_MASUK")
+        } else {
+            (0_i64, qty_smallest, "KOREKSI_KELUAR")
+        };
+
+        tx.execute(
+            "INSERT INTO stok_mutasi (waktu, tanggal_transaksi, barang_kode, gudang_kode, jenis, referensi, qty_masuk, qty_keluar, saldo_setelah, catatan)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                waktu_mutasi,
+                &tanggal,
+                &kode_b,
+                &gudang_kode,
+                jenis_mutasi,
+                &nomor,
+                qm_mutasi,
+                qk_mutasi,
+                next_stok,
+                line.catatan.trim()
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+
+        tx.execute(
+            "INSERT INTO koreksi_stok_line (nomor, barang_kode, arah, qty, satuan_tingkat, nilai_per_unit, subtotal_nilai, catatan)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &nomor,
+                &kode_b,
+                &arah,
+                line.qty,
+                line.satuan_tingkat as i64,
+                line.nilai_per_unit,
+                subtotal_nilai,
+                line.catatan.trim()
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+
+        if arah == "MASUK" {
+            total_masuk_qty += qty_smallest;
+            total_masuk_nilai += subtotal_nilai;
+        } else {
+            total_keluar_qty += qty_smallest;
+            total_keluar_nilai += subtotal_nilai;
+        }
+    }
+
+    // --- Audit log --------------------------------------------------------
+    let ringkasan = format!(
+        "Koreksi stok {nomor} ({alasan}, gudang {gudang_kode}): +{total_masuk_qty} unit / -{total_keluar_qty} unit, {} baris.",
+        payload.lines.len()
+    );
+    let metadata = format!(
+        "{{\"alasan\":\"{}\",\"gudang_kode\":\"{}\",\"total_masuk_qty\":{},\"total_keluar_qty\":{},\"total_masuk_nilai\":{},\"total_keluar_nilai\":{}}}",
+        alasan,
+        gudang_kode,
+        total_masuk_qty,
+        total_keluar_qty,
+        total_masuk_nilai,
+        total_keluar_nilai
+    );
+    activity_log_record_tx(
+        &tx,
+        now,
+        &actor_username,
+        payload.actor_nama.trim(),
+        "INSERT",
+        "KOREKSI_STOK",
+        &nomor,
+        &ringkasan,
+        None,
+        None,
+        Some(metadata.as_str()),
+    )?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(nomor)
+}
+
+// --- Pesanan penjualan (Sales Order) -------------------------------------
+//
+// Pesanan adalah komitmen jual yang belum mengubah stok. Saat siap dikirim,
+// pesanan dikonversi menjadi faktur penjualan — pada saat itulah stok &
+// jurnal diposting. Pesanan yang sudah difakturkan tidak boleh diubah /
+// dihapus / difakturkan ulang.
+
+const PESANAN_STATUS_DRAFT: &str = "Draft";
+const PESANAN_STATUS_DIFAKTURKAN: &str = "Difakturkan";
+const PESANAN_STATUS_DIBATALKAN: &str = "Dibatalkan";
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PesananPenjualanListRow {
+    pub nomor: String,
+    pub tanggal_pesanan: String,
+    pub tanggal_kirim: Option<String>,
+    pub pelanggan_kode: String,
+    pub pelanggan_nama: String,
+    pub salesman: String,
+    pub total: i64,
+    pub status: String,
+    pub faktur_nomor: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PesananPenjualanDetailLine {
+    pub barang_kode: String,
+    pub barang_nama: String,
+    pub qty: i64,
+    pub satuan_tingkat: u8,
+    pub satuan_nama: String,
+    pub harga_satuan: i64,
+    pub diskon: i64,
+    pub subtotal: i64,
+    pub catatan: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PesananPenjualanDetail {
+    pub nomor: String,
+    pub pelanggan_kode: String,
+    pub pelanggan_nama: String,
+    pub gudang_kode: String,
+    pub gudang_nama: String,
+    pub salesman: String,
+    pub tanggal_pesanan: String,
+    pub tanggal_kirim: Option<String>,
+    pub catatan: String,
+    pub subtotal_barang: i64,
+    pub diskon_faktur: i64,
+    pub pajak: i64,
+    pub total: i64,
+    pub status: String,
+    pub faktur_nomor: Option<String>,
+    pub lines: Vec<PesananPenjualanDetailLine>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PesananPenjualanLineInput {
+    pub barang_kode: String,
+    pub qty: i64,
+    pub harga_satuan: i64,
+    #[serde(default)]
+    pub diskon: i64,
+    #[serde(default = "default_satuan_tingkat_line")]
+    pub satuan_tingkat: u8,
+    pub catatan: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PesananPenjualanInsertPayload {
+    pub pelanggan_kode: String,
+    pub gudang_kode: String,
+    pub salesman: String,
+    pub tanggal_pesanan: String,
+    #[serde(default)]
+    pub tanggal_kirim: Option<String>,
+    pub catatan: String,
+    #[serde(default)]
+    pub diskon_faktur: i64,
+    #[serde(default)]
+    pub pajak: i64,
+    pub lines: Vec<PesananPenjualanLineInput>,
+}
+
+/// Payload override saat konversi pesanan → faktur. Field di sini menggantikan
+/// nilai dari pesanan (atau diset default kalau kosong). Lines & header
+/// pelanggan/gudang TIDAK ditimpa — supaya audit jelas: faktur = realisasi
+/// pesanan dengan tanggal & metode bayar baru.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PesananPenjualanKonversiPayload {
+    pub tanggal_faktur: String,
+    pub jatuh_tempo: String,
+    #[serde(default)]
+    pub akun_kas_kode: Option<String>,
+    /// Salesman akhir (kalau berbeda dengan pesanan).
+    #[serde(default)]
+    pub salesman: Option<String>,
+}
+
+fn pesanan_penjualan_validate_and_total(
+    payload: &PesananPenjualanInsertPayload,
+) -> Result<(NaiveDate, Option<NaiveDate>, i64, i64, i64, i64), String> {
+    let pelanggan_kode = payload.pelanggan_kode.trim();
+    let gudang_kode = payload.gudang_kode.trim();
+    if pelanggan_kode.is_empty() {
+        return Err("Pelanggan wajib dipilih.".into());
+    }
+    if gudang_kode.is_empty() {
+        return Err("Gudang wajib dipilih.".into());
+    }
+    let tgl = NaiveDate::parse_from_str(payload.tanggal_pesanan.trim(), "%Y-%m-%d")
+        .map_err(|_| "Tanggal pesanan tidak valid (YYYY-MM-DD).".to_string())?;
+    let tgl_kirim = match payload.tanggal_kirim.as_deref().map(|s| s.trim()) {
+        None | Some("") => None,
+        Some(s) => Some(
+            NaiveDate::parse_from_str(s, "%Y-%m-%d")
+                .map_err(|_| "Tanggal kirim tidak valid (YYYY-MM-DD).".to_string())?,
+        ),
+    };
+    if let Some(tk) = tgl_kirim {
+        if tk < tgl {
+            return Err("Tanggal kirim tidak boleh sebelum tanggal pesanan.".into());
+        }
+    }
+    if payload.lines.is_empty() {
+        return Err("Minimal satu baris item harus diisi.".into());
+    }
+
+    let mut sub_barang: i64 = 0;
+    for (idx, line) in payload.lines.iter().enumerate() {
+        let nomor_line = idx + 1;
+        if line.barang_kode.trim().is_empty() {
+            return Err(format!("Baris {nomor_line}: kode barang kosong."));
+        }
+        if line.qty <= 0 {
+            return Err(format!("Baris {nomor_line}: qty harus > 0."));
+        }
+        if line.harga_satuan < 0 {
+            return Err(format!("Baris {nomor_line}: harga satuan tidak valid."));
+        }
+        if line.diskon < 0 {
+            return Err(format!("Baris {nomor_line}: diskon tidak valid."));
+        }
+        if line.diskon > line.harga_satuan {
+            return Err(format!(
+                "Baris {nomor_line}: diskon per satuan tidak boleh melebihi harga satuan."
+            ));
+        }
+        let sub = penjualan_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
+        sub_barang = sub_barang
+            .checked_add(sub)
+            .ok_or_else(|| "Subtotal barang melimpahi batas.".to_string())?;
+    }
+
+    let diskon_faktur = payload.diskon_faktur.max(0);
+    let pajak = payload.pajak.max(0);
+    if diskon_faktur > sub_barang {
+        return Err("Diskon faktur tidak boleh melebihi subtotal barang.".into());
+    }
+    let total = penjualan_faktur_total(sub_barang, diskon_faktur, pajak)?;
+    Ok((tgl, tgl_kirim, sub_barang, diskon_faktur, pajak, total))
+}
+
+#[tauri::command]
+pub fn pesanan_penjualan_list(
+    state: State<DbState>,
+) -> Result<Vec<PesananPenjualanListRow>, String> {
+    with_conn(&state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT p.nomor, p.tanggal_pesanan, p.tanggal_kirim, p.pelanggan_kode,
+                    COALESCE(pl.nama, p.pelanggan_kode) AS pelanggan_nama,
+                    p.salesman, p.total, p.status, p.faktur_nomor
+             FROM pesanan_penjualan p
+             LEFT JOIN pelanggan pl ON lower(pl.kode) = lower(p.pelanggan_kode)
+             ORDER BY p.tanggal_pesanan DESC, p.created_at DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(PesananPenjualanListRow {
+                    nomor: r.get(0)?,
+                    tanggal_pesanan: r.get(1)?,
+                    tanggal_kirim: r.get(2)?,
+                    pelanggan_kode: r.get(3)?,
+                    pelanggan_nama: r.get(4)?,
+                    salesman: r.get(5)?,
+                    total: r.get(6)?,
+                    status: r.get(7)?,
+                    faktur_nomor: r.get(8)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    })
+}
+
+#[tauri::command]
+pub fn pesanan_penjualan_detail(
+    state: State<DbState>,
+    nomor: String,
+) -> Result<PesananPenjualanDetail, String> {
+    let nomor = nomor.trim().to_string();
+    if nomor.is_empty() {
+        return Err("Nomor pesanan tidak valid.".into());
+    }
+    with_conn_app(&state, |conn| {
+        let header = conn
+            .query_row(
+                "SELECT pelanggan_kode, gudang_kode, salesman, tanggal_pesanan, tanggal_kirim,
+                        catatan, diskon_faktur, pajak, total, status, faktur_nomor
+                 FROM pesanan_penjualan WHERE nomor = ?",
+                params![&nomor],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, Option<String>>(4)?,
+                        r.get::<_, String>(5)?,
+                        r.get::<_, i64>(6)?,
+                        r.get::<_, i64>(7)?,
+                        r.get::<_, i64>(8)?,
+                        r.get::<_, String>(9)?,
+                        r.get::<_, Option<String>>(10)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        let (
+            pelanggan_kode,
+            gudang_kode,
+            salesman,
+            tanggal_pesanan,
+            tanggal_kirim,
+            catatan,
+            diskon_faktur,
+            pajak,
+            total,
+            status,
+            faktur_nomor,
+        ) = header.ok_or_else(|| "Pesanan penjualan tidak ditemukan.".to_string())?;
+
+        let pelanggan_nama: String = conn
+            .query_row(
+                "SELECT nama FROM pelanggan WHERE lower(kode) = lower(?)",
+                params![&pelanggan_kode],
+                |r| r.get(0),
+            )
+            .unwrap_or_else(|_| pelanggan_kode.clone());
+        let gudang_nama: String = conn
+            .query_row(
+                "SELECT nama FROM gudang WHERE lower(kode) = lower(?)",
+                params![&gudang_kode],
+                |r| r.get(0),
+            )
+            .unwrap_or_else(|_| gudang_kode.clone());
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT l.barang_kode, COALESCE(b.nama, l.barang_kode) AS barang_nama,
+                        l.qty, l.satuan_tingkat, l.harga_satuan, l.diskon, l.subtotal, l.catatan
+                 FROM pesanan_penjualan_line l
+                 LEFT JOIN barang_jasa b ON lower(b.kode) = lower(l.barang_kode)
+                 WHERE l.nomor = ?
+                 ORDER BY l.id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![&nomor], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, u8>(3)?,
+                    r.get::<_, i64>(4)?,
+                    r.get::<_, i64>(5)?,
+                    r.get::<_, i64>(6)?,
+                    r.get::<_, String>(7)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| e.to_string())?;
+
+        let mut lines: Vec<PesananPenjualanDetailLine> = Vec::with_capacity(rows.len());
+        let mut subtotal_barang: i64 = 0;
+        for (kode_b, nama_b, qty, satuan_tingkat, harga, diskon, sub, catatan_line) in rows {
+            let satuan_nama = barang_satuan_nama(conn, &kode_b, satuan_tingkat)
+                .unwrap_or_else(|_| String::new());
+            subtotal_barang = subtotal_barang.saturating_add(sub);
+            lines.push(PesananPenjualanDetailLine {
+                barang_kode: kode_b,
+                barang_nama: nama_b,
+                qty,
+                satuan_tingkat,
+                satuan_nama,
+                harga_satuan: harga,
+                diskon,
+                subtotal: sub,
+                catatan: catatan_line,
+            });
+        }
+
+        Ok(PesananPenjualanDetail {
+            nomor,
+            pelanggan_kode,
+            pelanggan_nama,
+            gudang_kode,
+            gudang_nama,
+            salesman,
+            tanggal_pesanan,
+            tanggal_kirim,
+            catatan,
+            subtotal_barang,
+            diskon_faktur,
+            pajak,
+            total,
+            status,
+            faktur_nomor,
+            lines,
+        })
+    })
+}
+
+#[tauri::command]
+pub fn pesanan_penjualan_insert(
+    app: tauri::AppHandle,
+    state: State<DbState>,
+    payload: PesananPenjualanInsertPayload,
+) -> Result<String, String> {
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    crate::activation::assert_can_create_transaction(&app, &conn)?;
+
+    let (tgl, tgl_kirim, _sub, diskon_faktur, pajak, total) =
+        pesanan_penjualan_validate_and_total(&payload)?;
+    let pelanggan_kode = payload.pelanggan_kode.trim();
+    let gudang_kode = payload.gudang_kode.trim();
+    let salesman = payload.salesman.trim();
+    let catatan = payload.catatan.trim();
+    let nomor = format!("SO-{}", Utc::now().timestamp_millis());
+    let ts = now_ts();
+    let tanggal_str = tgl.format("%Y-%m-%d").to_string();
+    let tanggal_kirim_str = tgl_kirim.map(|d| d.format("%Y-%m-%d").to_string());
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "INSERT INTO pesanan_penjualan (nomor, pelanggan_kode, gudang_kode, salesman,
+            tanggal_pesanan, tanggal_kirim, catatan, diskon_faktur, pajak, total, status,
+            created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
+            &nomor,
+            pelanggan_kode,
+            gudang_kode,
+            salesman,
+            tanggal_str,
+            tanggal_kirim_str.as_deref(),
+            catatan,
+            diskon_faktur,
+            pajak,
+            total,
+            PESANAN_STATUS_DRAFT,
+            ts,
+            ts
+        ],
+    )
+    .map_err(|e| {
+        if e.to_string().contains("FOREIGN KEY") {
+            "Pelanggan atau gudang tidak ditemukan.".into()
+        } else if e.to_string().contains("UNIQUE") {
+            "Nomor pesanan bentrok — coba simpan lagi.".into()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    for line in &payload.lines {
+        let kode_b = line.barang_kode.trim();
+        let sub = penjualan_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
+        tx.execute(
+            "INSERT INTO pesanan_penjualan_line (nomor, barang_kode, qty, satuan_tingkat,
+                harga_satuan, diskon, subtotal, catatan)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &nomor,
+                kode_b,
+                line.qty,
+                line.satuan_tingkat,
+                line.harga_satuan,
+                line.diskon,
+                sub,
+                line.catatan.trim()
+            ],
+        )
+        .map_err(|e| {
+            if e.to_string().contains("FOREIGN KEY") {
+                "Salah satu kode barang tidak ditemukan.".into()
+            } else {
+                e.to_string()
+            }
+        })?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(nomor)
+}
+
+#[tauri::command]
+pub fn pesanan_penjualan_update(
+    state: State<DbState>,
+    nomor: String,
+    payload: PesananPenjualanInsertPayload,
+) -> Result<(), String> {
+    let nomor = nomor.trim().to_string();
+    if nomor.is_empty() {
+        return Err("Nomor pesanan tidak valid.".into());
+    }
+    let (tgl, tgl_kirim, _sub, diskon_faktur, pajak, total) =
+        pesanan_penjualan_validate_and_total(&payload)?;
+    let pelanggan_kode = payload.pelanggan_kode.trim();
+    let gudang_kode = payload.gudang_kode.trim();
+    let salesman = payload.salesman.trim();
+    let catatan = payload.catatan.trim();
+    let tanggal_str = tgl.format("%Y-%m-%d").to_string();
+    let tanggal_kirim_str = tgl_kirim.map(|d| d.format("%Y-%m-%d").to_string());
+    let ts = now_ts();
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let (status, faktur_nomor): (String, Option<String>) = tx
+        .query_row(
+            "SELECT status, faktur_nomor FROM pesanan_penjualan WHERE nomor = ?",
+            params![&nomor],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|_| "Pesanan penjualan tidak ditemukan.".to_string())?;
+    if status != PESANAN_STATUS_DRAFT {
+        let lanjutan = match status.as_str() {
+            PESANAN_STATUS_DIFAKTURKAN => faktur_nomor
+                .map(|n| format!(" (faktur {n})"))
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
+        return Err(format!(
+            "Pesanan sudah berstatus {status}{lanjutan} dan tidak dapat diubah lagi."
+        ));
+    }
+
+    tx.execute(
+        "UPDATE pesanan_penjualan SET pelanggan_kode = ?, gudang_kode = ?, salesman = ?,
+            tanggal_pesanan = ?, tanggal_kirim = ?, catatan = ?, diskon_faktur = ?, pajak = ?,
+            total = ?, updated_at = ? WHERE nomor = ?",
+        params![
+            pelanggan_kode,
+            gudang_kode,
+            salesman,
+            tanggal_str,
+            tanggal_kirim_str.as_deref(),
+            catatan,
+            diskon_faktur,
+            pajak,
+            total,
+            ts,
+            &nomor
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "DELETE FROM pesanan_penjualan_line WHERE nomor = ?",
+        params![&nomor],
+    )
+    .map_err(|e| e.to_string())?;
+
+    for line in &payload.lines {
+        let kode_b = line.barang_kode.trim();
+        let sub = penjualan_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
+        tx.execute(
+            "INSERT INTO pesanan_penjualan_line (nomor, barang_kode, qty, satuan_tingkat,
+                harga_satuan, diskon, subtotal, catatan)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &nomor,
+                kode_b,
+                line.qty,
+                line.satuan_tingkat,
+                line.harga_satuan,
+                line.diskon,
+                sub,
+                line.catatan.trim()
+            ],
+        )
+        .map_err(|e| {
+            if e.to_string().contains("FOREIGN KEY") {
+                "Salah satu kode barang tidak ditemukan.".into()
+            } else {
+                e.to_string()
+            }
+        })?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pesanan_penjualan_delete(state: State<DbState>, nomor: String) -> Result<(), String> {
+    let nomor = nomor.trim().to_string();
+    if nomor.is_empty() {
+        return Err("Nomor pesanan tidak valid.".into());
+    }
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let status: String = tx
+        .query_row(
+            "SELECT status FROM pesanan_penjualan WHERE nomor = ?",
+            params![&nomor],
+            |r| r.get(0),
+        )
+        .map_err(|_| "Pesanan penjualan tidak ditemukan.".to_string())?;
+    if status == PESANAN_STATUS_DIFAKTURKAN {
+        return Err(
+            "Pesanan sudah difakturkan — silakan batalkan faktur penjualannya dulu jika ingin menghapus pesanan.".into(),
+        );
+    }
+    tx.execute("DELETE FROM pesanan_penjualan WHERE nomor = ?", params![&nomor])
+        .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pesanan_penjualan_batalkan(state: State<DbState>, nomor: String) -> Result<(), String> {
+    let nomor = nomor.trim().to_string();
+    if nomor.is_empty() {
+        return Err("Nomor pesanan tidak valid.".into());
+    }
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let status: String = tx
+        .query_row(
+            "SELECT status FROM pesanan_penjualan WHERE nomor = ?",
+            params![&nomor],
+            |r| r.get(0),
+        )
+        .map_err(|_| "Pesanan penjualan tidak ditemukan.".to_string())?;
+    if status == PESANAN_STATUS_DIFAKTURKAN {
+        return Err("Pesanan sudah difakturkan dan tidak dapat dibatalkan.".into());
+    }
+    if status == PESANAN_STATUS_DIBATALKAN {
+        return Err("Pesanan sudah dibatalkan sebelumnya.".into());
+    }
+    let ts = now_ts();
+    tx.execute(
+        "UPDATE pesanan_penjualan SET status = ?, updated_at = ? WHERE nomor = ?",
+        params![PESANAN_STATUS_DIBATALKAN, ts, &nomor],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pesanan_penjualan_konversi_ke_faktur(
+    app: tauri::AppHandle,
+    state: State<DbState>,
+    nomor: String,
+    payload: PesananPenjualanKonversiPayload,
+) -> Result<String, String> {
+    let nomor = nomor.trim().to_string();
+    if nomor.is_empty() {
+        return Err("Nomor pesanan tidak valid.".into());
+    }
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    crate::activation::assert_can_create_transaction(&app, &conn)?;
+
+    let tgl_faktur = NaiveDate::parse_from_str(payload.tanggal_faktur.trim(), "%Y-%m-%d")
+        .map_err(|_| "Tanggal faktur tidak valid (YYYY-MM-DD).".to_string())?;
+    let tgl_jt = NaiveDate::parse_from_str(payload.jatuh_tempo.trim(), "%Y-%m-%d")
+        .map_err(|_| "Jatuh tempo tidak valid (YYYY-MM-DD).".to_string())?;
+    if tgl_jt < tgl_faktur {
+        return Err("Jatuh tempo tidak boleh sebelum tanggal faktur.".into());
+    }
+    let tanggal_faktur = tgl_faktur.format("%Y-%m-%d").to_string();
+    let jatuh_tempo = tgl_jt.format("%Y-%m-%d").to_string();
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    // --- Ambil header pesanan + validasi status -------------------------
+    let (
+        pelanggan_kode,
+        gudang_kode,
+        salesman_pesanan,
+        catatan,
+        diskon_faktur,
+        pajak,
+        total,
+        status,
+    ): (String, String, String, String, i64, i64, i64, String) = tx
+        .query_row(
+            "SELECT pelanggan_kode, gudang_kode, salesman, catatan, diskon_faktur, pajak, total, status
+             FROM pesanan_penjualan WHERE nomor = ?",
+            params![&nomor],
+            |r| Ok((
+                r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?,
+            )),
+        )
+        .map_err(|_| "Pesanan penjualan tidak ditemukan.".to_string())?;
+    if status == PESANAN_STATUS_DIFAKTURKAN {
+        return Err("Pesanan sudah difakturkan sebelumnya.".into());
+    }
+    if status == PESANAN_STATUS_DIBATALKAN {
+        return Err("Pesanan sudah dibatalkan — tidak bisa difakturkan.".into());
+    }
+
+    let salesman_final = payload
+        .salesman
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .unwrap_or(salesman_pesanan);
+    let akun_kas_kode = pembelian_normalize_akun_kas(&payload.akun_kas_kode);
+
+    // --- Ambil lines pesanan ---------------------------------------------
+    let mut stmt = tx
+        .prepare(
+            "SELECT barang_kode, qty, satuan_tingkat, harga_satuan, diskon, catatan
+             FROM pesanan_penjualan_line WHERE nomor = ? ORDER BY id ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let lines: Vec<(String, i64, u8, i64, i64, String)> = stmt
+        .query_map(params![&nomor], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, u8>(2)?,
+                r.get::<_, i64>(3)?,
+                r.get::<_, i64>(4)?,
+                r.get::<_, String>(5)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())?;
+    drop(stmt);
+    if lines.is_empty() {
+        return Err("Pesanan tidak punya baris item.".into());
+    }
+
+    // --- Bikin faktur penjualan baru (mirror logika penjualan_insert) ---
+    let nomor_faktur = format!("FJ-{}", Utc::now().timestamp_millis());
+    let ts = now_ts();
+
+    tx.execute(
+        "INSERT INTO penjualan (nomor, pelanggan_kode, gudang_kode, salesman, tanggal_faktur,
+            jatuh_tempo, catatan_faktur, diskon_faktur, pajak, akun_kas_kode, total, status,
+            created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Dipesan', ?, ?)",
+        params![
+            &nomor_faktur,
+            &pelanggan_kode,
+            &gudang_kode,
+            &salesman_final,
+            &tanggal_faktur,
+            &jatuh_tempo,
+            &catatan,
+            diskon_faktur,
+            pajak,
+            akun_kas_kode.as_deref(),
+            total,
+            ts,
+            ts
+        ],
+    )
+    .map_err(|e| {
+        if e.to_string().contains("FOREIGN KEY") {
+            "Pelanggan, gudang, atau akun kas tidak ditemukan.".into()
+        } else if e.to_string().contains("UNIQUE") {
+            "Nomor faktur bentrok — coba lagi.".into()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    for (kode_b, qty, satuan_tingkat, harga_satuan, diskon, line_catatan) in &lines {
+        let sub = penjualan_line_subtotal(*qty, *harga_satuan, *diskon)?;
+        tx.execute(
+            "INSERT INTO penjualan_line (nomor, barang_kode, qty, satuan_tingkat, harga_satuan, diskon, subtotal, catatan)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &nomor_faktur,
+                kode_b.trim(),
+                qty,
+                satuan_tingkat,
+                harga_satuan,
+                diskon,
+                sub,
+                line_catatan.trim()
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        penjualan_tx_apply_barang_stok(
+            &tx,
+            &nomor_faktur,
+            kode_b.trim(),
+            *qty,
+            *satuan_tingkat,
+            &gudang_kode,
+            &tanggal_faktur,
+            line_catatan.trim(),
+            ts,
+            ts,
+        )?;
+    }
+
+    penjualan_tx_post_jurnal(
+        &tx,
+        &tanggal_faktur,
+        &nomor_faktur,
+        &pelanggan_kode,
+        total,
+        akun_kas_kode.as_deref(),
+        ts,
+    )?;
+
+    // --- Mark pesanan sebagai Difakturkan --------------------------------
+    tx.execute(
+        "UPDATE pesanan_penjualan SET status = ?, faktur_nomor = ?, updated_at = ? WHERE nomor = ?",
+        params![PESANAN_STATUS_DIFAKTURKAN, &nomor_faktur, ts, &nomor],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(nomor_faktur)
+}
+
+// --- Pesanan pembelian (Purchase Order) ----------------------------------
+//
+// Mirror dari pesanan_penjualan untuk sisi pembelian. PO TIDAK menambah
+// stok dan TIDAK posting jurnal — efek akuntansi & inventory baru terjadi
+// saat PO dikonversi menjadi faktur pembelian.
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PesananPembelianListRow {
+    pub nomor: String,
+    pub tanggal_pesanan: String,
+    pub tanggal_kirim: Option<String>,
+    pub pemasok_kode: String,
+    pub pemasok_nama: String,
+    pub total: i64,
+    pub status: String,
+    pub faktur_nomor: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PesananPembelianDetailLine {
+    pub barang_kode: String,
+    pub barang_nama: String,
+    pub qty: i64,
+    pub satuan_tingkat: u8,
+    pub satuan_nama: String,
+    pub harga_satuan: i64,
+    pub diskon: i64,
+    pub subtotal: i64,
+    pub catatan: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PesananPembelianDetail {
+    pub nomor: String,
+    pub pemasok_kode: String,
+    pub pemasok_nama: String,
+    pub gudang_kode: String,
+    pub gudang_nama: String,
+    pub tanggal_pesanan: String,
+    pub tanggal_kirim: Option<String>,
+    pub catatan: String,
+    pub subtotal_barang: i64,
+    pub diskon_faktur: i64,
+    pub pajak: i64,
+    pub total: i64,
+    pub status: String,
+    pub faktur_nomor: Option<String>,
+    pub lines: Vec<PesananPembelianDetailLine>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PesananPembelianLineInput {
+    pub barang_kode: String,
+    pub qty: i64,
+    pub harga_satuan: i64,
+    #[serde(default)]
+    pub diskon: i64,
+    #[serde(default = "default_satuan_tingkat_line")]
+    pub satuan_tingkat: u8,
+    #[serde(default)]
+    pub catatan: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PesananPembelianInsertPayload {
+    pub pemasok_kode: String,
+    pub gudang_kode: String,
+    pub tanggal_pesanan: String,
+    #[serde(default)]
+    pub tanggal_kirim: Option<String>,
+    pub catatan: String,
+    #[serde(default)]
+    pub diskon_faktur: i64,
+    #[serde(default)]
+    pub pajak: i64,
+    pub lines: Vec<PesananPembelianLineInput>,
+}
+
+/// Payload override saat konversi pesanan pembelian → faktur pembelian.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PesananPembelianKonversiPayload {
+    pub tanggal_faktur: String,
+    pub jatuh_tempo: String,
+    pub metode_pembayaran: String,
+    #[serde(default)]
+    pub akun_kas_kode: Option<String>,
+}
+
+fn pesanan_pembelian_validate_and_total(
+    payload: &PesananPembelianInsertPayload,
+) -> Result<(NaiveDate, Option<NaiveDate>, i64, i64, i64, i64), String> {
+    let pemasok_kode = payload.pemasok_kode.trim();
+    let gudang_kode = payload.gudang_kode.trim();
+    if pemasok_kode.is_empty() {
+        return Err("Pemasok wajib dipilih.".into());
+    }
+    if gudang_kode.is_empty() {
+        return Err("Gudang wajib dipilih.".into());
+    }
+    let tgl = NaiveDate::parse_from_str(payload.tanggal_pesanan.trim(), "%Y-%m-%d")
+        .map_err(|_| "Tanggal pesanan tidak valid (YYYY-MM-DD).".to_string())?;
+    let tgl_kirim = match payload.tanggal_kirim.as_deref().map(|s| s.trim()) {
+        None | Some("") => None,
+        Some(s) => Some(
+            NaiveDate::parse_from_str(s, "%Y-%m-%d")
+                .map_err(|_| "Target tanggal terima tidak valid (YYYY-MM-DD).".to_string())?,
+        ),
+    };
+    if let Some(tk) = tgl_kirim {
+        if tk < tgl {
+            return Err("Target tanggal terima tidak boleh sebelum tanggal pesanan.".into());
+        }
+    }
+    if payload.lines.is_empty() {
+        return Err("Minimal satu baris item harus diisi.".into());
+    }
+
+    let mut sub_barang: i64 = 0;
+    for (idx, line) in payload.lines.iter().enumerate() {
+        let no = idx + 1;
+        if line.barang_kode.trim().is_empty() {
+            return Err(format!("Baris {no}: kode barang kosong."));
+        }
+        if line.qty <= 0 {
+            return Err(format!("Baris {no}: qty harus > 0."));
+        }
+        if line.harga_satuan < 0 {
+            return Err(format!("Baris {no}: harga satuan tidak valid."));
+        }
+        if line.diskon < 0 {
+            return Err(format!("Baris {no}: diskon tidak valid."));
+        }
+        if line.diskon > line.harga_satuan {
+            return Err(format!(
+                "Baris {no}: diskon per satuan tidak boleh melebihi harga satuan."
+            ));
+        }
+        let sub = pembelian_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
+        sub_barang = sub_barang
+            .checked_add(sub)
+            .ok_or_else(|| "Subtotal barang melimpahi batas.".to_string())?;
+    }
+
+    let diskon_faktur = payload.diskon_faktur.max(0);
+    let pajak = payload.pajak.max(0);
+    if diskon_faktur > sub_barang {
+        return Err("Diskon faktur tidak boleh melebihi subtotal barang.".into());
+    }
+    let total = pembelian_faktur_total(sub_barang, diskon_faktur, pajak)?;
+    Ok((tgl, tgl_kirim, sub_barang, diskon_faktur, pajak, total))
+}
+
+#[tauri::command]
+pub fn pesanan_pembelian_list(
+    state: State<DbState>,
+) -> Result<Vec<PesananPembelianListRow>, String> {
+    with_conn(&state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT p.nomor, p.tanggal_pesanan, p.tanggal_kirim, p.pemasok_kode,
+                    COALESCE(s.nama, p.pemasok_kode) AS pemasok_nama,
+                    p.total, p.status, p.faktur_nomor
+             FROM pesanan_pembelian p
+             LEFT JOIN pemasok s ON lower(s.kode) = lower(p.pemasok_kode)
+             ORDER BY p.tanggal_pesanan DESC, p.created_at DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(PesananPembelianListRow {
+                    nomor: r.get(0)?,
+                    tanggal_pesanan: r.get(1)?,
+                    tanggal_kirim: r.get(2)?,
+                    pemasok_kode: r.get(3)?,
+                    pemasok_nama: r.get(4)?,
+                    total: r.get(5)?,
+                    status: r.get(6)?,
+                    faktur_nomor: r.get(7)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    })
+}
+
+#[tauri::command]
+pub fn pesanan_pembelian_detail(
+    state: State<DbState>,
+    nomor: String,
+) -> Result<PesananPembelianDetail, String> {
+    let nomor = nomor.trim().to_string();
+    if nomor.is_empty() {
+        return Err("Nomor pesanan tidak valid.".into());
+    }
+    with_conn_app(&state, |conn| {
+        let header = conn
+            .query_row(
+                "SELECT pemasok_kode, gudang_kode, tanggal_pesanan, tanggal_kirim, catatan,
+                        diskon_faktur, pajak, total, status, faktur_nomor
+                 FROM pesanan_pembelian WHERE nomor = ?",
+                params![&nomor],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, Option<String>>(3)?,
+                        r.get::<_, String>(4)?,
+                        r.get::<_, i64>(5)?,
+                        r.get::<_, i64>(6)?,
+                        r.get::<_, i64>(7)?,
+                        r.get::<_, String>(8)?,
+                        r.get::<_, Option<String>>(9)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        let (
+            pemasok_kode,
+            gudang_kode,
+            tanggal_pesanan,
+            tanggal_kirim,
+            catatan,
+            diskon_faktur,
+            pajak,
+            total,
+            status,
+            faktur_nomor,
+        ) = header.ok_or_else(|| "Pesanan pembelian tidak ditemukan.".to_string())?;
+
+        let pemasok_nama: String = conn
+            .query_row(
+                "SELECT nama FROM pemasok WHERE lower(kode) = lower(?)",
+                params![&pemasok_kode],
+                |r| r.get(0),
+            )
+            .unwrap_or_else(|_| pemasok_kode.clone());
+        let gudang_nama: String = conn
+            .query_row(
+                "SELECT nama FROM gudang WHERE lower(kode) = lower(?)",
+                params![&gudang_kode],
+                |r| r.get(0),
+            )
+            .unwrap_or_else(|_| gudang_kode.clone());
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT l.barang_kode, COALESCE(b.nama, l.barang_kode) AS barang_nama,
+                        l.qty, l.satuan_tingkat, l.harga_satuan, l.diskon, l.subtotal, l.catatan
+                 FROM pesanan_pembelian_line l
+                 LEFT JOIN barang_jasa b ON lower(b.kode) = lower(l.barang_kode)
+                 WHERE l.nomor = ?
+                 ORDER BY l.id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![&nomor], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, u8>(3)?,
+                    r.get::<_, i64>(4)?,
+                    r.get::<_, i64>(5)?,
+                    r.get::<_, i64>(6)?,
+                    r.get::<_, String>(7)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| e.to_string())?;
+
+        let mut lines: Vec<PesananPembelianDetailLine> = Vec::with_capacity(rows.len());
+        let mut subtotal_barang: i64 = 0;
+        for (kode_b, nama_b, qty, satuan_tingkat, harga, diskon, sub, catatan_line) in rows {
+            let satuan_nama = barang_satuan_nama(conn, &kode_b, satuan_tingkat)
+                .unwrap_or_else(|_| String::new());
+            subtotal_barang = subtotal_barang.saturating_add(sub);
+            lines.push(PesananPembelianDetailLine {
+                barang_kode: kode_b,
+                barang_nama: nama_b,
+                qty,
+                satuan_tingkat,
+                satuan_nama,
+                harga_satuan: harga,
+                diskon,
+                subtotal: sub,
+                catatan: catatan_line,
+            });
+        }
+
+        Ok(PesananPembelianDetail {
+            nomor,
+            pemasok_kode,
+            pemasok_nama,
+            gudang_kode,
+            gudang_nama,
+            tanggal_pesanan,
+            tanggal_kirim,
+            catatan,
+            subtotal_barang,
+            diskon_faktur,
+            pajak,
+            total,
+            status,
+            faktur_nomor,
+            lines,
+        })
+    })
+}
+
+#[tauri::command]
+pub fn pesanan_pembelian_insert(
+    app: tauri::AppHandle,
+    state: State<DbState>,
+    payload: PesananPembelianInsertPayload,
+) -> Result<String, String> {
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    crate::activation::assert_can_create_transaction(&app, &conn)?;
+
+    let (tgl, tgl_kirim, _sub, diskon_faktur, pajak, total) =
+        pesanan_pembelian_validate_and_total(&payload)?;
+    let pemasok_kode = payload.pemasok_kode.trim();
+    let gudang_kode = payload.gudang_kode.trim();
+    let catatan = payload.catatan.trim();
+    let nomor = format!("PO-{}", Utc::now().timestamp_millis());
+    let ts = now_ts();
+    let tanggal_str = tgl.format("%Y-%m-%d").to_string();
+    let tanggal_kirim_str = tgl_kirim.map(|d| d.format("%Y-%m-%d").to_string());
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "INSERT INTO pesanan_pembelian (nomor, pemasok_kode, gudang_kode, tanggal_pesanan,
+            tanggal_kirim, catatan, diskon_faktur, pajak, total, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
+            &nomor,
+            pemasok_kode,
+            gudang_kode,
+            tanggal_str,
+            tanggal_kirim_str.as_deref(),
+            catatan,
+            diskon_faktur,
+            pajak,
+            total,
+            PESANAN_STATUS_DRAFT,
+            ts,
+            ts
+        ],
+    )
+    .map_err(|e| {
+        if e.to_string().contains("FOREIGN KEY") {
+            "Pemasok atau gudang tidak ditemukan.".into()
+        } else if e.to_string().contains("UNIQUE") {
+            "Nomor pesanan bentrok — coba simpan lagi.".into()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    for line in &payload.lines {
+        let kode_b = line.barang_kode.trim();
+        let sub = pembelian_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
+        tx.execute(
+            "INSERT INTO pesanan_pembelian_line (nomor, barang_kode, qty, satuan_tingkat,
+                harga_satuan, diskon, subtotal, catatan)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &nomor,
+                kode_b,
+                line.qty,
+                line.satuan_tingkat,
+                line.harga_satuan,
+                line.diskon,
+                sub,
+                line.catatan.trim()
+            ],
+        )
+        .map_err(|e| {
+            if e.to_string().contains("FOREIGN KEY") {
+                "Salah satu kode barang tidak ditemukan.".into()
+            } else {
+                e.to_string()
+            }
+        })?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(nomor)
+}
+
+#[tauri::command]
+pub fn pesanan_pembelian_update(
+    state: State<DbState>,
+    nomor: String,
+    payload: PesananPembelianInsertPayload,
+) -> Result<(), String> {
+    let nomor = nomor.trim().to_string();
+    if nomor.is_empty() {
+        return Err("Nomor pesanan tidak valid.".into());
+    }
+    let (tgl, tgl_kirim, _sub, diskon_faktur, pajak, total) =
+        pesanan_pembelian_validate_and_total(&payload)?;
+    let pemasok_kode = payload.pemasok_kode.trim();
+    let gudang_kode = payload.gudang_kode.trim();
+    let catatan = payload.catatan.trim();
+    let tanggal_str = tgl.format("%Y-%m-%d").to_string();
+    let tanggal_kirim_str = tgl_kirim.map(|d| d.format("%Y-%m-%d").to_string());
+    let ts = now_ts();
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let (status, faktur_nomor): (String, Option<String>) = tx
+        .query_row(
+            "SELECT status, faktur_nomor FROM pesanan_pembelian WHERE nomor = ?",
+            params![&nomor],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|_| "Pesanan pembelian tidak ditemukan.".to_string())?;
+    if status != PESANAN_STATUS_DRAFT {
+        let lanjutan = match status.as_str() {
+            PESANAN_STATUS_DIFAKTURKAN => faktur_nomor
+                .map(|n| format!(" (faktur {n})"))
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
+        return Err(format!(
+            "Pesanan sudah berstatus {status}{lanjutan} dan tidak dapat diubah lagi."
+        ));
+    }
+
+    tx.execute(
+        "UPDATE pesanan_pembelian SET pemasok_kode = ?, gudang_kode = ?, tanggal_pesanan = ?,
+            tanggal_kirim = ?, catatan = ?, diskon_faktur = ?, pajak = ?, total = ?, updated_at = ?
+         WHERE nomor = ?",
+        params![
+            pemasok_kode,
+            gudang_kode,
+            tanggal_str,
+            tanggal_kirim_str.as_deref(),
+            catatan,
+            diskon_faktur,
+            pajak,
+            total,
+            ts,
+            &nomor
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "DELETE FROM pesanan_pembelian_line WHERE nomor = ?",
+        params![&nomor],
+    )
+    .map_err(|e| e.to_string())?;
+
+    for line in &payload.lines {
+        let kode_b = line.barang_kode.trim();
+        let sub = pembelian_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
+        tx.execute(
+            "INSERT INTO pesanan_pembelian_line (nomor, barang_kode, qty, satuan_tingkat,
+                harga_satuan, diskon, subtotal, catatan)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &nomor,
+                kode_b,
+                line.qty,
+                line.satuan_tingkat,
+                line.harga_satuan,
+                line.diskon,
+                sub,
+                line.catatan.trim()
+            ],
+        )
+        .map_err(|e| {
+            if e.to_string().contains("FOREIGN KEY") {
+                "Salah satu kode barang tidak ditemukan.".into()
+            } else {
+                e.to_string()
+            }
+        })?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pesanan_pembelian_delete(state: State<DbState>, nomor: String) -> Result<(), String> {
+    let nomor = nomor.trim().to_string();
+    if nomor.is_empty() {
+        return Err("Nomor pesanan tidak valid.".into());
+    }
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let status: String = tx
+        .query_row(
+            "SELECT status FROM pesanan_pembelian WHERE nomor = ?",
+            params![&nomor],
+            |r| r.get(0),
+        )
+        .map_err(|_| "Pesanan pembelian tidak ditemukan.".to_string())?;
+    if status == PESANAN_STATUS_DIFAKTURKAN {
+        return Err(
+            "Pesanan sudah difakturkan — silakan batalkan faktur pembeliannya dulu jika ingin menghapus pesanan.".into(),
+        );
+    }
+    tx.execute("DELETE FROM pesanan_pembelian WHERE nomor = ?", params![&nomor])
+        .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pesanan_pembelian_batalkan(state: State<DbState>, nomor: String) -> Result<(), String> {
+    let nomor = nomor.trim().to_string();
+    if nomor.is_empty() {
+        return Err("Nomor pesanan tidak valid.".into());
+    }
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let status: String = tx
+        .query_row(
+            "SELECT status FROM pesanan_pembelian WHERE nomor = ?",
+            params![&nomor],
+            |r| r.get(0),
+        )
+        .map_err(|_| "Pesanan pembelian tidak ditemukan.".to_string())?;
+    if status == PESANAN_STATUS_DIFAKTURKAN {
+        return Err("Pesanan sudah difakturkan dan tidak dapat dibatalkan.".into());
+    }
+    if status == PESANAN_STATUS_DIBATALKAN {
+        return Err("Pesanan sudah dibatalkan sebelumnya.".into());
+    }
+    let ts = now_ts();
+    tx.execute(
+        "UPDATE pesanan_pembelian SET status = ?, updated_at = ? WHERE nomor = ?",
+        params![PESANAN_STATUS_DIBATALKAN, ts, &nomor],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pesanan_pembelian_konversi_ke_faktur(
+    app: tauri::AppHandle,
+    state: State<DbState>,
+    nomor: String,
+    payload: PesananPembelianKonversiPayload,
+) -> Result<String, String> {
+    let nomor = nomor.trim().to_string();
+    if nomor.is_empty() {
+        return Err("Nomor pesanan tidak valid.".into());
+    }
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    crate::activation::assert_can_create_transaction(&app, &conn)?;
+
+    let tgl_faktur = NaiveDate::parse_from_str(payload.tanggal_faktur.trim(), "%Y-%m-%d")
+        .map_err(|_| "Tanggal faktur tidak valid (YYYY-MM-DD).".to_string())?;
+    let tgl_jt = NaiveDate::parse_from_str(payload.jatuh_tempo.trim(), "%Y-%m-%d")
+        .map_err(|_| "Jatuh tempo tidak valid (YYYY-MM-DD).".to_string())?;
+    if tgl_jt < tgl_faktur {
+        return Err("Jatuh tempo tidak boleh sebelum tanggal faktur.".into());
+    }
+    let metode = payload.metode_pembayaran.trim();
+    if metode.is_empty() {
+        return Err("Metode pembayaran wajib dipilih.".into());
+    }
+    let tanggal_faktur = tgl_faktur.format("%Y-%m-%d").to_string();
+    let jatuh_tempo = tgl_jt.format("%Y-%m-%d").to_string();
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let (pemasok_kode, gudang_kode, diskon_faktur, pajak, total, status): (
+        String,
+        String,
+        i64,
+        i64,
+        i64,
+        String,
+    ) = tx
+        .query_row(
+            "SELECT pemasok_kode, gudang_kode, diskon_faktur, pajak, total, status
+             FROM pesanan_pembelian WHERE nomor = ?",
+            params![&nomor],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+        )
+        .map_err(|_| "Pesanan pembelian tidak ditemukan.".to_string())?;
+    if status == PESANAN_STATUS_DIFAKTURKAN {
+        return Err("Pesanan sudah difakturkan sebelumnya.".into());
+    }
+    if status == PESANAN_STATUS_DIBATALKAN {
+        return Err("Pesanan sudah dibatalkan — tidak bisa difakturkan.".into());
+    }
+
+    let akun_kas_kode = pembelian_normalize_akun_kas(&payload.akun_kas_kode);
+
+    let mut stmt = tx
+        .prepare(
+            "SELECT barang_kode, qty, satuan_tingkat, harga_satuan, diskon
+             FROM pesanan_pembelian_line WHERE nomor = ? ORDER BY id ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let lines: Vec<(String, i64, u8, i64, i64)> = stmt
+        .query_map(params![&nomor], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, u8>(2)?,
+                r.get::<_, i64>(3)?,
+                r.get::<_, i64>(4)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())?;
+    drop(stmt);
+    if lines.is_empty() {
+        return Err("Pesanan tidak punya baris item.".into());
+    }
+
+    // Bikin faktur pembelian (mirror logika `pembelian_insert`).
+    let nomor_faktur = format!("FB-{}", Utc::now().timestamp_millis());
+    let ts = now_ts();
+
+    tx.execute(
+        "INSERT INTO pembelian (nomor, pemasok_kode, gudang_kode, tanggal_faktur, jatuh_tempo,
+            metode_pembayaran, diskon_faktur, pajak, akun_kas_kode, total, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Dipesan', ?, ?)",
+        params![
+            &nomor_faktur,
+            &pemasok_kode,
+            &gudang_kode,
+            &tanggal_faktur,
+            &jatuh_tempo,
+            metode,
+            diskon_faktur,
+            pajak,
+            akun_kas_kode.as_deref(),
+            total,
+            ts,
+            ts
+        ],
+    )
+    .map_err(|e| {
+        if e.to_string().contains("FOREIGN KEY") {
+            "Pemasok, gudang, atau akun kas tidak ditemukan.".into()
+        } else if e.to_string().contains("UNIQUE") {
+            "Nomor faktur bentrok — coba lagi.".into()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    for (kode_b, qty, satuan_tingkat, harga_satuan, diskon) in &lines {
+        let sub = pembelian_line_subtotal(*qty, *harga_satuan, *diskon)?;
+        tx.execute(
+            "INSERT INTO pembelian_line (nomor, barang_kode, qty, satuan_tingkat, harga_satuan, diskon, subtotal)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &nomor_faktur,
+                kode_b.trim(),
+                qty,
+                satuan_tingkat,
+                harga_satuan,
+                diskon,
+                sub
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        pembelian_tx_apply_barang_stok(
+            &tx,
+            &nomor_faktur,
+            kode_b.trim(),
+            *qty,
+            *satuan_tingkat,
+            &gudang_kode,
+            &tanggal_faktur,
+            ts,
+            ts,
+        )?;
+    }
+
+    pembelian_tx_post_jurnal(
+        &tx,
+        &tanggal_faktur,
+        &nomor_faktur,
+        &pemasok_kode,
+        total,
+        akun_kas_kode.as_deref(),
+        ts,
+    )?;
+
+    tx.execute(
+        "UPDATE pesanan_pembelian SET status = ?, faktur_nomor = ?, updated_at = ? WHERE nomor = ?",
+        params![PESANAN_STATUS_DIFAKTURKAN, &nomor_faktur, ts, &nomor],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(nomor_faktur)
+}
+
+// ============================================================
+// --- POS (Point of Sale) ---
+// ============================================================
+
+/// Kode pelanggan default untuk transaksi walk-in di POS. Diseed otomatis
+/// di migrasi `migrate_pos_tables`.
+pub const POS_PELANGGAN_DEFAULT_KODE: &str = "GUEST";
+
+// --- Metode bayar ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PosMetodeBayarRow {
+    pub kode: String,
+    pub nama: String,
+    pub akun_kas_kode: String,
+    pub akun_kas_nama: String,
+    pub urutan: i64,
+    pub is_tunai: bool,
+    pub aktif: bool,
+}
+
+#[tauri::command]
+pub fn pos_metode_bayar_list(
+    state: State<DbState>,
+    hanya_aktif: Option<bool>,
+) -> Result<Vec<PosMetodeBayarRow>, String> {
+    let hanya_aktif = hanya_aktif.unwrap_or(false);
+    with_conn(&state, |conn| {
+        let sql = if hanya_aktif {
+            "SELECT m.kode, m.nama, m.akun_kas_kode, COALESCE(a.nama, ''), m.urutan, m.is_tunai, m.aktif
+             FROM pos_metode_bayar m
+             LEFT JOIN akun_keuangan a ON lower(a.kode) = lower(m.akun_kas_kode)
+             WHERE m.aktif = 1
+             ORDER BY m.urutan ASC, m.kode COLLATE NOCASE"
+        } else {
+            "SELECT m.kode, m.nama, m.akun_kas_kode, COALESCE(a.nama, ''), m.urutan, m.is_tunai, m.aktif
+             FROM pos_metode_bayar m
+             LEFT JOIN akun_keuangan a ON lower(a.kode) = lower(m.akun_kas_kode)
+             ORDER BY m.urutan ASC, m.kode COLLATE NOCASE"
+        };
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt.query_map([], |r| {
+            Ok(PosMetodeBayarRow {
+                kode: r.get(0)?,
+                nama: r.get(1)?,
+                akun_kas_kode: r.get(2)?,
+                akun_kas_nama: r.get(3)?,
+                urutan: r.get(4)?,
+                is_tunai: r.get::<_, i64>(5)? != 0,
+                aktif: r.get::<_, i64>(6)? != 0,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PosMetodeBayarUpsert {
+    pub kode: String,
+    pub nama: String,
+    pub akun_kas_kode: String,
+    pub urutan: i64,
+    pub is_tunai: bool,
+    pub aktif: bool,
+}
+
+fn pos_assert_akun_kas(conn: &Connection, kode: &str) -> Result<(), String> {
+    let row: Option<i64> = conn
+        .query_row(
+            "SELECT COALESCE(is_akun_kas, 0) FROM akun_keuangan WHERE lower(kode) = lower(?)",
+            params![kode],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let is_kas = row.ok_or_else(|| "Akun kas tidak ditemukan.".to_string())?;
+    if is_kas == 0 {
+        return Err("Akun yang dipilih bukan akun kas/bank.".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pos_metode_bayar_insert(
+    state: State<DbState>,
+    row: PosMetodeBayarUpsert,
+) -> Result<(), String> {
+    let kode = row.kode.trim().to_uppercase();
+    if kode.is_empty() {
+        return Err("Kode metode wajib diisi.".into());
+    }
+    if row.nama.trim().is_empty() {
+        return Err("Nama metode wajib diisi.".into());
+    }
+    let akun_kas = row.akun_kas_kode.trim();
+    if akun_kas.is_empty() {
+        return Err("Akun kas wajib dipilih.".into());
+    }
+    let ts = now_ts();
+    with_conn_app(&state, |conn| {
+        pos_assert_akun_kas(conn, akun_kas)?;
+        conn.execute(
+            "INSERT INTO pos_metode_bayar (kode, nama, akun_kas_kode, urutan, is_tunai, aktif, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![kode, row.nama.trim(), akun_kas, row.urutan, row.is_tunai as i64, row.aktif as i64, ts, ts],
+        )
+        .map_err(|e| {
+            if e.to_string().contains("UNIQUE") {
+                "Kode metode bayar sudah ada.".into()
+            } else {
+                e.to_string()
+            }
+        })?;
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn pos_metode_bayar_update(
+    state: State<DbState>,
+    kode: String,
+    row: PosMetodeBayarUpsert,
+) -> Result<(), String> {
+    let kode_t = kode.trim().to_string();
+    if kode_t.is_empty() {
+        return Err("Kode metode wajib diisi.".into());
+    }
+    if row.nama.trim().is_empty() {
+        return Err("Nama metode wajib diisi.".into());
+    }
+    let akun_kas = row.akun_kas_kode.trim();
+    if akun_kas.is_empty() {
+        return Err("Akun kas wajib dipilih.".into());
+    }
+    let ts = now_ts();
+    with_conn_app(&state, |conn| {
+        pos_assert_akun_kas(conn, akun_kas)?;
+        let n = conn
+            .execute(
+                "UPDATE pos_metode_bayar
+                 SET nama = ?, akun_kas_kode = ?, urutan = ?, is_tunai = ?, aktif = ?, updated_at = ?
+                 WHERE lower(kode) = lower(?)",
+                params![row.nama.trim(), akun_kas, row.urutan, row.is_tunai as i64, row.aktif as i64, ts, kode_t],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Metode bayar tidak ditemukan.".into());
+        }
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn pos_metode_bayar_delete(state: State<DbState>, kode: String) -> Result<(), String> {
+    let kode_t = kode.trim().to_string();
+    if kode_t.is_empty() {
+        return Err("Kode metode wajib diisi.".into());
+    }
+    with_conn_app(&state, |conn| {
+        let dipakai: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM penjualan_pembayaran WHERE lower(metode_kode) = lower(?)",
+                params![kode_t],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if dipakai > 0 {
+            return Err(format!(
+                "Metode bayar tidak dapat dihapus karena sudah dipakai pada {dipakai} pembayaran. Anda dapat menonaktifkannya sebagai gantinya."
+            ));
+        }
+        let n = conn
+            .execute(
+                "DELETE FROM pos_metode_bayar WHERE lower(kode) = lower(?)",
+                params![kode_t],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Metode bayar tidak ditemukan.".into());
+        }
+        Ok(())
+    })
+}
+
+// --- Konfigurasi operasional (acuan global pembukuan) ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct OperasionalKonfigurasiRow {
+    /// Tanggal awal periode operasional (YYYY-MM-DD). Dipakai sebagai acuan
+    /// untuk saldo awal stok, kas, dan pembukuan.
+    pub awal_periode: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperasionalKonfigurasiSetPayload {
+    pub awal_periode: Option<String>,
+}
+
+fn operasional_konfigurasi_ensure_row(conn: &Connection, ts: i64) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR IGNORE INTO operasional_konfigurasi (id, created_at, updated_at)
+         VALUES (1, ?, ?)",
+        params![ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn operasional_konfigurasi_load(conn: &Connection) -> Result<OperasionalKonfigurasiRow, String> {
+    conn.query_row(
+        "SELECT awal_periode FROM operasional_konfigurasi WHERE id = 1",
+        [],
+        |r| {
+            Ok(OperasionalKonfigurasiRow {
+                awal_periode: r.get::<_, Option<String>>(0)?,
+            })
+        },
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn operasional_konfigurasi_get(
+    state: State<DbState>,
+) -> Result<OperasionalKonfigurasiRow, String> {
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    operasional_konfigurasi_ensure_row(&tx, ts)?;
+    let row = operasional_konfigurasi_load(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(row)
+}
+
+#[tauri::command]
+pub fn operasional_konfigurasi_set(
+    state: State<DbState>,
+    payload: OperasionalKonfigurasiSetPayload,
+) -> Result<OperasionalKonfigurasiRow, String> {
+    let awal_periode = payload
+        .awal_periode
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    if let Some(d) = &awal_periode {
+        NaiveDate::parse_from_str(d, "%Y-%m-%d")
+            .map_err(|_| "Tanggal awal periode tidak valid (gunakan YYYY-MM-DD).".to_string())?;
+    }
+
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    operasional_konfigurasi_ensure_row(&tx, ts)?;
+
+    tx.execute(
+        "UPDATE operasional_konfigurasi SET awal_periode = ?, updated_at = ? WHERE id = 1",
+        params![awal_periode, ts],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let row = operasional_konfigurasi_load(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(row)
+}
+
+// --- Saldo awal kas (jurnal pembuka di awal periode operasional) ---
+
+const KAS_AWAL_JENIS: &str = "KAS_AWAL";
+const KAS_AWAL_REFERENSI: &str = "KAS-AWAL";
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct KasAwalEntryRow {
+    pub akun_kode: String,
+    pub akun_nama: String,
+    pub nilai_awal: i64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct KasAwalSnapshot {
+    pub awal_periode: Option<String>,
+    pub akun_historical_balance_kode: Option<String>,
+    pub akun_historical_balance_nama: Option<String>,
+    pub entries: Vec<KasAwalEntryRow>,
+    /// Tanggal jurnal yang tersimpan terakhir (jika ada). Bisa beda dari
+    /// `awal_periode` kalau pengaturan diubah setelah kas awal di-set.
+    pub tanggal_jurnal: Option<String>,
+    pub jurnal_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KasAwalEntryInput {
+    pub akun_kode: String,
+    pub nilai_awal: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KasAwalSetPayload {
+    pub entries: Vec<KasAwalEntryInput>,
+}
+
+/// Cari jurnal kas awal aktif (KAS_AWAL / KAS-AWAL). Ada paling banyak 1
+/// karena pada `kas_awal_set` kita selalu menghapus jurnal lama sebelum
+/// membuat yang baru.
+fn kas_awal_find_existing(conn: &Connection) -> Result<Option<(i64, String)>, String> {
+    let r = conn.query_row(
+        "SELECT id, tanggal FROM jurnal_umum
+         WHERE jenis = ? AND referensi = ?
+         ORDER BY id DESC LIMIT 1",
+        params![KAS_AWAL_JENIS, KAS_AWAL_REFERENSI],
+        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+    );
+    match r {
+        Ok(v) => Ok(Some(v)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Reverse semua line dari jurnal yang ditarget, lalu hapus jurnal+lines-nya.
+fn kas_awal_reverse_and_delete(
+    tx: &Transaction<'_>,
+    jurnal_id: i64,
+    ts: i64,
+) -> Result<(), String> {
+    let lines: Vec<(String, i64, i64)> = {
+        let mut stmt = tx
+            .prepare(
+                "SELECT akun_kode, debit, kredit FROM jurnal_umum_line WHERE jurnal_id = ?",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        let rows = stmt
+            .query_map(params![jurnal_id], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
+            })
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            out.push(row.map_err(|e| e.to_string())?);
+        }
+        out
+    };
+
+    // Reverse saldo dengan swap (D ↔ K).
+    for (akun_kode, debit, kredit) in &lines {
+        akun_jurnal_apply_saldo_delta(tx, akun_kode, *kredit, *debit, ts)?;
+    }
+
+    tx.execute(
+        "DELETE FROM jurnal_umum_line WHERE jurnal_id = ?",
+        params![jurnal_id],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM jurnal_umum WHERE id = ?", params![jurnal_id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn kas_awal_get(state: State<DbState>) -> Result<KasAwalSnapshot, String> {
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    operasional_konfigurasi_ensure_row(&tx, ts)?;
+    konfigurasi_ensure_row(&tx, ts)?;
+
+    let op_cfg = operasional_konfigurasi_load(&tx)?;
+    let jurnal_cfg = konfigurasi_get_row(&tx)?;
+    let hb_kode = jurnal_cfg.akun_historical_balance.clone();
+    let hb_nama: Option<String> = if let Some(k) = &hb_kode {
+        tx.query_row(
+            "SELECT nama FROM akun_keuangan WHERE lower(kode) = lower(?)",
+            params![k],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
+    } else {
+        None
+    };
+
+    let existing = kas_awal_find_existing(&tx)?;
+
+    let (entries, tanggal_jurnal, jurnal_id) = if let Some((jid, tgl)) = existing {
+        let mut stmt = tx
+            .prepare(
+                "SELECT l.akun_kode, COALESCE(a.nama, l.akun_kode), l.debit, l.kredit
+                 FROM jurnal_umum_line l
+                 LEFT JOIN akun_keuangan a ON lower(a.kode) = lower(l.akun_kode)
+                 WHERE l.jurnal_id = ?
+                 ORDER BY l.id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut rows: Vec<KasAwalEntryRow> = Vec::new();
+        let it = stmt
+            .query_map(params![jid], |r| {
+                let kode: String = r.get(0)?;
+                let nama: String = r.get(1)?;
+                let debit: i64 = r.get(2)?;
+                let kredit: i64 = r.get(3)?;
+                Ok((kode, nama, debit, kredit))
+            })
+            .map_err(|e| e.to_string())?;
+        for row in it {
+            let (kode, nama, debit, kredit) = row.map_err(|e| e.to_string())?;
+            // Sisi kas selalu di debit; lawan (Historical Balance) di kredit. Skip lawan.
+            if let Some(hb) = &hb_kode {
+                if kode.eq_ignore_ascii_case(hb) {
+                    continue;
+                }
+            } else if debit == 0 && kredit > 0 {
+                // Fallback bila historical_balance tidak terbaca: lewati baris yang murni kredit.
+                continue;
+            }
+            if debit > 0 {
+                rows.push(KasAwalEntryRow {
+                    akun_kode: kode,
+                    akun_nama: nama,
+                    nilai_awal: debit,
+                });
+            }
+        }
+        (rows, Some(tgl), Some(jid))
+    } else {
+        (Vec::new(), None, None)
+    };
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(KasAwalSnapshot {
+        awal_periode: op_cfg.awal_periode,
+        akun_historical_balance_kode: hb_kode,
+        akun_historical_balance_nama: hb_nama,
+        entries,
+        tanggal_jurnal,
+        jurnal_id,
+    })
+}
+
+#[tauri::command]
+pub fn kas_awal_set(
+    state: State<DbState>,
+    payload: KasAwalSetPayload,
+) -> Result<KasAwalSnapshot, String> {
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    // Validasi prasyarat
+    operasional_konfigurasi_ensure_row(&tx, ts)?;
+    konfigurasi_ensure_row(&tx, ts)?;
+    let op_cfg = operasional_konfigurasi_load(&tx)?;
+    let awal_periode = op_cfg
+        .awal_periode
+        .clone()
+        .ok_or_else(|| "Tanggal awal periode operasional belum diset.".to_string())?;
+    NaiveDate::parse_from_str(&awal_periode, "%Y-%m-%d")
+        .map_err(|_| "Tanggal awal periode tidak valid.".to_string())?;
+
+    let cfg = konfigurasi_get_row(&tx)?;
+    let hb_kode = cfg
+        .akun_historical_balance
+        .clone()
+        .ok_or_else(|| "Akun Historical Balance belum diset di Konfigurasi akun jurnal.".to_string())?;
+
+    // Normalisasi & validasi entries
+    let mut total: i64 = 0;
+    let mut clean: Vec<(String, i64)> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for e in &payload.entries {
+        let kode = e.akun_kode.trim().to_uppercase();
+        if kode.is_empty() {
+            return Err("Setiap entry harus memiliki kode akun.".into());
+        }
+        if !seen.insert(kode.clone()) {
+            return Err(format!("Akun '{kode}' tercantum lebih dari sekali."));
+        }
+        if e.nilai_awal < 0 {
+            return Err(format!("Nilai kas awal untuk '{kode}' tidak boleh negatif."));
+        }
+        if kode.eq_ignore_ascii_case(&hb_kode) {
+            return Err(
+                "Akun Historical Balance tidak boleh menjadi salah satu kas awal."
+                    .to_string(),
+            );
+        }
+        let is_kas: i64 = tx
+            .query_row(
+                "SELECT COALESCE(is_akun_kas, 0) FROM akun_keuangan WHERE lower(kode) = lower(?)",
+                params![&kode],
+                |r| r.get(0),
+            )
+            .map_err(|_| format!("Akun '{kode}' tidak ditemukan."))?;
+        if is_kas == 0 {
+            return Err(format!("Akun '{kode}' bukan akun kas."));
+        }
+        if e.nilai_awal > 0 {
+            total = total
+                .checked_add(e.nilai_awal)
+                .ok_or_else(|| "Total kas awal melebihi batas.".to_string())?;
+            clean.push((kode, e.nilai_awal));
+        }
+    }
+
+    // Reverse jurnal lama (jika ada) sebelum membuat baru.
+    if let Some((jid, _)) = kas_awal_find_existing(&tx)? {
+        kas_awal_reverse_and_delete(&tx, jid, ts)?;
+    }
+
+    // Bila semua nilai = 0, cukup kembalikan snapshot kosong tanpa membuat jurnal baru.
+    if clean.is_empty() {
+        tx.commit().map_err(|e| e.to_string())?;
+        return kas_awal_get(state);
+    }
+
+    // Insert jurnal kompound: per akun kas di sisi D; Historical Balance di sisi K (sum).
+    let catatan = format!("Saldo awal kas per {awal_periode}");
+    tx.execute(
+        "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)",
+        params![awal_periode, KAS_AWAL_JENIS, KAS_AWAL_REFERENSI, catatan, ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    let jid = tx.last_insert_rowid();
+
+    for (kode, nilai) in &clean {
+        tx.execute(
+            "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+             VALUES (?, ?, ?, 0, 'Saldo awal kas')",
+            params![jid, kode, nilai],
+        )
+        .map_err(|e| e.to_string())?;
+        akun_jurnal_apply_saldo_delta(&tx, kode, *nilai, 0, ts)?;
+    }
+
+    tx.execute(
+        "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+         VALUES (?, ?, 0, ?, 'Lawan saldo awal kas')",
+        params![jid, &hb_kode, total],
+    )
+    .map_err(|e| e.to_string())?;
+    akun_jurnal_apply_saldo_delta(&tx, &hb_kode, 0, total, ts)?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    kas_awal_get(state)
+}
+
+// --- Saldo awal stok (jurnal pembuka di awal periode operasional) ---
+//
+// Analog `kas_awal` tetapi untuk persediaan. Header singleton di tabel
+// `stok_awal` memegang referensi jurnal aktif & tanggal jurnal. Tiap baris
+// di `stok_awal_line` adalah satu pasangan (barang, gudang) dengan qty +
+// nilai per satuan terkecil. Saat disimpan:
+//   1. Hapus mutasi STOK_AWAL lama (reverse `barang_jasa.stok`),
+//   2. Reverse jurnal lama (kalau ada) lalu hapus,
+//   3. Tulis ulang stok_mutasi STOK_AWAL untuk tiap baris,
+//   4. Update `barang_jasa.stok` (akumulatif lintas gudang),
+//   5. Buat jurnal kompound: D Persediaan total / K Historical Balance total.
+//
+// Modul HPP otomatis mengenali jenis STOK_AWAL (`hpp_apply_event`) sehingga
+// HPP rata-rata barang langsung terinisialisasi dari saldo pembuka.
+
+const STOK_AWAL_JENIS: &str = "STOK_AWAL";
+const STOK_AWAL_REFERENSI: &str = "STOK-AWAL";
+const STOK_AWAL_MUTASI_JENIS: &str = "STOK_AWAL";
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct StokAwalEntryRow {
+    pub barang_kode: String,
+    pub barang_nama: String,
+    pub gudang_kode: String,
+    pub gudang_nama: String,
+    pub qty: i64,
+    pub satuan_tingkat: u8,
+    pub satuan_nama: String,
+    pub qty_smallest: i64,
+    pub nilai_per_unit: i64,
+    pub subtotal_nilai: i64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct StokAwalSnapshot {
+    pub awal_periode: Option<String>,
+    pub akun_persediaan_kode: Option<String>,
+    pub akun_persediaan_nama: Option<String>,
+    pub akun_historical_balance_kode: Option<String>,
+    pub akun_historical_balance_nama: Option<String>,
+    pub entries: Vec<StokAwalEntryRow>,
+    pub tanggal_jurnal: Option<String>,
+    pub jurnal_id: Option<i64>,
+    /// Total nilai persediaan awal (Rp) — sama dengan jumlah baris kredit
+    /// Historical Balance.
+    pub total_nilai: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StokAwalEntryInput {
+    pub barang_kode: String,
+    pub gudang_kode: String,
+    pub qty: i64,
+    pub satuan_tingkat: u8,
+    pub nilai_per_unit: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StokAwalSetPayload {
+    pub entries: Vec<StokAwalEntryInput>,
+}
+
+fn stok_awal_ensure_header(conn: &Connection, ts: i64) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR IGNORE INTO stok_awal (id, created_at, updated_at) VALUES (1, ?, ?)",
+        params![ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Reverse semua side-effect dari saldo awal stok yang sedang aktif:
+///   - Untuk tiap stok_mutasi STOK_AWAL (referensi=STOK-AWAL), kurangi
+///     `barang_jasa.stok` sebesar qty_masuk, lalu hapus barisnya.
+///   - Hapus semua `stok_awal_line`.
+///   - Reverse semua line jurnal lama + hapus jurnal-nya.
+///   - Kosongkan referensi jurnal di header.
+fn stok_awal_reverse_active(tx: &Transaction<'_>, ts: i64) -> Result<(), String> {
+    // 1. Reverse mutasi STOK_AWAL → kurangi stok master barang.
+    let mutasi: Vec<(i64, String, i64)> = {
+        let mut stmt = tx
+            .prepare(
+                "SELECT id, barang_kode, qty_masuk FROM stok_mutasi
+                 WHERE jenis = ? AND referensi = ?",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![STOK_AWAL_MUTASI_JENIS, STOK_AWAL_REFERENSI], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| e.to_string())?);
+        }
+        out
+    };
+    for (mid, barang_kode, qty_masuk) in &mutasi {
+        if *qty_masuk > 0 {
+            tx.execute(
+                "UPDATE barang_jasa
+                 SET stok = COALESCE(stok, 0) - ?, updated_at = ?
+                 WHERE lower(kode) = lower(?)",
+                params![qty_masuk, ts, barang_kode],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        tx.execute("DELETE FROM stok_mutasi WHERE id = ?", params![mid])
+            .map_err(|e| e.to_string())?;
+    }
+
+    // 2. Hapus semua line stok_awal.
+    tx.execute("DELETE FROM stok_awal_line", [])
+        .map_err(|e| e.to_string())?;
+
+    // 3. Reverse jurnal aktif (jika ada) lalu hapus.
+    let existing_jid: Option<i64> = tx
+        .query_row(
+            "SELECT jurnal_id FROM stok_awal WHERE id = 1",
+            [],
+            |r| r.get::<_, Option<i64>>(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .flatten();
+
+    if let Some(jid) = existing_jid {
+        let lines: Vec<(String, i64, i64)> = {
+            let mut stmt = tx
+                .prepare(
+                    "SELECT akun_kode, debit, kredit FROM jurnal_umum_line WHERE jurnal_id = ?",
+                )
+                .map_err(|e| e.to_string())?;
+            let mut out = Vec::new();
+            let rows = stmt
+                .query_map(params![jid], |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
+                })
+                .map_err(|e| e.to_string())?;
+            for row in rows {
+                out.push(row.map_err(|e| e.to_string())?);
+            }
+            out
+        };
+        for (akun_kode, debit, kredit) in &lines {
+            akun_jurnal_apply_saldo_delta(tx, akun_kode, *kredit, *debit, ts)?;
+        }
+        tx.execute(
+            "DELETE FROM jurnal_umum_line WHERE jurnal_id = ?",
+            params![jid],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM jurnal_umum WHERE id = ?", params![jid])
+            .map_err(|e| e.to_string())?;
+    }
+
+    // 4. Kosongkan referensi jurnal di header (header sendiri tetap ada).
+    tx.execute(
+        "UPDATE stok_awal SET jurnal_id = NULL, tanggal_jurnal = NULL, updated_at = ? WHERE id = 1",
+        params![ts],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn stok_awal_get(state: State<DbState>) -> Result<StokAwalSnapshot, String> {
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    operasional_konfigurasi_ensure_row(&tx, ts)?;
+    konfigurasi_ensure_row(&tx, ts)?;
+    stok_awal_ensure_header(&tx, ts)?;
+
+    let op_cfg = operasional_konfigurasi_load(&tx)?;
+    let jurnal_cfg = konfigurasi_get_row(&tx)?;
+
+    let nama_akun = |kode: &Option<String>| -> Option<String> {
+        kode.as_ref().and_then(|k| {
+            tx.query_row(
+                "SELECT nama FROM akun_keuangan WHERE lower(kode) = lower(?)",
+                params![k],
+                |r| r.get::<_, String>(0),
+            )
+            .ok()
+        })
+    };
+
+    let akun_persediaan_kode = jurnal_cfg.akun_pembelian.clone();
+    let akun_persediaan_nama = nama_akun(&akun_persediaan_kode);
+    let akun_historical_balance_kode = jurnal_cfg.akun_historical_balance.clone();
+    let akun_historical_balance_nama = nama_akun(&akun_historical_balance_kode);
+
+    // Header
+    let (jurnal_id, tanggal_jurnal): (Option<i64>, Option<String>) = tx
+        .query_row(
+            "SELECT jurnal_id, tanggal_jurnal FROM stok_awal WHERE id = 1",
+            [],
+            |r| {
+                Ok((
+                    r.get::<_, Option<i64>>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                ))
+            },
+        )
+        .map_err(|e| e.to_string())?;
+
+    // Entries — join dengan barang & gudang untuk ambil nama. Statement
+    // di-scope agar di-drop sebelum `tx.commit` (rusqlite Statement
+    // meminjam connection).
+    type RawRow = (String, String, String, String, i64, u8, i64, i64, i64);
+    let raw_rows: Vec<RawRow> = {
+        let mut stmt = tx
+            .prepare(
+                "SELECT l.barang_kode,
+                        COALESCE(b.nama, l.barang_kode) AS barang_nama,
+                        l.gudang_kode,
+                        COALESCE(g.nama, l.gudang_kode) AS gudang_nama,
+                        l.qty,
+                        l.satuan_tingkat,
+                        l.qty_smallest,
+                        l.nilai_per_unit,
+                        l.subtotal_nilai
+                 FROM stok_awal_line l
+                 LEFT JOIN barang_jasa b ON lower(b.kode) = lower(l.barang_kode)
+                 LEFT JOIN gudang g ON lower(g.kode) = lower(l.gudang_kode)
+                 ORDER BY l.barang_kode COLLATE NOCASE ASC, l.gudang_kode COLLATE NOCASE ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, i64>(4)?,
+                    r.get::<_, i64>(5)? as u8,
+                    r.get::<_, i64>(6)?,
+                    r.get::<_, i64>(7)?,
+                    r.get::<_, i64>(8)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut out: Vec<RawRow> = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| e.to_string())?);
+        }
+        out
+    };
+
+    let mut entries: Vec<StokAwalEntryRow> = Vec::new();
+    let mut total_nilai: i64 = 0;
+    for (
+        barang_kode,
+        barang_nama,
+        gudang_kode,
+        gudang_nama,
+        qty,
+        satuan_tingkat,
+        qty_smallest,
+        nilai_per_unit,
+        subtotal_nilai,
+    ) in raw_rows
+    {
+        let satuan_nama = barang_satuan_nama(&*tx, &barang_kode, satuan_tingkat)
+            .unwrap_or_else(|_| "".to_string());
+        total_nilai = total_nilai.saturating_add(subtotal_nilai);
+        entries.push(StokAwalEntryRow {
+            barang_kode,
+            barang_nama,
+            gudang_kode,
+            gudang_nama,
+            qty,
+            satuan_tingkat,
+            satuan_nama,
+            qty_smallest,
+            nilai_per_unit,
+            subtotal_nilai,
+        });
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(StokAwalSnapshot {
+        awal_periode: op_cfg.awal_periode,
+        akun_persediaan_kode,
+        akun_persediaan_nama,
+        akun_historical_balance_kode,
+        akun_historical_balance_nama,
+        entries,
+        tanggal_jurnal,
+        jurnal_id,
+        total_nilai,
+    })
+}
+
+#[tauri::command]
+pub fn stok_awal_set(
+    state: State<DbState>,
+    payload: StokAwalSetPayload,
+) -> Result<StokAwalSnapshot, String> {
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    // --- Prasyarat ---
+    operasional_konfigurasi_ensure_row(&tx, ts)?;
+    konfigurasi_ensure_row(&tx, ts)?;
+    stok_awal_ensure_header(&tx, ts)?;
+
+    let op_cfg = operasional_konfigurasi_load(&tx)?;
+    let awal_periode = op_cfg
+        .awal_periode
+        .clone()
+        .ok_or_else(|| "Tanggal awal periode operasional belum diset.".to_string())?;
+    NaiveDate::parse_from_str(&awal_periode, "%Y-%m-%d")
+        .map_err(|_| "Tanggal awal periode tidak valid.".to_string())?;
+
+    let jurnal_cfg = konfigurasi_get_row(&tx)?;
+    let hb_kode = jurnal_cfg
+        .akun_historical_balance
+        .clone()
+        .ok_or_else(|| {
+            "Akun Historical Balance belum diset di Konfigurasi akun jurnal.".to_string()
+        })?;
+    let persediaan_kode = jurnal_cfg
+        .akun_pembelian
+        .clone()
+        .ok_or_else(|| {
+            "Akun Pembelian / inventori belum diset di Konfigurasi akun jurnal."
+                .to_string()
+        })?;
+    if hb_kode.eq_ignore_ascii_case(&persediaan_kode) {
+        return Err("Akun Persediaan dan Historical Balance tidak boleh sama.".into());
+    }
+
+    // --- Normalisasi & validasi entries (di luar I/O DB) ---
+    #[derive(Debug)]
+    struct CleanEntry {
+        barang_kode: String,
+        gudang_kode: String,
+        qty: i64,
+        satuan_tingkat: u8,
+        qty_smallest: i64,
+        nilai_per_unit: i64,
+        subtotal_nilai: i64,
+    }
+    let mut clean: Vec<CleanEntry> = Vec::new();
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    let mut total: i64 = 0;
+    for e in &payload.entries {
+        let barang_kode = e.barang_kode.trim().to_string();
+        let gudang_kode = e.gudang_kode.trim().to_string();
+        if barang_kode.is_empty() {
+            return Err("Setiap entry harus memiliki kode barang.".into());
+        }
+        if gudang_kode.is_empty() {
+            return Err(format!("Entry {barang_kode}: kode gudang kosong."));
+        }
+        let key = (barang_kode.to_lowercase(), gudang_kode.to_lowercase());
+        if !seen.insert(key) {
+            return Err(format!(
+                "Pasangan ({barang_kode}, {gudang_kode}) tercantum lebih dari sekali."
+            ));
+        }
+        if e.qty < 0 {
+            return Err(format!(
+                "Qty saldo awal untuk ({barang_kode}, {gudang_kode}) tidak boleh negatif."
+            ));
+        }
+        if e.nilai_per_unit < 0 {
+            return Err(format!(
+                "Nilai per satuan untuk ({barang_kode}, {gudang_kode}) tidak boleh negatif."
+            ));
+        }
+        // Skip nilai 0 entries (qty 0) — tidak perlu menyimpan baris kosong.
+        if e.qty == 0 {
+            continue;
+        }
+        // Validasi barang ada & tipe Barang (Jasa tidak punya stok).
+        let tipe: String = tx
+            .query_row(
+                "SELECT tipe FROM barang_jasa WHERE lower(kode) = lower(?)",
+                params![&barang_kode],
+                |r| r.get(0),
+            )
+            .map_err(|_| format!("Barang '{barang_kode}' tidak ditemukan."))?;
+        if tipe != "Barang" {
+            return Err(format!(
+                "Hanya barang fisik yang punya stok awal — '{barang_kode}' bertipe {tipe}."
+            ));
+        }
+        // Validasi gudang ada.
+        let gud_count: i64 = tx
+            .query_row(
+                "SELECT COUNT(*) FROM gudang WHERE lower(kode) = lower(?)",
+                params![&gudang_kode],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if gud_count == 0 {
+            return Err(format!("Gudang '{gudang_kode}' tidak ditemukan."));
+        }
+        // Konversi qty ke satuan terkecil.
+        let qty_smallest =
+            barang_line_qty_to_smallest_conn(&*tx, &barang_kode, e.qty, e.satuan_tingkat)?;
+        if qty_smallest <= 0 {
+            return Err(format!(
+                "Hasil konversi qty ke satuan terkecil untuk ({barang_kode}, {gudang_kode}) tidak valid."
+            ));
+        }
+        // `nilai_per_unit` selalu dalam basis satuan TERKECIL (sama dengan
+        // dasar pencatatan HPP/persediaan). Jadi subtotal = qty_smallest ×
+        // nilai_per_unit — bukan qty_input × nilai_per_unit. Ini memungkinkan
+        // satu nilai per barang dipakai lintas gudang meskipun satuan
+        // input-nya berbeda.
+        let subtotal_nilai = qty_smallest
+            .checked_mul(e.nilai_per_unit)
+            .ok_or_else(|| format!("Subtotal nilai melimpahi batas untuk ({barang_kode}, {gudang_kode})."))?;
+        total = total
+            .checked_add(subtotal_nilai)
+            .ok_or_else(|| "Total saldo awal stok melebihi batas.".to_string())?;
+
+        clean.push(CleanEntry {
+            barang_kode,
+            gudang_kode,
+            qty: e.qty,
+            satuan_tingkat: e.satuan_tingkat,
+            qty_smallest,
+            nilai_per_unit: e.nilai_per_unit,
+            subtotal_nilai,
+        });
+    }
+
+    // --- Reverse data lama ---
+    stok_awal_reverse_active(&tx, ts)?;
+
+    // Bila semua nilai dikosongkan, selesai di sini (state sudah kosong).
+    if clean.is_empty() {
+        tx.execute(
+            "UPDATE stok_awal SET updated_at = ? WHERE id = 1",
+            params![ts],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+        return stok_awal_get(state);
+    }
+
+    // --- Tulis ulang state ---
+    let waktu_mutasi = waktu_mutasi_dari_tgl_faktur(&awal_periode)?;
+    // Group qty per barang untuk update akumulatif `barang_jasa.stok`.
+    let mut barang_total_qty: HashMap<String, i64> = HashMap::new();
+
+    for entry in &clean {
+        // Insert stok_awal_line.
+        tx.execute(
+            "INSERT INTO stok_awal_line
+             (barang_kode, gudang_kode, qty, satuan_tingkat, qty_smallest, nilai_per_unit, subtotal_nilai)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &entry.barang_kode,
+                &entry.gudang_kode,
+                entry.qty,
+                entry.satuan_tingkat as i64,
+                entry.qty_smallest,
+                entry.nilai_per_unit,
+                entry.subtotal_nilai,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Akumulasi qty per barang.
+        *barang_total_qty
+            .entry(entry.barang_kode.to_lowercase())
+            .or_insert(0) += entry.qty_smallest;
+    }
+
+    // Update master `barang_jasa.stok` (akumulatif lintas gudang), lalu
+    // baca saldo terkini untuk dipakai sebagai `saldo_setelah` di mutasi.
+    // Strategi: untuk tiap barang, tambah qty total lalu derive saldo per
+    // gudang dengan SUM(qty_masuk-qty_keluar) saat ini + qty_smallest.
+    for (barang_lower, qty_total) in &barang_total_qty {
+        tx.execute(
+            "UPDATE barang_jasa
+             SET stok = COALESCE(stok, 0) + ?, updated_at = ?
+             WHERE lower(kode) = ?",
+            params![qty_total, ts, barang_lower],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    // Tulis stok_mutasi per baris. Saldo_setelah dihitung dengan menambah
+    // qty ke saldo terkini per (barang, gudang) — karena saat ini stok lama
+    // STOK_AWAL sudah di-reverse, saldo per gudang adalah saldo riil bersih
+    // dari transaksi non-stok-awal yang sudah ada.
+    let mut saldo_running: HashMap<(String, String), i64> = HashMap::new();
+    for entry in &clean {
+        let key = (
+            entry.barang_kode.to_lowercase(),
+            entry.gudang_kode.to_lowercase(),
+        );
+        let prev = if let Some(v) = saldo_running.get(&key) {
+            *v
+        } else {
+            tx.query_row(
+                "SELECT COALESCE(SUM(qty_masuk) - SUM(qty_keluar), 0)
+                 FROM stok_mutasi
+                 WHERE lower(barang_kode) = ? AND lower(gudang_kode) = ?",
+                params![&key.0, &key.1],
+                |r| r.get::<_, i64>(0),
+            )
+            .map_err(|e| e.to_string())?
+        };
+        let next = prev + entry.qty_smallest;
+        saldo_running.insert(key, next);
+
+        tx.execute(
+            "INSERT INTO stok_mutasi
+             (waktu, tanggal_transaksi, barang_kode, gudang_kode, jenis, referensi,
+              qty_masuk, qty_keluar, saldo_setelah, catatan)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 'Saldo awal stok')",
+            params![
+                waktu_mutasi,
+                &awal_periode,
+                &entry.barang_kode,
+                &entry.gudang_kode,
+                STOK_AWAL_MUTASI_JENIS,
+                STOK_AWAL_REFERENSI,
+                entry.qty_smallest,
+                next,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    // --- Jurnal kompound ---
+    let catatan_j = format!("Saldo awal stok per {awal_periode}");
+    tx.execute(
+        "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)",
+        params![
+            &awal_periode,
+            STOK_AWAL_JENIS,
+            STOK_AWAL_REFERENSI,
+            &catatan_j,
+            ts,
+            ts
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    let jid = tx.last_insert_rowid();
+
+    // D Persediaan total
+    tx.execute(
+        "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+         VALUES (?, ?, ?, 0, 'Saldo awal persediaan')",
+        params![jid, &persediaan_kode, total],
+    )
+    .map_err(|e| e.to_string())?;
+    akun_jurnal_apply_saldo_delta(&tx, &persediaan_kode, total, 0, ts)?;
+
+    // K Historical Balance total
+    tx.execute(
+        "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+         VALUES (?, ?, 0, ?, 'Lawan saldo awal persediaan')",
+        params![jid, &hb_kode, total],
+    )
+    .map_err(|e| e.to_string())?;
+    akun_jurnal_apply_saldo_delta(&tx, &hb_kode, 0, total, ts)?;
+
+    // Catat referensi jurnal & tanggal di header.
+    tx.execute(
+        "UPDATE stok_awal SET jurnal_id = ?, tanggal_jurnal = ?, updated_at = ? WHERE id = 1",
+        params![jid, &awal_periode, ts],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    stok_awal_get(state)
+}
+
+// --- Konfigurasi POS (kas operasional & kas kasir) ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PosKonfigurasiRow {
+    pub kas_utama_kode: Option<String>,
+    pub kas_utama_nama: Option<String>,
+    pub kas_kasir_kode: Option<String>,
+    pub kas_kasir_nama: Option<String>,
+    pub akun_selisih_kas_kode: Option<String>,
+    pub akun_selisih_kas_nama: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PosKonfigurasiSetPayload {
+    pub kas_utama_kode: Option<String>,
+    pub kas_kasir_kode: Option<String>,
+    pub akun_selisih_kas_kode: Option<String>,
+}
+
+fn pos_konfigurasi_ensure_row(conn: &Connection, ts: i64) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR IGNORE INTO pos_konfigurasi (id, created_at, updated_at) VALUES (1, ?, ?)",
+        params![ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn pos_konfigurasi_load(conn: &Connection) -> Result<PosKonfigurasiRow, String> {
+    conn.query_row(
+        "SELECT pk.kas_utama_kode, COALESCE(a1.nama, ''),
+                pk.kas_kasir_kode, COALESCE(a2.nama, ''),
+                pk.akun_selisih_kas_kode, COALESCE(a3.nama, '')
+         FROM pos_konfigurasi pk
+         LEFT JOIN akun_keuangan a1 ON lower(a1.kode) = lower(pk.kas_utama_kode)
+         LEFT JOIN akun_keuangan a2 ON lower(a2.kode) = lower(pk.kas_kasir_kode)
+         LEFT JOIN akun_keuangan a3 ON lower(a3.kode) = lower(pk.akun_selisih_kas_kode)
+         WHERE pk.id = 1",
+        [],
+        |r| {
+            let kas_utama: Option<String> = r.get(0)?;
+            let kas_utama_nama: String = r.get(1)?;
+            let kas_kasir: Option<String> = r.get(2)?;
+            let kas_kasir_nama: String = r.get(3)?;
+            let akun_sel: Option<String> = r.get(4)?;
+            let akun_sel_nama: String = r.get(5)?;
+            Ok(PosKonfigurasiRow {
+                kas_utama_kode: kas_utama,
+                kas_utama_nama: if kas_utama_nama.is_empty() {
+                    None
+                } else {
+                    Some(kas_utama_nama)
+                },
+                kas_kasir_kode: kas_kasir,
+                kas_kasir_nama: if kas_kasir_nama.is_empty() {
+                    None
+                } else {
+                    Some(kas_kasir_nama)
+                },
+                akun_selisih_kas_kode: akun_sel,
+                akun_selisih_kas_nama: if akun_sel_nama.is_empty() {
+                    None
+                } else {
+                    Some(akun_sel_nama)
+                },
+            })
+        },
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn pos_konfigurasi_get(state: State<DbState>) -> Result<PosKonfigurasiRow, String> {
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    pos_konfigurasi_ensure_row(&tx, ts)?;
+    let row = pos_konfigurasi_load(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(row)
+}
+
+/// Set konfigurasi kas POS.
+///
+/// Efek samping: bila `kas_kasir_kode` di-set, **semua metode bayar dengan
+/// `is_tunai = 1` akan otomatis dipindahkan ke akun kas yang sama** (relasi
+/// terkunci). Ini menjamin pembayaran tunai pada POS dan faktur penjualan
+/// non-POS yang menggunakan metode bayar tunai konsisten masuk ke Kas Kasir.
+#[tauri::command]
+pub fn pos_konfigurasi_set(
+    state: State<DbState>,
+    payload: PosKonfigurasiSetPayload,
+) -> Result<PosKonfigurasiRow, String> {
+    let kas_utama = payload
+        .kas_utama_kode
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty());
+    let kas_kasir = payload
+        .kas_kasir_kode
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty());
+    let akun_selisih = payload
+        .akun_selisih_kas_kode
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty());
+
+    if let (Some(a), Some(b)) = (&kas_utama, &kas_kasir) {
+        if a.eq_ignore_ascii_case(b) {
+            return Err(
+                "Kas Utama dan Kas Kasir tidak boleh akun yang sama (harus dua akun terpisah)."
+                    .into(),
+            );
+        }
+    }
+
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    pos_konfigurasi_ensure_row(&tx, ts)?;
+
+    for kode_opt in [&kas_utama, &kas_kasir, &akun_selisih] {
+        if let Some(kode) = kode_opt {
+            let n: i64 = tx
+                .query_row(
+                    "SELECT COUNT(*) FROM akun_keuangan WHERE lower(kode) = lower(?)",
+                    params![kode],
+                    |r| r.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            if n == 0 {
+                return Err(format!("Akun '{kode}' tidak ditemukan."));
+            }
+        }
+    }
+
+    tx.execute(
+        "UPDATE pos_konfigurasi
+         SET kas_utama_kode = ?, kas_kasir_kode = ?, akun_selisih_kas_kode = ?, updated_at = ?
+         WHERE id = 1",
+        params![kas_utama, kas_kasir, akun_selisih, ts],
+    )
+    .map_err(|e| {
+        if e.to_string().contains("FOREIGN KEY") {
+            "Salah satu akun yang dipilih tidak valid.".into()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    // Sinkron pos_metode_bayar tunai → kas_kasir_kode (hubungan terkunci).
+    if let Some(kas_kasir_kode) = &kas_kasir {
+        tx.execute(
+            "UPDATE pos_metode_bayar
+             SET akun_kas_kode = ?, updated_at = ?
+             WHERE is_tunai = 1 AND lower(akun_kas_kode) <> lower(?)",
+            params![kas_kasir_kode, ts, kas_kasir_kode],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    let row = pos_konfigurasi_load(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(row)
+}
+
+// --- Shift kasir ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PosShiftRow {
+    pub id: i64,
+    pub kode: String,
+    pub kasir_username: String,
+    pub kasir_nama: String,
+    pub gudang_kode: String,
+    pub gudang_nama: String,
+    pub modal_awal: i64,
+    pub uang_akhir_aktual: Option<i64>,
+    pub uang_akhir_ekspektasi: Option<i64>,
+    pub selisih: Option<i64>,
+    pub catatan: String,
+    pub status: String,
+    pub mulai_ts: i64,
+    pub selesai_ts: Option<i64>,
+    pub kas_utama_kode: Option<String>,
+    pub kas_utama_nama: Option<String>,
+    pub kas_kasir_kode: Option<String>,
+    pub kas_kasir_nama: Option<String>,
+    pub akun_selisih_kas_kode: Option<String>,
+    pub akun_selisih_kas_nama: Option<String>,
+    pub kembalikan_ke_utama: i64,
+    pub jurnal_open_id: Option<i64>,
+    pub jurnal_close_id: Option<i64>,
+}
+
+fn pos_shift_row_from_id(conn: &Connection, id: i64) -> Result<PosShiftRow, String> {
+    conn.query_row(
+        "SELECT s.id, s.kode, s.kasir_username, COALESCE(p.nama_lengkap, ''), s.gudang_kode, COALESCE(g.nama, ''),
+                s.modal_awal, s.uang_akhir_aktual, s.uang_akhir_ekspektasi, s.selisih,
+                s.catatan, s.status, s.mulai_ts, s.selesai_ts,
+                s.kas_utama_kode, COALESCE(au.nama, ''),
+                s.kas_kasir_kode, COALESCE(ak.nama, ''),
+                s.akun_selisih_kas_kode, COALESCE(asx.nama, ''),
+                COALESCE(s.kembalikan_ke_utama, 0),
+                s.jurnal_open_id, s.jurnal_close_id
+         FROM pos_shift s
+         LEFT JOIN pengguna p ON lower(p.username) = lower(s.kasir_username)
+         LEFT JOIN gudang g ON lower(g.kode) = lower(s.gudang_kode)
+         LEFT JOIN akun_keuangan au ON lower(au.kode) = lower(s.kas_utama_kode)
+         LEFT JOIN akun_keuangan ak ON lower(ak.kode) = lower(s.kas_kasir_kode)
+         LEFT JOIN akun_keuangan asx ON lower(asx.kode) = lower(s.akun_selisih_kas_kode)
+         WHERE s.id = ?",
+        params![id],
+        |r| {
+            let kas_utama_kode: Option<String> = r.get(14)?;
+            let kas_utama_nama: String = r.get(15)?;
+            let kas_kasir_kode: Option<String> = r.get(16)?;
+            let kas_kasir_nama: String = r.get(17)?;
+            let akun_sel_kode: Option<String> = r.get(18)?;
+            let akun_sel_nama: String = r.get(19)?;
+            Ok(PosShiftRow {
+                id: r.get(0)?,
+                kode: r.get(1)?,
+                kasir_username: r.get(2)?,
+                kasir_nama: r.get(3)?,
+                gudang_kode: r.get(4)?,
+                gudang_nama: r.get(5)?,
+                modal_awal: r.get(6)?,
+                uang_akhir_aktual: r.get(7)?,
+                uang_akhir_ekspektasi: r.get(8)?,
+                selisih: r.get(9)?,
+                catatan: r.get(10)?,
+                status: r.get(11)?,
+                mulai_ts: r.get(12)?,
+                selesai_ts: r.get(13)?,
+                kas_utama_kode,
+                kas_utama_nama: if kas_utama_nama.is_empty() { None } else { Some(kas_utama_nama) },
+                kas_kasir_kode,
+                kas_kasir_nama: if kas_kasir_nama.is_empty() { None } else { Some(kas_kasir_nama) },
+                akun_selisih_kas_kode: akun_sel_kode,
+                akun_selisih_kas_nama: if akun_sel_nama.is_empty() { None } else { Some(akun_sel_nama) },
+                kembalikan_ke_utama: r.get(20)?,
+                jurnal_open_id: r.get(21)?,
+                jurnal_close_id: r.get(22)?,
+            })
+        },
+    )
+    .map_err(|e| {
+        if matches!(e, rusqlite::Error::QueryReturnedNoRows) {
+            "Shift tidak ditemukan.".into()
+        } else {
+            e.to_string()
+        }
+    })
+}
+
+#[tauri::command]
+pub fn pos_shift_active_for(
+    state: State<DbState>,
+    username: String,
+) -> Result<Option<PosShiftRow>, String> {
+    let username_t = username.trim().to_string();
+    if username_t.is_empty() {
+        return Err("Username wajib diisi.".into());
+    }
+    with_conn_app(&state, |conn| {
+        let id: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM pos_shift
+                 WHERE lower(kasir_username) = lower(?) AND status = 'Open'
+                 ORDER BY mulai_ts DESC LIMIT 1",
+                params![username_t],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        match id {
+            Some(id) => Ok(Some(pos_shift_row_from_id(conn, id)?)),
+            None => Ok(None),
+        }
+    })
+}
+
+/// Saldo akhir shift tertutup terakhir untuk kasir tertentu — dipakai
+/// sebagai default `modal_awal` shift berikutnya (carry-over).
+#[tauri::command]
+pub fn pos_shift_carry_modal(state: State<DbState>, username: String) -> Result<i64, String> {
+    let username_t = username.trim().to_string();
+    if username_t.is_empty() {
+        return Err("Username wajib diisi.".into());
+    }
+    with_conn_app(&state, |conn| {
+        let v: Option<i64> = conn
+            .query_row(
+                "SELECT COALESCE(uang_akhir_aktual, 0)
+                 FROM pos_shift
+                 WHERE lower(kasir_username) = lower(?) AND status = 'Closed'
+                 ORDER BY selesai_ts DESC LIMIT 1",
+                params![username_t],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        Ok(v.unwrap_or(0))
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PosShiftOpenPayload {
+    pub kasir_username: String,
+    pub gudang_kode: String,
+    pub modal_awal: i64,
+    #[serde(default)]
+    pub catatan: String,
+}
+
+#[tauri::command]
+pub fn pos_shift_open(
+    state: State<DbState>,
+    payload: PosShiftOpenPayload,
+) -> Result<PosShiftRow, String> {
+    let kasir = payload.kasir_username.trim().to_string();
+    let gudang = payload.gudang_kode.trim().to_string();
+    if kasir.is_empty() {
+        return Err("Username kasir wajib diisi.".into());
+    }
+    if gudang.is_empty() {
+        return Err("Gudang wajib dipilih.".into());
+    }
+    if payload.modal_awal < 0 {
+        return Err("Modal awal tidak boleh negatif.".into());
+    }
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let active: Option<i64> = tx
+        .query_row(
+            "SELECT id FROM pos_shift WHERE lower(kasir_username) = lower(?) AND status = 'Open' LIMIT 1",
+            params![kasir],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if active.is_some() {
+        return Err("Kasir ini masih memiliki shift terbuka. Tutup shift sebelumnya dulu.".into());
+    }
+
+    // Load pengaturan POS — snapshot ke shift agar shift lama tetap konsisten
+    // bila settings nanti diganti.
+    pos_konfigurasi_ensure_row(&tx, ts)?;
+    let cfg = pos_konfigurasi_load(&tx)?;
+    let kas_utama_kode = cfg
+        .kas_utama_kode
+        .clone()
+        .ok_or_else(|| "Kas Operasional Utama belum di-set. Buka Pengaturan → Transaksi → POS dan tentukan dulu.".to_string())?;
+    let kas_kasir_kode = cfg
+        .kas_kasir_kode
+        .clone()
+        .ok_or_else(|| "Kas Kasir belum di-set. Buka Pengaturan → Transaksi → POS dan tentukan dulu.".to_string())?;
+    let akun_selisih_kode = cfg.akun_selisih_kas_kode.clone();
+
+    let kode = format!("SH-{}", Utc::now().timestamp_millis());
+    tx.execute(
+        "INSERT INTO pos_shift
+            (kode, kasir_username, gudang_kode, modal_awal, catatan, status, mulai_ts,
+             kas_utama_kode, kas_kasir_kode, akun_selisih_kas_kode,
+             created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'Open', ?, ?, ?, ?, ?, ?)",
+        params![
+            kode,
+            kasir,
+            gudang,
+            payload.modal_awal,
+            payload.catatan.trim(),
+            ts,
+            kas_utama_kode,
+            kas_kasir_kode,
+            akun_selisih_kode,
+            ts,
+            ts
+        ],
+    )
+    .map_err(|e| {
+        if e.to_string().contains("FOREIGN KEY") {
+            "Kasir atau gudang tidak ditemukan.".into()
+        } else {
+            e.to_string()
+        }
+    })?;
+    let id = tx.last_insert_rowid();
+
+    // Post jurnal modal awal: D Kas Kasir, K Kas Utama.
+    let mut jurnal_open_id: Option<i64> = None;
+    if payload.modal_awal > 0 {
+        let tanggal = Utc::now().format("%Y-%m-%d").to_string();
+        let referensi = kode.clone();
+        let catatan = format!("Modal awal shift {}", &kode);
+        tx.execute(
+            "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
+             VALUES (?, 'POS_SHIFT_OPEN', ?, ?, ?, ?)",
+            params![tanggal, referensi, catatan, ts, ts],
+        )
+        .map_err(|e| e.to_string())?;
+        let jid = tx.last_insert_rowid();
+        // Debit Kas Kasir
+        tx.execute(
+            "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+             VALUES (?, ?, ?, 0, '')",
+            params![jid, &kas_kasir_kode, payload.modal_awal],
+        )
+        .map_err(|e| e.to_string())?;
+        akun_kas_apply_saldo_delta(&tx, &kas_kasir_kode, payload.modal_awal, 0, ts)?;
+        // Kredit Kas Utama
+        tx.execute(
+            "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+             VALUES (?, ?, 0, ?, '')",
+            params![jid, &kas_utama_kode, payload.modal_awal],
+        )
+        .map_err(|e| e.to_string())?;
+        akun_kas_apply_saldo_delta(&tx, &kas_utama_kode, 0, payload.modal_awal, ts)?;
+        jurnal_open_id = Some(jid);
+        tx.execute(
+            "UPDATE pos_shift SET jurnal_open_id = ?, updated_at = ? WHERE id = ?",
+            params![jid, ts, id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    let row = pos_shift_row_from_id(&tx, id)?;
+
+    let payload_json = serde_json::json!({
+        "gudangKode": row.gudang_kode,
+        "gudangNama": row.gudang_nama,
+        "modalAwal": row.modal_awal,
+        "kasUtamaKode": kas_utama_kode,
+        "kasKasirKode": kas_kasir_kode,
+        "jurnalId": jurnal_open_id,
+    })
+    .to_string();
+    pos_shift_log_event(&tx, id, pos_shift_event::OPENED, &kasir, &payload_json)?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(row)
+}
+
+/// Konstanta jenis kejadian pada audit log shift POS. Tambah varian baru
+/// di sini dan tulis payload sesuai kontrak (lihat doc helper di bawah).
+pub mod pos_shift_event {
+    pub const OPENED: &str = "POS_SHIFT_OPENED";
+    pub const CLOSED: &str = "POS_SHIFT_CLOSED";
+    pub const GUDANG_CHANGED: &str = "POS_SHIFT_GUDANG_CHANGED";
+}
+
+/// Sisipkan satu entry audit log untuk shift POS.
+///
+/// `payload_json` harus berupa string JSON valid yang berisi detail kejadian:
+/// - `POS_SHIFT_OPENED`        → `{"gudangKode","gudangNama","modalAwal"}`
+/// - `POS_SHIFT_CLOSED`        → `{"uangAkhirAktual","uangAkhirEkspektasi","selisih"}`
+/// - `POS_SHIFT_GUDANG_CHANGED`→ `{"fromGudangKode","fromGudangNama","toGudangKode","toGudangNama"}`
+///
+/// Helper tidak mem-validate skema payload; pemanggil bertanggung jawab.
+fn pos_shift_log_event(
+    tx: &Connection,
+    shift_id: i64,
+    event_type: &str,
+    actor_username: &str,
+    payload_json: &str,
+) -> Result<(), String> {
+    tx.execute(
+        "INSERT INTO pos_shift_event_log (shift_id, event_type, actor_username, payload, created_at)
+         VALUES (?, ?, ?, ?, ?)",
+        params![shift_id, event_type, actor_username, payload_json, now_ts()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PosShiftChangeGudangPayload {
+    pub id: i64,
+    pub gudang_kode: String,
+}
+
+/// Mengganti gudang aktif pada shift yang masih terbuka.
+///
+/// Aturan akuntansi:
+/// - Shift harus berstatus `Open`.
+/// - Transaksi-transaksi yang sudah commit sebelumnya **tidak terpengaruh**:
+///   setiap `penjualan` POS sudah menyimpan `gudang_kode` per-baris pada
+///   mutasi stok dan jurnal saat transaksi dibuat, sehingga aman.
+/// - Penggantian gudang hanya memengaruhi katalog & transaksi *berikutnya*
+///   yang dibuat dari shift ini.
+/// - Pengosongan keranjang (cart) tidak ditangani di sini — itu state UI dan
+///   dijamin di sisi front-end (tombol "Ganti gudang" disable selama keranjang
+///   tidak kosong).
+#[tauri::command]
+pub fn pos_shift_change_gudang(
+    state: State<DbState>,
+    payload: PosShiftChangeGudangPayload,
+) -> Result<PosShiftRow, String> {
+    let gudang = payload.gudang_kode.trim().to_string();
+    if gudang.is_empty() {
+        return Err("Gudang baru wajib diisi.".into());
+    }
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let (status, current_gudang, kasir_username, current_gudang_nama): (String, String, String, String) = tx
+        .query_row(
+            "SELECT s.status, s.gudang_kode, s.kasir_username, COALESCE(g.nama, '')
+             FROM pos_shift s
+             LEFT JOIN gudang g ON lower(g.kode) = lower(s.gudang_kode)
+             WHERE s.id = ?",
+            params![payload.id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Shift tidak ditemukan.".to_string())?;
+
+    if status != "Open" {
+        return Err("Shift sudah ditutup. Tidak dapat mengganti gudang.".into());
+    }
+    if current_gudang.eq_ignore_ascii_case(&gudang) {
+        return Err("Gudang baru sama dengan gudang aktif saat ini.".into());
+    }
+
+    let target_gudang_nama: Option<String> = tx
+        .query_row(
+            "SELECT nama FROM gudang WHERE lower(kode) = lower(?)",
+            params![gudang],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let target_gudang_nama = match target_gudang_nama {
+        Some(v) => v,
+        None => return Err("Gudang tujuan tidak ditemukan.".into()),
+    };
+
+    let ts = now_ts();
+    let n = tx
+        .execute(
+            "UPDATE pos_shift SET gudang_kode = ?, updated_at = ? WHERE id = ?",
+            params![gudang, ts, payload.id],
+        )
+        .map_err(|e| {
+            if e.to_string().contains("FOREIGN KEY") {
+                "Gudang tujuan tidak ditemukan.".into()
+            } else {
+                e.to_string()
+            }
+        })?;
+    if n == 0 {
+        return Err("Shift tidak ditemukan.".into());
+    }
+    let row = pos_shift_row_from_id(&tx, payload.id)?;
+
+    let payload_json = serde_json::json!({
+        "fromGudangKode": current_gudang,
+        "fromGudangNama": current_gudang_nama,
+        "toGudangKode": row.gudang_kode,
+        "toGudangNama": target_gudang_nama,
+    })
+    .to_string();
+    pos_shift_log_event(
+        &tx,
+        payload.id,
+        pos_shift_event::GUDANG_CHANGED,
+        &kasir_username,
+        &payload_json,
+    )?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(row)
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PosShiftRekapMetode {
+    pub metode_kode: String,
+    pub metode_nama: String,
+    pub is_tunai: bool,
+    pub total_jumlah: i64,
+    pub jumlah_transaksi: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PosShiftRekap {
+    pub shift: PosShiftRow,
+    pub jumlah_transaksi: i64,
+    pub total_penjualan: i64,
+    pub total_tunai_masuk: i64,
+    pub total_non_tunai: i64,
+    pub uang_akhir_ekspektasi: i64,
+    pub per_metode: Vec<PosShiftRekapMetode>,
+}
+
+fn pos_shift_rekap_compute(conn: &Connection, id: i64) -> Result<PosShiftRekap, String> {
+    let shift = pos_shift_row_from_id(conn, id)?;
+
+    let (jumlah_transaksi, total_penjualan) = conn
+        .query_row(
+            "SELECT COUNT(DISTINCT p.nomor),
+                    COALESCE(SUM(DISTINCT p.total), 0)
+             FROM penjualan p
+             JOIN penjualan_pembayaran pp ON pp.penjualan_nomor = p.nomor
+             WHERE pp.shift_id = ?",
+            params![id],
+            |r| {
+                Ok((
+                    r.get::<_, i64>(0).unwrap_or(0),
+                    r.get::<_, i64>(1).unwrap_or(0),
+                ))
+            },
+        )
+        .map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT pp.metode_kode,
+                    COALESCE(m.nama, pp.metode_kode),
+                    COALESCE(m.is_tunai, 0),
+                    SUM(pp.jumlah),
+                    COUNT(*)
+             FROM penjualan_pembayaran pp
+             LEFT JOIN pos_metode_bayar m ON lower(m.kode) = lower(pp.metode_kode)
+             WHERE pp.shift_id = ?
+             GROUP BY pp.metode_kode
+             ORDER BY COALESCE(m.urutan, 999), pp.metode_kode",
+        )
+        .map_err(|e| e.to_string())?;
+    let mut per_metode: Vec<PosShiftRekapMetode> = Vec::new();
+    let rows = stmt
+        .query_map(params![id], |r| {
+            Ok(PosShiftRekapMetode {
+                metode_kode: r.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                metode_nama: r.get(1)?,
+                is_tunai: r.get::<_, i64>(2)? != 0,
+                total_jumlah: r.get(3)?,
+                jumlah_transaksi: r.get(4)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        per_metode.push(row.map_err(|e| e.to_string())?);
+    }
+
+    let total_tunai_masuk: i64 = per_metode
+        .iter()
+        .filter(|m| m.is_tunai)
+        .map(|m| m.total_jumlah)
+        .sum();
+    let total_non_tunai: i64 = per_metode
+        .iter()
+        .filter(|m| !m.is_tunai)
+        .map(|m| m.total_jumlah)
+        .sum();
+
+    let uang_akhir_ekspektasi = shift.modal_awal + total_tunai_masuk;
+
+    Ok(PosShiftRekap {
+        shift,
+        jumlah_transaksi,
+        total_penjualan,
+        total_tunai_masuk,
+        total_non_tunai,
+        uang_akhir_ekspektasi,
+        per_metode,
+    })
+}
+
+#[tauri::command]
+pub fn pos_shift_rekap(state: State<DbState>, id: i64) -> Result<PosShiftRekap, String> {
+    with_conn_app(&state, |conn| pos_shift_rekap_compute(conn, id))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PosShiftClosePayload {
+    pub id: i64,
+    pub uang_akhir_aktual: i64,
+    /// Jumlah yang ditransfer balik ke Kas Operasional Utama. Sisanya
+    /// (`uang_akhir_aktual - kembalikan_ke_utama`) tetap di laci sebagai
+    /// modal awal shift berikutnya. Default 0 = semua stay di laci.
+    #[serde(default)]
+    pub kembalikan_ke_utama: i64,
+    #[serde(default)]
+    pub catatan: String,
+}
+
+#[tauri::command]
+pub fn pos_shift_close(
+    state: State<DbState>,
+    payload: PosShiftClosePayload,
+) -> Result<PosShiftRekap, String> {
+    if payload.uang_akhir_aktual < 0 {
+        return Err("Uang akhir aktual tidak boleh negatif.".into());
+    }
+    if payload.kembalikan_ke_utama < 0 {
+        return Err("Jumlah yang dikembalikan ke Kas Utama tidak boleh negatif.".into());
+    }
+    if payload.kembalikan_ke_utama > payload.uang_akhir_aktual {
+        return Err("Jumlah yang dikembalikan ke Kas Utama tidak boleh melebihi uang di laci.".into());
+    }
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let (status, kas_utama_snap, kas_kasir_snap, akun_selisih_snap): (
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = tx
+        .query_row(
+            "SELECT status, kas_utama_kode, kas_kasir_kode, akun_selisih_kas_kode
+             FROM pos_shift WHERE id = ?",
+            params![payload.id],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                ))
+            },
+        )
+        .map_err(|e| {
+            if matches!(e, rusqlite::Error::QueryReturnedNoRows) {
+                "Shift tidak ditemukan.".to_string()
+            } else {
+                e.to_string()
+            }
+        })?;
+    if status != "Open" {
+        return Err("Shift sudah tertutup.".into());
+    }
+
+    let rekap = pos_shift_rekap_compute(&tx, payload.id)?;
+    let ekspektasi = rekap.uang_akhir_ekspektasi;
+    let selisih = payload.uang_akhir_aktual - ekspektasi;
+
+    // Validasi akun untuk jurnal — wajib bila ada selisih atau pengembalian.
+    let need_jurnal = selisih != 0 || payload.kembalikan_ke_utama > 0;
+    if need_jurnal {
+        if kas_kasir_snap.is_none() {
+            return Err(
+                "Shift ini dibuka tanpa akun Kas Kasir. Tidak dapat membuat jurnal penutupan."
+                    .into(),
+            );
+        }
+        if selisih != 0 && akun_selisih_snap.is_none() {
+            return Err(
+                "Akun Selisih Kas belum di-set di Pengaturan POS. Tidak bisa membentuk jurnal selisih."
+                    .into(),
+            );
+        }
+        if payload.kembalikan_ke_utama > 0 && kas_utama_snap.is_none() {
+            return Err(
+                "Shift ini dibuka tanpa akun Kas Utama. Tidak bisa menransfer balik."
+                    .into(),
+            );
+        }
+    }
+
+    tx.execute(
+        "UPDATE pos_shift
+         SET uang_akhir_aktual = ?, uang_akhir_ekspektasi = ?, selisih = ?,
+             kembalikan_ke_utama = ?,
+             catatan = CASE WHEN ? = '' THEN catatan ELSE ? END,
+             status = 'Closed', selesai_ts = ?, updated_at = ?
+         WHERE id = ?",
+        params![
+            payload.uang_akhir_aktual,
+            ekspektasi,
+            selisih,
+            payload.kembalikan_ke_utama,
+            payload.catatan.trim(),
+            payload.catatan.trim(),
+            ts,
+            ts,
+            payload.id,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Post jurnal kompound penutupan: selisih (lebih/kurang) + transfer balik ke Kas Utama.
+    let mut jurnal_close_id: Option<i64> = None;
+    if need_jurnal {
+        let kas_kasir = kas_kasir_snap.as_ref().expect("checked above");
+        let tanggal = Utc::now().format("%Y-%m-%d").to_string();
+        let referensi = rekap.shift.kode.clone();
+        let catatan = format!("Tutup shift {} (selisih + pengembalian)", &referensi);
+        tx.execute(
+            "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
+             VALUES (?, 'POS_SHIFT_CLOSE', ?, ?, ?, ?)",
+            params![tanggal, referensi, catatan, ts, ts],
+        )
+        .map_err(|e| e.to_string())?;
+        let jid = tx.last_insert_rowid();
+
+        if selisih > 0 {
+            // Kelebihan kas: D Kas Kasir, K Akun Selisih Kas
+            let akun_sel = akun_selisih_snap.as_ref().expect("checked above");
+            tx.execute(
+                "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+                 VALUES (?, ?, ?, 0, 'Selisih kas lebih')",
+                params![jid, kas_kasir, selisih],
+            )
+            .map_err(|e| e.to_string())?;
+            akun_kas_apply_saldo_delta(&tx, kas_kasir, selisih, 0, ts)?;
+            tx.execute(
+                "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+                 VALUES (?, ?, 0, ?, 'Selisih kas lebih')",
+                params![jid, akun_sel, selisih],
+            )
+            .map_err(|e| e.to_string())?;
+            akun_kas_apply_saldo_delta(&tx, akun_sel, 0, selisih, ts)?;
+        } else if selisih < 0 {
+            // Kekurangan kas: D Akun Selisih Kas, K Kas Kasir
+            let akun_sel = akun_selisih_snap.as_ref().expect("checked above");
+            let amt = -selisih;
+            tx.execute(
+                "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+                 VALUES (?, ?, ?, 0, 'Selisih kas kurang')",
+                params![jid, akun_sel, amt],
+            )
+            .map_err(|e| e.to_string())?;
+            akun_kas_apply_saldo_delta(&tx, akun_sel, amt, 0, ts)?;
+            tx.execute(
+                "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+                 VALUES (?, ?, 0, ?, 'Selisih kas kurang')",
+                params![jid, kas_kasir, amt],
+            )
+            .map_err(|e| e.to_string())?;
+            akun_kas_apply_saldo_delta(&tx, kas_kasir, 0, amt, ts)?;
+        }
+
+        if payload.kembalikan_ke_utama > 0 {
+            let kas_utama = kas_utama_snap.as_ref().expect("checked above");
+            tx.execute(
+                "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+                 VALUES (?, ?, ?, 0, 'Pengembalian ke Kas Utama')",
+                params![jid, kas_utama, payload.kembalikan_ke_utama],
+            )
+            .map_err(|e| e.to_string())?;
+            akun_kas_apply_saldo_delta(&tx, kas_utama, payload.kembalikan_ke_utama, 0, ts)?;
+            tx.execute(
+                "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+                 VALUES (?, ?, 0, ?, 'Pengembalian ke Kas Utama')",
+                params![jid, kas_kasir, payload.kembalikan_ke_utama],
+            )
+            .map_err(|e| e.to_string())?;
+            akun_kas_apply_saldo_delta(&tx, kas_kasir, 0, payload.kembalikan_ke_utama, ts)?;
+        }
+
+        tx.execute(
+            "UPDATE pos_shift SET jurnal_close_id = ?, updated_at = ? WHERE id = ?",
+            params![jid, ts, payload.id],
+        )
+        .map_err(|e| e.to_string())?;
+        jurnal_close_id = Some(jid);
+    }
+
+    let final_rekap = pos_shift_rekap_compute(&tx, payload.id)?;
+
+    let kasir_username = final_rekap.shift.kasir_username.clone();
+    let payload_json = serde_json::json!({
+        "uangAkhirAktual": payload.uang_akhir_aktual,
+        "uangAkhirEkspektasi": ekspektasi,
+        "selisih": selisih,
+        "kembalikanKeUtama": payload.kembalikan_ke_utama,
+        "jurnalId": jurnal_close_id,
+    })
+    .to_string();
+    pos_shift_log_event(
+        &tx,
+        payload.id,
+        pos_shift_event::CLOSED,
+        &kasir_username,
+        &payload_json,
+    )?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(final_rekap)
+}
+
+#[tauri::command]
+pub fn pos_shift_list(
+    state: State<DbState>,
+    username: Option<String>,
+    dari: Option<String>,
+    sampai: Option<String>,
+    limit: Option<i64>,
+) -> Result<Vec<PosShiftRow>, String> {
+    let limit = limit.unwrap_or(100).clamp(1, 1000);
+    with_conn(&state, |conn| {
+        let mut sql = String::from(
+            "SELECT s.id, s.kode, s.kasir_username, COALESCE(p.nama_lengkap, ''), s.gudang_kode, COALESCE(g.nama, ''),
+                    s.modal_awal, s.uang_akhir_aktual, s.uang_akhir_ekspektasi, s.selisih,
+                    s.catatan, s.status, s.mulai_ts, s.selesai_ts,
+                    s.kas_utama_kode, COALESCE(au.nama, ''),
+                    s.kas_kasir_kode, COALESCE(ak.nama, ''),
+                    s.akun_selisih_kas_kode, COALESCE(asx.nama, ''),
+                    COALESCE(s.kembalikan_ke_utama, 0),
+                    s.jurnal_open_id, s.jurnal_close_id
+             FROM pos_shift s
+             LEFT JOIN pengguna p ON lower(p.username) = lower(s.kasir_username)
+             LEFT JOIN gudang g ON lower(g.kode) = lower(s.gudang_kode)
+             LEFT JOIN akun_keuangan au ON lower(au.kode) = lower(s.kas_utama_kode)
+             LEFT JOIN akun_keuangan ak ON lower(ak.kode) = lower(s.kas_kasir_kode)
+             LEFT JOIN akun_keuangan asx ON lower(asx.kode) = lower(s.akun_selisih_kas_kode)
+             WHERE 1=1",
+        );
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        if let Some(u) = username.as_ref().filter(|s| !s.trim().is_empty()) {
+            sql.push_str(" AND lower(s.kasir_username) = lower(?)");
+            params_vec.push(Box::new(u.trim().to_string()));
+        }
+        if let Some(d) = dari.as_ref().filter(|s| !s.trim().is_empty()) {
+            let na = NaiveDate::parse_from_str(d.trim(), "%Y-%m-%d")
+                .map_err(|_| rusqlite::Error::ToSqlConversionFailure("Tanggal dari tidak valid.".into()))?;
+            let ts_start = na.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp();
+            sql.push_str(" AND s.mulai_ts >= ?");
+            params_vec.push(Box::new(ts_start));
+        }
+        if let Some(d) = sampai.as_ref().filter(|s| !s.trim().is_empty()) {
+            let na = NaiveDate::parse_from_str(d.trim(), "%Y-%m-%d")
+                .map_err(|_| rusqlite::Error::ToSqlConversionFailure("Tanggal sampai tidak valid.".into()))?;
+            let ts_end = na.and_hms_opt(23, 59, 59).unwrap().and_utc().timestamp();
+            sql.push_str(" AND s.mulai_ts <= ?");
+            params_vec.push(Box::new(ts_end));
+        }
+        sql.push_str(" ORDER BY s.mulai_ts DESC LIMIT ?");
+        params_vec.push(Box::new(limit));
+
+        let mut stmt = conn.prepare(&sql)?;
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
+        let rows = stmt.query_map(params_refs.as_slice(), |r| {
+            let kas_utama_kode: Option<String> = r.get(14)?;
+            let kas_utama_nama: String = r.get(15)?;
+            let kas_kasir_kode: Option<String> = r.get(16)?;
+            let kas_kasir_nama: String = r.get(17)?;
+            let akun_sel_kode: Option<String> = r.get(18)?;
+            let akun_sel_nama: String = r.get(19)?;
+            Ok(PosShiftRow {
+                id: r.get(0)?,
+                kode: r.get(1)?,
+                kasir_username: r.get(2)?,
+                kasir_nama: r.get(3)?,
+                gudang_kode: r.get(4)?,
+                gudang_nama: r.get(5)?,
+                modal_awal: r.get(6)?,
+                uang_akhir_aktual: r.get(7)?,
+                uang_akhir_ekspektasi: r.get(8)?,
+                selisih: r.get(9)?,
+                catatan: r.get(10)?,
+                status: r.get(11)?,
+                mulai_ts: r.get(12)?,
+                selesai_ts: r.get(13)?,
+                kas_utama_kode,
+                kas_utama_nama: if kas_utama_nama.is_empty() { None } else { Some(kas_utama_nama) },
+                kas_kasir_kode,
+                kas_kasir_nama: if kas_kasir_nama.is_empty() { None } else { Some(kas_kasir_nama) },
+                akun_selisih_kas_kode: akun_sel_kode,
+                akun_selisih_kas_nama: if akun_sel_nama.is_empty() { None } else { Some(akun_sel_nama) },
+                kembalikan_ke_utama: r.get(20)?,
+                jurnal_open_id: r.get(21)?,
+                jurnal_close_id: r.get(22)?,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+// --- Audit log shift POS ---
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PosShiftEventLogRow {
+    pub id: i64,
+    pub shift_id: i64,
+    pub shift_kode: String,
+    pub kasir_username: String,
+    pub kasir_nama: String,
+    pub event_type: String,
+    pub actor_username: String,
+    pub actor_nama: String,
+    /// JSON string detail event. Frontend yang format per `event_type`.
+    pub payload: String,
+    pub created_at: i64,
+}
+
+/// Daftar entry audit log untuk shift POS, terbaru dulu.
+///
+/// Filter (semua opsional):
+/// - `dari`/`sampai`: range tanggal (YYYY-MM-DD) berdasarkan `created_at`.
+/// - `event_type`: filter ke salah satu jenis event (mis. `POS_SHIFT_GUDANG_CHANGED`).
+/// - `actor_username`: filter ke kasir tertentu.
+/// - `limit`: default 500, max 5000.
+#[tauri::command]
+pub fn pos_shift_event_log_list(
+    state: State<DbState>,
+    dari: Option<String>,
+    sampai: Option<String>,
+    event_type: Option<String>,
+    actor_username: Option<String>,
+    limit: Option<i64>,
+) -> Result<Vec<PosShiftEventLogRow>, String> {
+    let limit = limit.unwrap_or(500).clamp(1, 5000);
+    with_conn(&state, |conn| {
+        let mut sql = String::from(
+            "SELECT l.id, l.shift_id, COALESCE(s.kode, ''),
+                    COALESCE(s.kasir_username, ''), COALESCE(pk.nama_lengkap, ''),
+                    l.event_type, l.actor_username, COALESCE(pa.nama_lengkap, ''),
+                    l.payload, l.created_at
+             FROM pos_shift_event_log l
+             LEFT JOIN pos_shift s ON s.id = l.shift_id
+             LEFT JOIN pengguna pk ON lower(pk.username) = lower(s.kasir_username)
+             LEFT JOIN pengguna pa ON lower(pa.username) = lower(l.actor_username)
+             WHERE 1=1",
+        );
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        if let Some(d) = dari.as_ref().filter(|s| !s.trim().is_empty()) {
+            let na = NaiveDate::parse_from_str(d.trim(), "%Y-%m-%d").map_err(|_| {
+                rusqlite::Error::ToSqlConversionFailure("Tanggal dari tidak valid.".into())
+            })?;
+            let ts_start = na.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp();
+            sql.push_str(" AND l.created_at >= ?");
+            params_vec.push(Box::new(ts_start));
+        }
+        if let Some(d) = sampai.as_ref().filter(|s| !s.trim().is_empty()) {
+            let na = NaiveDate::parse_from_str(d.trim(), "%Y-%m-%d").map_err(|_| {
+                rusqlite::Error::ToSqlConversionFailure("Tanggal sampai tidak valid.".into())
+            })?;
+            let ts_end = na.and_hms_opt(23, 59, 59).unwrap().and_utc().timestamp();
+            sql.push_str(" AND l.created_at <= ?");
+            params_vec.push(Box::new(ts_end));
+        }
+        if let Some(et) = event_type.as_ref().filter(|s| !s.trim().is_empty()) {
+            sql.push_str(" AND l.event_type = ?");
+            params_vec.push(Box::new(et.trim().to_string()));
+        }
+        if let Some(u) = actor_username.as_ref().filter(|s| !s.trim().is_empty()) {
+            sql.push_str(" AND lower(l.actor_username) = lower(?)");
+            params_vec.push(Box::new(u.trim().to_string()));
+        }
+        sql.push_str(" ORDER BY l.created_at DESC, l.id DESC LIMIT ?");
+        params_vec.push(Box::new(limit));
+
+        let mut stmt = conn.prepare(&sql)?;
+        let params_refs: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|b| b.as_ref()).collect();
+        let rows = stmt.query_map(params_refs.as_slice(), |r| {
+            Ok(PosShiftEventLogRow {
+                id: r.get(0)?,
+                shift_id: r.get(1)?,
+                shift_kode: r.get(2)?,
+                kasir_username: r.get(3)?,
+                kasir_nama: r.get(4)?,
+                event_type: r.get(5)?,
+                actor_username: r.get(6)?,
+                actor_nama: r.get(7)?,
+                payload: r.get(8)?,
+                created_at: r.get(9)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    })
+}
+
+// --- Catalog POS (barang + stok di gudang aktif) ---
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PosCatalogRow {
+    pub kode: String,
+    pub nama: String,
+    pub tipe: String,
+    pub satuan: String,
+    pub harga: i64,
+    pub kategori_kode: Option<String>,
+    pub kategori_nama: Option<String>,
+    pub merek_kode: Option<String>,
+    pub stok_di_gudang: i64,
+    pub punya_foto: bool,
+}
+
+#[tauri::command]
+pub fn pos_catalog_list(
+    state: State<DbState>,
+    gudang_kode: String,
+    kategori_kode: Option<String>,
+    query: Option<String>,
+) -> Result<Vec<PosCatalogRow>, String> {
+    let gudang = gudang_kode.trim().to_string();
+    if gudang.is_empty() {
+        return Err("Gudang wajib dipilih.".into());
+    }
+    let kategori_trim = kategori_kode.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let q_trim = query.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+
+    with_conn(&state, |conn| {
+        let mut sql = String::from(
+            "SELECT b.kode, b.nama, b.tipe, b.satuan, b.harga,
+                    b.kategori_kode, k.nama, b.merek_kode,
+                    COALESCE((
+                        SELECT SUM(qty_masuk - qty_keluar)
+                        FROM stok_mutasi m
+                        WHERE lower(m.barang_kode) = lower(b.kode)
+                          AND lower(m.gudang_kode) = lower(?)
+                    ), 0) AS stok_gd
+             FROM barang_jasa b
+             LEFT JOIN kategori k ON lower(k.kode) = lower(b.kategori_kode)
+             WHERE 1=1",
+        );
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(gudang.clone())];
+
+        if let Some(k) = kategori_trim {
+            sql.push_str(" AND lower(b.kategori_kode) = lower(?)");
+            params_vec.push(Box::new(k));
+        }
+        if let Some(q) = q_trim {
+            let like = format!("%{q}%");
+            sql.push_str(
+                " AND (b.kode LIKE ? COLLATE NOCASE
+                       OR b.nama LIKE ? COLLATE NOCASE
+                       OR EXISTS (SELECT 1 FROM barang_jasa_satuan s
+                                  WHERE lower(s.barang_kode) = lower(b.kode)
+                                    AND s.kode_barcode LIKE ? COLLATE NOCASE))",
+            );
+            params_vec.push(Box::new(like.clone()));
+            params_vec.push(Box::new(like.clone()));
+            params_vec.push(Box::new(like));
+        }
+        sql.push_str(" ORDER BY b.nama COLLATE NOCASE LIMIT 500");
+
+        let mut stmt = conn.prepare(&sql)?;
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
+        let app_path = &state.path;
+        let rows = stmt.query_map(params_refs.as_slice(), |r| {
+            let kode: String = r.get(0)?;
+            let punya_foto = barang_foto_path_option(app_path, &kode).is_some();
+            Ok(PosCatalogRow {
+                kode,
+                nama: r.get(1)?,
+                tipe: r.get(2)?,
+                satuan: r.get(3)?,
+                harga: r.get(4)?,
+                kategori_kode: r.get(5)?,
+                kategori_nama: r.get(6)?,
+                merek_kode: r.get(7)?,
+                stok_di_gudang: r.get(8)?,
+                punya_foto,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+// --- Transaksi POS ---
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PosLineInput {
+    pub barang_kode: String,
+    pub qty: i64,
+    pub satuan_tingkat: u8,
+    pub harga_satuan: i64,
+    #[serde(default)]
+    pub diskon: i64,
+    #[serde(default)]
+    pub catatan: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PosPembayaranInput {
+    pub metode_kode: String,
+    pub jumlah: i64,
+    #[serde(default)]
+    pub ref_no: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PosTransaksiPayload {
+    pub shift_id: i64,
+    #[serde(default)]
+    pub pelanggan_kode: String,
+    pub gudang_kode: String,
+    pub kasir_username: String,
+    pub tanggal: String,
+    #[serde(default)]
+    pub catatan: String,
+    #[serde(default)]
+    pub diskon_faktur: i64,
+    #[serde(default)]
+    pub pajak: i64,
+    pub lines: Vec<PosLineInput>,
+    pub pembayaran: Vec<PosPembayaranInput>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PosTransaksiResult {
+    pub nomor: String,
+    pub total: i64,
+    pub total_dibayar: i64,
+    pub kembalian: i64,
+}
+
+#[tauri::command]
+pub fn pos_transaksi_create(
+    app: tauri::AppHandle,
+    state: State<DbState>,
+    payload: PosTransaksiPayload,
+) -> Result<PosTransaksiResult, String> {
+    // --- Validasi awal ---
+    if payload.lines.is_empty() {
+        return Err("Keranjang kosong. Tambahkan minimal satu item.".into());
+    }
+    if payload.pembayaran.is_empty() {
+        return Err("Tambahkan minimal satu metode pembayaran.".into());
+    }
+    let gudang = payload.gudang_kode.trim().to_string();
+    if gudang.is_empty() {
+        return Err("Gudang wajib dipilih.".into());
+    }
+    let kasir = payload.kasir_username.trim().to_string();
+    if kasir.is_empty() {
+        return Err("Kasir wajib diisi.".into());
+    }
+    let pelanggan = if payload.pelanggan_kode.trim().is_empty() {
+        POS_PELANGGAN_DEFAULT_KODE.to_string()
+    } else {
+        payload.pelanggan_kode.trim().to_string()
+    };
+    let tgl = NaiveDate::parse_from_str(payload.tanggal.trim(), "%Y-%m-%d")
+        .map_err(|_| "Tanggal transaksi tidak valid (YYYY-MM-DD).".to_string())?;
+    let tanggal_str = tgl.format("%Y-%m-%d").to_string();
+
+    // Subtotal lines
+    let mut subtotal_barang: i64 = 0;
+    for line in &payload.lines {
+        if line.barang_kode.trim().is_empty() {
+            return Err("Kode barang pada baris tidak boleh kosong.".into());
+        }
+        if line.qty <= 0 {
+            return Err("Jumlah tiap baris harus lebih dari 0.".into());
+        }
+        if line.harga_satuan < 0 {
+            return Err("Harga satuan tidak valid.".into());
+        }
+        if line.diskon < 0 || line.diskon > line.harga_satuan {
+            return Err("Diskon per item tidak valid.".into());
+        }
+        let sub = penjualan_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
+        subtotal_barang = subtotal_barang
+            .checked_add(sub)
+            .ok_or_else(|| "Subtotal melimpahi batas.".to_string())?;
+    }
+    if payload.diskon_faktur < 0 || payload.diskon_faktur > subtotal_barang {
+        return Err("Diskon faktur tidak valid.".into());
+    }
+    if payload.pajak < 0 {
+        return Err("Pajak tidak valid.".into());
+    }
+    let total = penjualan_faktur_total(subtotal_barang, payload.diskon_faktur, payload.pajak)?;
+    if total <= 0 {
+        return Err("Total transaksi harus lebih dari 0.".into());
+    }
+
+    let total_dibayar: i64 = payload.pembayaran.iter().map(|p| p.jumlah).sum();
+    if total_dibayar < total {
+        return Err(format!(
+            "Total pembayaran (Rp {total_dibayar}) kurang dari total faktur (Rp {total})."
+        ));
+    }
+    let kembalian = total_dibayar - total;
+    // Catat alokasi pembayaran ke faktur = tepat sebesar total.
+    // Kembalian dibayar kepada pelanggan dari uang kas kasir,
+    // dan tidak diposting sebagai pembayaran faktur.
+    let mut alokasi: Vec<(String, i64, String)> = Vec::with_capacity(payload.pembayaran.len());
+    let mut sisa_total = total;
+    for p in &payload.pembayaran {
+        if p.jumlah <= 0 {
+            return Err("Nominal tiap baris pembayaran harus lebih dari 0.".into());
+        }
+        if p.metode_kode.trim().is_empty() {
+            return Err("Metode bayar wajib dipilih untuk setiap baris pembayaran.".into());
+        }
+        if sisa_total <= 0 {
+            break;
+        }
+        let ambil = p.jumlah.min(sisa_total);
+        alokasi.push((p.metode_kode.trim().to_uppercase(), ambil, p.ref_no.trim().to_string()));
+        sisa_total -= ambil;
+    }
+
+    // --- Open transaction & validasi DB ---
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    crate::activation::assert_can_create_transaction(&app, &conn)?;
+    let ts = now_ts();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    // Validasi shift open & milik kasir & gudang sama
+    let shift_row: (String, String, String) = tx
+        .query_row(
+            "SELECT status, kasir_username, gudang_kode FROM pos_shift WHERE id = ?",
+            params![payload.shift_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .map_err(|e| {
+            if matches!(e, rusqlite::Error::QueryReturnedNoRows) {
+                "Shift tidak ditemukan.".to_string()
+            } else {
+                e.to_string()
+            }
+        })?;
+    if shift_row.0 != "Open" {
+        return Err("Shift sudah tutup. Buka shift baru untuk bertransaksi.".into());
+    }
+    if !shift_row.1.eq_ignore_ascii_case(&kasir) {
+        return Err("Shift ini milik kasir lain.".into());
+    }
+    if !shift_row.2.eq_ignore_ascii_case(&gudang) {
+        return Err("Gudang transaksi tidak sama dengan gudang shift aktif.".into());
+    }
+
+    // Pre-fetch akun_kas tiap metode
+    let mut metode_to_akun: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for (kode_metode, _, _) in &alokasi {
+        if metode_to_akun.contains_key(kode_metode) {
+            continue;
+        }
+        let akun: String = tx
+            .query_row(
+                "SELECT akun_kas_kode FROM pos_metode_bayar WHERE lower(kode) = lower(?) AND aktif = 1",
+                params![kode_metode],
+                |r| r.get(0),
+            )
+            .map_err(|e| {
+                if matches!(e, rusqlite::Error::QueryReturnedNoRows) {
+                    format!("Metode bayar '{kode_metode}' tidak ditemukan atau non-aktif.")
+                } else {
+                    e.to_string()
+                }
+            })?;
+        metode_to_akun.insert(kode_metode.clone(), akun);
+    }
+
+    // Insert penjualan (status Lunas).
+    // Untuk konsistensi: akun_kas_kode di penjualan diisi metode pertama (single-tender fallback);
+    // sumber kebenaran multi-tender ada di penjualan_pembayaran.
+    let nomor = format!("POS-{}", Utc::now().timestamp_millis());
+    let akun_kas_utama = alokasi
+        .first()
+        .and_then(|(m, _, _)| metode_to_akun.get(m).cloned());
+
+    tx.execute(
+        "INSERT INTO penjualan (nomor, pelanggan_kode, gudang_kode, salesman, tanggal_faktur, jatuh_tempo, catatan_faktur, diskon_faktur, pajak, akun_kas_kode, total, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Lunas', ?, ?)",
+        params![
+            &nomor,
+            &pelanggan,
+            &gudang,
+            &kasir,
+            &tanggal_str,
+            &tanggal_str,
+            payload.catatan.trim(),
+            payload.diskon_faktur,
+            payload.pajak,
+            akun_kas_utama.as_deref(),
+            total,
+            ts,
+            ts,
+        ],
+    )
+    .map_err(|e| {
+        if e.to_string().contains("FOREIGN KEY") {
+            "Pelanggan, gudang, atau barang tidak ditemukan.".into()
+        } else if e.to_string().contains("UNIQUE") {
+            "Nomor transaksi bentrok — coba lagi.".into()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    // Lines + post stok mutasi
+    for line in &payload.lines {
+        let kode_b = line.barang_kode.trim();
+        let sub = penjualan_line_subtotal(line.qty, line.harga_satuan, line.diskon)?;
+        tx.execute(
+            "INSERT INTO penjualan_line (nomor, barang_kode, qty, satuan_tingkat, harga_satuan, diskon, subtotal, catatan)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &nomor,
+                kode_b,
+                line.qty,
+                line.satuan_tingkat,
+                line.harga_satuan,
+                line.diskon,
+                sub,
+                line.catatan.trim(),
+            ],
+        )
+        .map_err(|e| {
+            if e.to_string().contains("FOREIGN KEY") {
+                "Salah satu kode barang tidak ditemukan.".into()
+            } else {
+                e.to_string()
+            }
+        })?;
+        penjualan_tx_apply_barang_stok(
+            &tx,
+            &nomor,
+            kode_b,
+            line.qty,
+            line.satuan_tingkat,
+            &gudang,
+            &tanggal_str,
+            line.catatan.trim(),
+            ts,
+            ts,
+        )?;
+    }
+
+    // Pembayaran rows
+    for (metode_kode, jumlah_alokasi, ref_no) in &alokasi {
+        let akun = metode_to_akun
+            .get(metode_kode)
+            .cloned()
+            .ok_or_else(|| format!("Akun kas untuk metode {metode_kode} tidak ditemukan."))?;
+        tx.execute(
+            "INSERT INTO penjualan_pembayaran (penjualan_nomor, metode_kode, akun_kas_kode, jumlah, ref_no, shift_id, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![&nomor, metode_kode, &akun, jumlah_alokasi, ref_no, payload.shift_id, ts],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    // Jurnal: D Kas[metode] (per alokasi); K Inventori (total)
+    konfigurasi_ensure_row(&tx, ts)?;
+    let cfg = konfigurasi_get_row(&tx)?;
+    let akun_inventori = cfg.akun_pembelian.ok_or_else(|| {
+        "Konfigurasi akun pembelian/inventori belum diatur (Konfigurasi akun jurnal).".to_string()
+    })?;
+    let catatan_j = format!("POS {nomor} — {kasir} di {gudang}");
+    tx.execute(
+        "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
+         VALUES (?, 'PENJUALAN_POS', ?, ?, ?, ?)",
+        params![&tanggal_str, &nomor, catatan_j, ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    let jurnal_id = tx.last_insert_rowid();
+
+    for (metode_kode, jumlah_alokasi, _) in &alokasi {
+        let akun_kas = metode_to_akun.get(metode_kode).cloned().unwrap();
+        tx.execute(
+            "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+             VALUES (?, ?, ?, 0, ?)",
+            params![jurnal_id, &akun_kas, jumlah_alokasi, metode_kode],
+        )
+        .map_err(|e| e.to_string())?;
+        akun_jurnal_apply_saldo_delta(&tx, &akun_kas, *jumlah_alokasi, 0, ts)?;
+    }
+    tx.execute(
+        "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+         VALUES (?, ?, 0, ?, '')",
+        params![jurnal_id, &akun_inventori, total],
+    )
+    .map_err(|e| e.to_string())?;
+    akun_jurnal_apply_saldo_delta(&tx, &akun_inventori, 0, total, ts)?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(PosTransaksiResult {
+        nomor,
+        total,
+        total_dibayar,
+        kembalian,
+    })
+}
+
+// ============================================================
+// --- Produksi ---
+// ============================================================
+
+const PROD_STATUS_MENUNGGU: &str = "Menunggu";
+const PROD_STATUS_SELESAI: &str = "Selesai";
+const PROD_STATUS_DIBATALKAN: &str = "Dibatalkan";
+
+const PROD_JURNAL_JENIS: &str = "PRODUKSI";
+const PROD_AKUN_SELISIH_DEFAULT: &str = "5010"; // Laba Rugi Pembulatan
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProduksiLineInput {
+    pub barang_kode: String,
+    pub qty: i64,
+    #[serde(default = "default_satuan_tingkat_line")]
+    pub satuan_tingkat: u8,
+    pub hpp_per_unit: i64,
+    #[serde(default)]
+    pub catatan: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProduksiInsertPayload {
+    pub tanggal: String,
+    pub gudang_bb_kode: String,
+    pub gudang_hasil_kode: String,
+    #[serde(default)]
+    pub status_selesai: bool,
+    #[serde(default)]
+    pub biaya_produksi: i64,
+    #[serde(default)]
+    pub akun_biaya_kode: Option<String>,
+    #[serde(default)]
+    pub catatan: String,
+    #[serde(default)]
+    pub dibuat_oleh: String,
+    pub bahan_baku: Vec<ProduksiLineInput>,
+    pub hasil: Vec<ProduksiLineInput>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProduksiListRow {
+    pub nomor: String,
+    pub tanggal: String,
+    pub gudang_bb_kode: String,
+    pub gudang_bb_nama: String,
+    pub gudang_hasil_kode: String,
+    pub gudang_hasil_nama: String,
+    pub status: String,
+    pub biaya_produksi: i64,
+    pub total_nilai_bb: i64,
+    pub total_nilai_hasil: i64,
+    pub jumlah_bahan: i64,
+    pub jumlah_hasil: i64,
+    pub catatan: String,
+    pub dibuat_oleh: String,
+    pub tanggal_selesai: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProduksiLineRow {
+    pub id: i64,
+    pub barang_kode: String,
+    pub barang_nama: String,
+    pub satuan_tingkat: u8,
+    pub satuan_nama: String,
+    pub qty: i64,
+    pub hpp_per_unit: i64,
+    pub subtotal_nilai: i64,
+    pub catatan: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProduksiDetail {
+    pub nomor: String,
+    pub tanggal: String,
+    pub gudang_bb_kode: String,
+    pub gudang_bb_nama: String,
+    pub gudang_hasil_kode: String,
+    pub gudang_hasil_nama: String,
+    pub status: String,
+    pub biaya_produksi: i64,
+    pub akun_biaya_kode: Option<String>,
+    pub akun_biaya_nama: Option<String>,
+    pub catatan: String,
+    pub dibuat_oleh: String,
+    pub jurnal_id: Option<i64>,
+    pub tanggal_selesai: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub bahan_baku: Vec<ProduksiLineRow>,
+    pub hasil: Vec<ProduksiLineRow>,
+    pub total_nilai_bb: i64,
+    pub total_nilai_hasil: i64,
+    pub selisih: i64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProduksiHppSnapshot {
+    pub kode: String,
+    pub nama: String,
+    pub satuan: String,
+    pub tipe: String,
+    pub stok_global: i64,
+    pub hpp_per_unit: i64,
+}
+
+// --- Validation & total helpers ---
+
+fn produksi_line_subtotal(qty: i64, hpp_per_unit: i64) -> Result<i64, String> {
+    if qty <= 0 {
+        return Err("Qty tiap baris harus lebih dari 0.".into());
+    }
+    if hpp_per_unit < 0 {
+        return Err("Nilai per satuan tidak boleh negatif.".into());
+    }
+    qty.checked_mul(hpp_per_unit)
+        .ok_or_else(|| "Subtotal nilai melimpahi batas.".to_string())
+}
+
+fn produksi_validate_payload(
+    payload: &ProduksiInsertPayload,
+) -> Result<(NaiveDate, String, String, i64, i64), String> {
+    let tgl = NaiveDate::parse_from_str(payload.tanggal.trim(), "%Y-%m-%d")
+        .map_err(|_| "Tanggal produksi tidak valid (YYYY-MM-DD).".to_string())?;
+    let gudang_bb = payload.gudang_bb_kode.trim();
+    let gudang_hasil = payload.gudang_hasil_kode.trim();
+    if gudang_bb.is_empty() {
+        return Err("Gudang bahan baku wajib dipilih.".into());
+    }
+    if gudang_hasil.is_empty() {
+        return Err("Gudang barang jadi wajib dipilih.".into());
+    }
+    if payload.bahan_baku.is_empty() {
+        return Err("Tambahkan minimal satu baris bahan baku.".into());
+    }
+    if payload.hasil.is_empty() {
+        return Err("Tambahkan minimal satu baris barang jadi.".into());
+    }
+    if payload.biaya_produksi < 0 {
+        return Err("Biaya produksi tidak boleh negatif.".into());
+    }
+    let mut total_bb: i64 = 0;
+    for line in &payload.bahan_baku {
+        if line.barang_kode.trim().is_empty() {
+            return Err("Kode barang bahan baku tidak boleh kosong.".into());
+        }
+        let sub = produksi_line_subtotal(line.qty, line.hpp_per_unit)?;
+        total_bb = total_bb
+            .checked_add(sub)
+            .ok_or_else(|| "Total nilai bahan baku melimpahi batas.".to_string())?;
+    }
+    let mut total_hasil: i64 = 0;
+    for line in &payload.hasil {
+        if line.barang_kode.trim().is_empty() {
+            return Err("Kode barang jadi tidak boleh kosong.".into());
+        }
+        if line.hpp_per_unit <= 0 {
+            return Err("HPP barang jadi harus lebih dari 0.".into());
+        }
+        let sub = produksi_line_subtotal(line.qty, line.hpp_per_unit)?;
+        total_hasil = total_hasil
+            .checked_add(sub)
+            .ok_or_else(|| "Total nilai barang jadi melimpahi batas.".to_string())?;
+    }
+    if payload.biaya_produksi > 0 {
+        let akun = payload
+            .akun_biaya_kode
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        if akun.is_none() {
+            return Err("Akun lawan biaya produksi wajib dipilih bila ada biaya.".into());
+        }
+    }
+    Ok((tgl, gudang_bb.to_string(), gudang_hasil.to_string(), total_bb, total_hasil))
+}
+
+/// Hitung HPP rata-rata (moving average) terkini untuk satu barang dengan
+/// mereplay seluruh `stok_mutasi`. Dipakai saat menyelesaikan produksi agar
+/// nilai bahan baku yang keluar selalu konsisten dengan kartu stok / laporan
+/// HPP, bukan dari nilai input user.
+fn produksi_current_hpp_for_item(
+    tx: &Transaction<'_>,
+    barang_kode: &str,
+) -> Result<i64, String> {
+    let pembelian_map = hpp_load_pembelian_subtotals(&*tx, Some(barang_kode))?;
+    let koreksi_map = hpp_load_koreksi_subtotals(&*tx, Some(barang_kode))?;
+    let produksi_map = hpp_load_produksi_hasil_subtotals(&*tx, Some(barang_kode))?;
+    let stok_awal_map = hpp_load_stok_awal_subtotals(&*tx, Some(barang_kode))?;
+
+    let collected: Vec<(i64, String, String, String, String, i64, i64, String)> = {
+        let mut stmt = tx
+            .prepare(
+                "SELECT waktu, tanggal_transaksi, jenis, referensi, gudang_kode, qty_masuk, qty_keluar, catatan
+                 FROM stok_mutasi
+                 WHERE lower(barang_kode) = lower(?)
+                 ORDER BY waktu ASC, id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![barang_kode], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, i64>(5)?,
+                    r.get::<_, i64>(6)?,
+                    r.get::<_, String>(7)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut v: Vec<(i64, String, String, String, String, i64, i64, String)> = Vec::new();
+        for row in rows {
+            v.push(row.map_err(|e| e.to_string())?);
+        }
+        v
+    };
+
+    let mut s = HppState::new();
+    for (waktu, tanggal, jenis, referensi, gudang_kode, qm, qk, catatan) in collected {
+        hpp_apply_event(
+            &mut s,
+            waktu,
+            &tanggal,
+            &jenis,
+            &referensi,
+            &gudang_kode,
+            "",
+            qm,
+            qk,
+            &catatan,
+            &pembelian_map,
+            &koreksi_map,
+            &produksi_map,
+            &stok_awal_map,
+            barang_kode,
+        );
+    }
+    Ok(s.hpp())
+}
+
+/// Validasi: akun ada di chart of account (tidak harus akun kas — bisa
+/// hutang biaya, beban, dst). Hanya digunakan untuk produksi.
+fn produksi_validate_akun_exists(tx: &Transaction<'_>, kode: &str) -> Result<(), String> {
+    let n: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM akun_keuangan WHERE lower(kode) = lower(?)",
+            params![kode],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if n == 0 {
+        return Err(format!("Akun '{kode}' tidak ditemukan."));
+    }
+    Ok(())
+}
+
+/// Update saldo global barang_jasa.stok dengan delta (boleh negatif).
+/// Tidak menulis stok_mutasi — pemanggil yang bertanggung jawab.
+fn produksi_update_global_stok(
+    tx: &Transaction<'_>,
+    barang_kode: &str,
+    delta: i64,
+    ts: i64,
+) -> Result<(), String> {
+    let tipe: String = tx
+        .query_row(
+            "SELECT tipe FROM barang_jasa WHERE lower(kode) = lower(?)",
+            params![barang_kode],
+            |r| r.get(0),
+        )
+        .map_err(|_| format!("Barang '{barang_kode}' tidak ditemukan."))?;
+    if tipe != "Barang" {
+        return Err(format!(
+            "'{barang_kode}' bukan tipe Barang — produksi hanya untuk barang fisik."
+        ));
+    }
+    let cur: i64 = tx
+        .query_row(
+            "SELECT COALESCE(stok, 0) FROM barang_jasa WHERE lower(kode) = lower(?)",
+            params![barang_kode],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let next = cur
+        .checked_add(delta)
+        .ok_or_else(|| format!("Perhitungan stok '{barang_kode}' melimpahi batas."))?;
+    if next < 0 {
+        return Err(format!(
+            "Stok global '{barang_kode}' tidak cukup (tersedia {cur}, kebutuhan {})",
+            -delta
+        ));
+    }
+    tx.execute(
+        "UPDATE barang_jasa SET stok = ?, updated_at = ? WHERE lower(kode) = lower(?)",
+        params![next, ts, barang_kode],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Posting full saat status berubah → Selesai. Mengisi `tanggal_selesai`
+/// & `jurnal_id` di tabel `produksi`. Mengembalikan jurnal_id baru.
+///
+/// Catatan akuntansi penting: nilai bahan baku **selalu di-snapshot ulang**
+/// dari HPP moving average pada saat fungsi ini dipanggil. Nilai HPP yang
+/// di-input user di form hanya berfungsi sebagai estimasi tampilan; nilai
+/// final yang dipakai untuk jurnal & kartu stok mengikuti rata-rata
+/// tertimbang real-time agar konsisten dengan modul HPP & PSAK 14.
+#[allow(clippy::too_many_arguments)]
+fn produksi_apply_completion(
+    tx: &Transaction<'_>,
+    nomor: &str,
+    tanggal: &str,
+    gudang_bb_kode: &str,
+    gudang_hasil_kode: &str,
+    biaya_produksi: i64,
+    akun_biaya_kode: Option<&str>,
+    bahan_baku: &[ProduksiLineRow],
+    hasil: &[ProduksiLineRow],
+    _total_nilai_bb_estimasi: i64,
+    total_nilai_hasil: i64,
+    ts: i64,
+) -> Result<i64, String> {
+    // 1. Re-snapshot HPP bahan baku dari moving average terkini & update DB.
+    //    Cache per barang_kode supaya barang yang muncul beberapa baris hanya
+    //    di-replay sekali.
+    let mut bahan_baku_refreshed: Vec<ProduksiLineRow> = bahan_baku.to_vec();
+    let mut hpp_cache: HashMap<String, i64> = HashMap::new();
+    let mut total_nilai_bb: i64 = 0;
+    for line in bahan_baku_refreshed.iter_mut() {
+        let key = line.barang_kode.to_lowercase();
+        let hpp_now = if let Some(&v) = hpp_cache.get(&key) {
+            v
+        } else {
+            let v = produksi_current_hpp_for_item(tx, &line.barang_kode)?;
+            hpp_cache.insert(key, v);
+            v
+        };
+        let new_subtotal = line
+            .qty
+            .checked_mul(hpp_now)
+            .ok_or_else(|| "Subtotal bahan baku melimpahi batas.".to_string())?;
+        line.hpp_per_unit = hpp_now;
+        line.subtotal_nilai = new_subtotal;
+        if line.id > 0 {
+            tx.execute(
+                "UPDATE produksi_bahan_baku SET hpp_per_unit = ?, subtotal_nilai = ? WHERE id = ?",
+                params![hpp_now, new_subtotal, line.id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        total_nilai_bb = total_nilai_bb
+            .checked_add(new_subtotal)
+            .ok_or_else(|| "Total nilai bahan baku melimpahi batas.".to_string())?;
+    }
+
+    // 2. Validasi stok per gudang BB cukup.
+    for line in &bahan_baku_refreshed {
+        let saldo = stok_tx_saldo_di_gudang(tx, &line.barang_kode, gudang_bb_kode)?;
+        if saldo < line.qty {
+            return Err(format!(
+                "Stok '{}' di gudang {} tidak cukup (tersedia {}, butuh {}).",
+                line.barang_kode, gudang_bb_kode, saldo, line.qty
+            ));
+        }
+    }
+
+    // 3. Post mutasi keluar (bahan baku) & masuk (hasil).
+    let catatan_event = format!("Produksi {nomor}");
+    for line in &bahan_baku_refreshed {
+        stok_tx_insert_mutasi_gudang(
+            tx,
+            ts,
+            tanggal,
+            &line.barang_kode,
+            gudang_bb_kode,
+            "PRODUKSI_KELUAR",
+            nomor,
+            0,
+            line.qty,
+            &catatan_event,
+        )?;
+        produksi_update_global_stok(tx, &line.barang_kode, -line.qty, ts)?;
+    }
+    for line in hasil {
+        stok_tx_insert_mutasi_gudang(
+            tx,
+            ts,
+            tanggal,
+            &line.barang_kode,
+            gudang_hasil_kode,
+            "PRODUKSI_MASUK",
+            nomor,
+            line.qty,
+            0,
+            &catatan_event,
+        )?;
+        produksi_update_global_stok(tx, &line.barang_kode, line.qty, ts)?;
+    }
+
+    // 3. Posting jurnal — hanya bila ada biaya_produksi atau selisih.
+    let selisih = total_nilai_hasil - total_nilai_bb - biaya_produksi;
+    let mut jurnal_id_out: Option<i64> = None;
+
+    if biaya_produksi > 0 || selisih != 0 {
+        konfigurasi_ensure_row(tx, ts)?;
+        let cfg = konfigurasi_get_row(tx)?;
+        let akun_inventori = cfg.akun_pembelian.ok_or_else(|| {
+            "Konfigurasi akun pembelian/inventori belum diatur (Konfigurasi akun jurnal).".to_string()
+        })?;
+
+        if biaya_produksi > 0 {
+            let akun_lawan = akun_biaya_kode
+                .ok_or_else(|| "Akun lawan biaya produksi wajib bila ada biaya.".to_string())?;
+            produksi_validate_akun_exists(tx, akun_lawan)?;
+        }
+
+        let catatan_j = format!(
+            "Produksi {nomor} ({gudang_bb_kode} → {gudang_hasil_kode})"
+        );
+        tx.execute(
+            "INSERT INTO jurnal_umum (tanggal, jenis, referensi, catatan, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?)",
+            params![tanggal, PROD_JURNAL_JENIS, nomor, catatan_j, ts, ts],
+        )
+        .map_err(|e| e.to_string())?;
+        let jurnal_id = tx.last_insert_rowid();
+        jurnal_id_out = Some(jurnal_id);
+
+        // Sisi biaya produksi: D Persediaan, K Akun lawan biaya.
+        if biaya_produksi > 0 {
+            let akun_lawan = akun_biaya_kode.unwrap();
+            tx.execute(
+                "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+                 VALUES (?, ?, ?, 0, 'Biaya produksi diserap ke persediaan')",
+                params![jurnal_id, &akun_inventori, biaya_produksi],
+            )
+            .map_err(|e| e.to_string())?;
+            akun_jurnal_apply_saldo_delta(tx, &akun_inventori, biaya_produksi, 0, ts)?;
+
+            tx.execute(
+                "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+                 VALUES (?, ?, 0, ?, 'Biaya produksi')",
+                params![jurnal_id, akun_lawan, biaya_produksi],
+            )
+            .map_err(|e| e.to_string())?;
+            akun_jurnal_apply_saldo_delta(tx, akun_lawan, 0, biaya_produksi, ts)?;
+        }
+
+        // Sisi selisih HPP output vs ekspektasi (hasil − bb − biaya).
+        // Positif → output > ekspektasi: D Persediaan, K LR Pembulatan (untung).
+        // Negatif → output < ekspektasi: D LR Pembulatan, K Persediaan (rugi).
+        if selisih != 0 {
+            produksi_validate_akun_exists(tx, PROD_AKUN_SELISIH_DEFAULT)?;
+            let abs_selisih = selisih.abs();
+            if selisih > 0 {
+                tx.execute(
+                    "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+                     VALUES (?, ?, ?, 0, 'Selisih HPP produksi')",
+                    params![jurnal_id, &akun_inventori, abs_selisih],
+                )
+                .map_err(|e| e.to_string())?;
+                akun_jurnal_apply_saldo_delta(tx, &akun_inventori, abs_selisih, 0, ts)?;
+
+                tx.execute(
+                    "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+                     VALUES (?, ?, 0, ?, 'Selisih HPP produksi')",
+                    params![jurnal_id, PROD_AKUN_SELISIH_DEFAULT, abs_selisih],
+                )
+                .map_err(|e| e.to_string())?;
+                akun_jurnal_apply_saldo_delta(tx, PROD_AKUN_SELISIH_DEFAULT, 0, abs_selisih, ts)?;
+            } else {
+                tx.execute(
+                    "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+                     VALUES (?, ?, ?, 0, 'Selisih HPP produksi')",
+                    params![jurnal_id, PROD_AKUN_SELISIH_DEFAULT, abs_selisih],
+                )
+                .map_err(|e| e.to_string())?;
+                akun_jurnal_apply_saldo_delta(tx, PROD_AKUN_SELISIH_DEFAULT, abs_selisih, 0, ts)?;
+
+                tx.execute(
+                    "INSERT INTO jurnal_umum_line (jurnal_id, akun_kode, debit, kredit, catatan)
+                     VALUES (?, ?, 0, ?, 'Selisih HPP produksi')",
+                    params![jurnal_id, &akun_inventori, abs_selisih],
+                )
+                .map_err(|e| e.to_string())?;
+                akun_jurnal_apply_saldo_delta(tx, &akun_inventori, 0, abs_selisih, ts)?;
+            }
+        }
+    }
+
+    tx.execute(
+        "UPDATE produksi SET status = ?, tanggal_selesai = ?, jurnal_id = ?, updated_at = ? WHERE nomor = ?",
+        params![PROD_STATUS_SELESAI, tanggal, jurnal_id_out, ts, nomor],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(jurnal_id_out.unwrap_or(0))
+}
+
+/// Reverse semua efek penyelesaian (stok + jurnal) — dipakai saat status
+/// `Selesai → Dibatalkan`.
+fn produksi_reverse_completion(
+    tx: &Transaction<'_>,
+    nomor: &str,
+    ts: i64,
+) -> Result<(), String> {
+    // 1. Hapus stok_mutasi terkait & revert global stok berdasarkan baris dokumen.
+    let bb: Vec<(String, i64)> = {
+        let mut stmt = tx
+            .prepare(
+                "SELECT barang_kode, qty FROM produksi_bahan_baku WHERE produksi_nomor = ?",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![nomor], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut v: Vec<(String, i64)> = Vec::new();
+        for row in rows {
+            v.push(row.map_err(|e| e.to_string())?);
+        }
+        v
+    };
+    let hasil: Vec<(String, i64)> = {
+        let mut stmt = tx
+            .prepare("SELECT barang_kode, qty FROM produksi_hasil WHERE produksi_nomor = ?")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![nomor], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut v: Vec<(String, i64)> = Vec::new();
+        for row in rows {
+            v.push(row.map_err(|e| e.to_string())?);
+        }
+        v
+    };
+
+    tx.execute(
+        "DELETE FROM stok_mutasi WHERE referensi = ?
+         AND upper(trim(jenis)) IN ('PRODUKSI_KELUAR', 'PRODUKSI_MASUK')",
+        params![nomor],
+    )
+    .map_err(|e| e.to_string())?;
+
+    for (kode, qty) in &bb {
+        produksi_update_global_stok(tx, kode, *qty, ts)?; // kembalikan ke gudang BB
+    }
+    for (kode, qty) in &hasil {
+        produksi_update_global_stok(tx, kode, -*qty, ts)?; // tarik dari gudang hasil
+    }
+
+    // 2. Hapus jurnal terkait (kalau ada). Saldo akun di-revert manual.
+    let jurnal_id: Option<i64> = tx
+        .query_row(
+            "SELECT jurnal_id FROM produksi WHERE nomor = ?",
+            params![nomor],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .flatten();
+    if let Some(jid) = jurnal_id {
+        let lines: Vec<(String, i64, i64)> = {
+            let mut stmt = tx
+                .prepare(
+                    "SELECT akun_kode, debit, kredit FROM jurnal_umum_line WHERE jurnal_id = ?",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(params![jid], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, i64>(2)?,
+                    ))
+                })
+                .map_err(|e| e.to_string())?;
+            let mut v: Vec<(String, i64, i64)> = Vec::new();
+            for row in rows {
+                v.push(row.map_err(|e| e.to_string())?);
+            }
+            v
+        };
+        for (akun, debit, kredit) in lines {
+            // reverse: swap debit & kredit
+            akun_jurnal_apply_saldo_delta(tx, &akun, kredit, debit, ts)?;
+        }
+        tx.execute("DELETE FROM jurnal_umum WHERE id = ?", params![jid])
+            .map_err(|e| e.to_string())?;
+    }
+
+    tx.execute(
+        "UPDATE produksi SET status = ?, jurnal_id = NULL, updated_at = ? WHERE nomor = ?",
+        params![PROD_STATUS_DIBATALKAN, ts, nomor],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Konversi `ProduksiLineInput` menjadi row siap insert (resolve satuan
+/// & subtotal). Tidak menyentuh DB di luar lookup nama satuan.
+fn produksi_line_input_to_row(
+    tx: &Transaction<'_>,
+    line: &ProduksiLineInput,
+) -> Result<ProduksiLineRow, String> {
+    let barang_kode = line.barang_kode.trim().to_string();
+    let (nama, _satuan_default): (String, String) = tx
+        .query_row(
+            "SELECT nama, satuan FROM barang_jasa WHERE lower(kode) = lower(?)",
+            params![&barang_kode],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|_| format!("Barang '{barang_kode}' tidak ditemukan."))?;
+    let satuan_nama = barang_satuan_nama(&*tx, &barang_kode, line.satuan_tingkat)?;
+    let subtotal = produksi_line_subtotal(line.qty, line.hpp_per_unit)?;
+    Ok(ProduksiLineRow {
+        id: 0,
+        barang_kode,
+        barang_nama: nama,
+        satuan_tingkat: line.satuan_tingkat,
+        satuan_nama,
+        qty: line.qty,
+        hpp_per_unit: line.hpp_per_unit,
+        subtotal_nilai: subtotal,
+        catatan: line.catatan.trim().to_string(),
+    })
+}
+
+// --- Tauri commands ---
+
+#[tauri::command]
+pub fn produksi_list(
+    state: State<DbState>,
+    tanggal_dari: Option<String>,
+    tanggal_sampai: Option<String>,
+    status: Option<String>,
+    query: Option<String>,
+) -> Result<Vec<ProduksiListRow>, String> {
+    with_conn(&state, |conn| {
+        let mut sql = String::from(
+            "SELECT p.nomor, p.tanggal, p.gudang_bb_kode, COALESCE(g1.nama, ''),
+                    p.gudang_hasil_kode, COALESCE(g2.nama, ''), p.status, p.biaya_produksi,
+                    p.catatan, p.dibuat_oleh, p.tanggal_selesai,
+                    COALESCE((SELECT SUM(subtotal_nilai) FROM produksi_bahan_baku WHERE produksi_nomor = p.nomor), 0),
+                    COALESCE((SELECT SUM(subtotal_nilai) FROM produksi_hasil WHERE produksi_nomor = p.nomor), 0),
+                    COALESCE((SELECT COUNT(*) FROM produksi_bahan_baku WHERE produksi_nomor = p.nomor), 0),
+                    COALESCE((SELECT COUNT(*) FROM produksi_hasil WHERE produksi_nomor = p.nomor), 0)
+             FROM produksi p
+             LEFT JOIN gudang g1 ON lower(g1.kode) = lower(p.gudang_bb_kode)
+             LEFT JOIN gudang g2 ON lower(g2.kode) = lower(p.gudang_hasil_kode)
+             WHERE 1=1",
+        );
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        if let Some(d) = tanggal_dari.as_ref().filter(|s| !s.trim().is_empty()) {
+            sql.push_str(" AND p.tanggal >= ?");
+            params_vec.push(Box::new(d.trim().to_string()));
+        }
+        if let Some(d) = tanggal_sampai.as_ref().filter(|s| !s.trim().is_empty()) {
+            sql.push_str(" AND p.tanggal <= ?");
+            params_vec.push(Box::new(d.trim().to_string()));
+        }
+        if let Some(s) = status.as_ref().filter(|s| !s.trim().is_empty()) {
+            sql.push_str(" AND p.status = ?");
+            params_vec.push(Box::new(s.trim().to_string()));
+        }
+        if let Some(q) = query.as_ref().filter(|s| !s.trim().is_empty()) {
+            let like = format!("%{}%", q.trim());
+            sql.push_str(" AND (p.nomor LIKE ? COLLATE NOCASE OR p.catatan LIKE ? COLLATE NOCASE)");
+            params_vec.push(Box::new(like.clone()));
+            params_vec.push(Box::new(like));
+        }
+        sql.push_str(" ORDER BY p.created_at DESC LIMIT 500");
+
+        let mut stmt = conn.prepare(&sql)?;
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
+        let rows = stmt.query_map(params_refs.as_slice(), |r| {
+            Ok(ProduksiListRow {
+                nomor: r.get(0)?,
+                tanggal: r.get(1)?,
+                gudang_bb_kode: r.get(2)?,
+                gudang_bb_nama: r.get(3)?,
+                gudang_hasil_kode: r.get(4)?,
+                gudang_hasil_nama: r.get(5)?,
+                status: r.get(6)?,
+                biaya_produksi: r.get(7)?,
+                catatan: r.get(8)?,
+                dibuat_oleh: r.get(9)?,
+                tanggal_selesai: r.get(10)?,
+                total_nilai_bb: r.get(11)?,
+                total_nilai_hasil: r.get(12)?,
+                jumlah_bahan: r.get(13)?,
+                jumlah_hasil: r.get(14)?,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+#[tauri::command]
+pub fn produksi_detail(state: State<DbState>, nomor: String) -> Result<ProduksiDetail, String> {
+    let nomor_t = nomor.trim().to_string();
+    if nomor_t.is_empty() {
+        return Err("Nomor produksi wajib diisi.".into());
+    }
+    with_conn_app(&state, |conn| {
+        let row = conn.query_row(
+            "SELECT p.nomor, p.tanggal, p.gudang_bb_kode, COALESCE(g1.nama, ''),
+                    p.gudang_hasil_kode, COALESCE(g2.nama, ''), p.status, p.biaya_produksi,
+                    p.akun_biaya_kode, COALESCE(a.nama, ''),
+                    p.catatan, p.dibuat_oleh, p.jurnal_id, p.tanggal_selesai,
+                    p.created_at, p.updated_at
+             FROM produksi p
+             LEFT JOIN gudang g1 ON lower(g1.kode) = lower(p.gudang_bb_kode)
+             LEFT JOIN gudang g2 ON lower(g2.kode) = lower(p.gudang_hasil_kode)
+             LEFT JOIN akun_keuangan a ON lower(a.kode) = lower(p.akun_biaya_kode)
+             WHERE p.nomor = ?",
+            params![nomor_t],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, String>(5)?,
+                    r.get::<_, String>(6)?,
+                    r.get::<_, i64>(7)?,
+                    r.get::<_, Option<String>>(8)?,
+                    r.get::<_, String>(9)?,
+                    r.get::<_, String>(10)?,
+                    r.get::<_, String>(11)?,
+                    r.get::<_, Option<i64>>(12)?,
+                    r.get::<_, Option<String>>(13)?,
+                    r.get::<_, i64>(14)?,
+                    r.get::<_, i64>(15)?,
+                ))
+            },
+        )
+        .map_err(|_| "Produksi tidak ditemukan.".to_string())?;
+
+        let mut bb_stmt = conn
+            .prepare(
+                "SELECT b.id, b.barang_kode, COALESCE(j.nama, b.barang_kode), b.qty, b.satuan_tingkat,
+                        b.hpp_per_unit, b.subtotal_nilai, b.catatan
+                 FROM produksi_bahan_baku b
+                 LEFT JOIN barang_jasa j ON lower(j.kode) = lower(b.barang_kode)
+                 WHERE b.produksi_nomor = ?
+                 ORDER BY b.id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut bahan_baku: Vec<ProduksiLineRow> = Vec::new();
+        let rows = bb_stmt
+            .query_map(params![nomor_t], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, i64>(3)?,
+                    r.get::<_, u8>(4)?,
+                    r.get::<_, i64>(5)?,
+                    r.get::<_, i64>(6)?,
+                    r.get::<_, String>(7)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+        for r in rows {
+            let (id, kode, nama, qty, st, hpp, sub, catatan) = r.map_err(|e| e.to_string())?;
+            let satuan_nama = barang_satuan_nama(conn, &kode, st).unwrap_or_default();
+            bahan_baku.push(ProduksiLineRow {
+                id,
+                barang_kode: kode,
+                barang_nama: nama,
+                satuan_tingkat: st,
+                satuan_nama,
+                qty,
+                hpp_per_unit: hpp,
+                subtotal_nilai: sub,
+                catatan,
+            });
+        }
+
+        let mut hasil_stmt = conn
+            .prepare(
+                "SELECT h.id, h.barang_kode, COALESCE(j.nama, h.barang_kode), h.qty, h.satuan_tingkat,
+                        h.hpp_per_unit, h.subtotal_nilai, h.catatan
+                 FROM produksi_hasil h
+                 LEFT JOIN barang_jasa j ON lower(j.kode) = lower(h.barang_kode)
+                 WHERE h.produksi_nomor = ?
+                 ORDER BY h.id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut hasil: Vec<ProduksiLineRow> = Vec::new();
+        let rows = hasil_stmt
+            .query_map(params![nomor_t], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, i64>(3)?,
+                    r.get::<_, u8>(4)?,
+                    r.get::<_, i64>(5)?,
+                    r.get::<_, i64>(6)?,
+                    r.get::<_, String>(7)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+        for r in rows {
+            let (id, kode, nama, qty, st, hpp, sub, catatan) = r.map_err(|e| e.to_string())?;
+            let satuan_nama = barang_satuan_nama(conn, &kode, st).unwrap_or_default();
+            hasil.push(ProduksiLineRow {
+                id,
+                barang_kode: kode,
+                barang_nama: nama,
+                satuan_tingkat: st,
+                satuan_nama,
+                qty,
+                hpp_per_unit: hpp,
+                subtotal_nilai: sub,
+                catatan,
+            });
+        }
+
+        let total_nilai_bb: i64 = bahan_baku.iter().map(|l| l.subtotal_nilai).sum();
+        let total_nilai_hasil: i64 = hasil.iter().map(|l| l.subtotal_nilai).sum();
+        let selisih = total_nilai_hasil - total_nilai_bb - row.7;
+
+        Ok(ProduksiDetail {
+            nomor: row.0,
+            tanggal: row.1,
+            gudang_bb_kode: row.2,
+            gudang_bb_nama: row.3,
+            gudang_hasil_kode: row.4,
+            gudang_hasil_nama: row.5,
+            status: row.6,
+            biaya_produksi: row.7,
+            akun_biaya_kode: row.8,
+            akun_biaya_nama: if row.9.is_empty() { None } else { Some(row.9) },
+            catatan: row.10,
+            dibuat_oleh: row.11,
+            jurnal_id: row.12,
+            tanggal_selesai: row.13,
+            created_at: row.14,
+            updated_at: row.15,
+            bahan_baku,
+            hasil,
+            total_nilai_bb,
+            total_nilai_hasil,
+            selisih,
+        })
+    })
+}
+
+#[tauri::command]
+pub fn produksi_hpp_snapshot(
+    state: State<DbState>,
+    barang_kode: String,
+) -> Result<ProduksiHppSnapshot, String> {
+    let kode = barang_kode.trim().to_string();
+    if kode.is_empty() {
+        return Err("Kode barang wajib diisi.".into());
+    }
+    with_conn_app(&state, |conn| {
+        let (kode_db, nama, satuan, tipe): (String, String, String, String) = conn
+            .query_row(
+                "SELECT kode, nama, satuan, tipe FROM barang_jasa WHERE lower(kode) = lower(?)",
+                params![&kode],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .map_err(|_| "Barang tidak ditemukan.".to_string())?;
+        if tipe != "Barang" {
+            return Ok(ProduksiHppSnapshot {
+                kode: kode_db,
+                nama,
+                satuan,
+                tipe,
+                stok_global: 0,
+                hpp_per_unit: 0,
+            });
+        }
+
+        let pembelian_map = hpp_load_pembelian_subtotals(conn, Some(&kode_db))?;
+        let koreksi_map = hpp_load_koreksi_subtotals(conn, Some(&kode_db))?;
+        let produksi_map = hpp_load_produksi_hasil_subtotals(conn, Some(&kode_db))?;
+        let stok_awal_map = hpp_load_stok_awal_subtotals(conn, Some(&kode_db))?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT waktu, tanggal_transaksi, jenis, referensi, gudang_kode, qty_masuk, qty_keluar, catatan
+                 FROM stok_mutasi
+                 WHERE lower(barang_kode) = lower(?)
+                 ORDER BY waktu ASC, id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![&kode_db], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, i64>(5)?,
+                    r.get::<_, i64>(6)?,
+                    r.get::<_, String>(7)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut s = HppState::new();
+        for r in rows {
+            let (waktu, tanggal, jenis, referensi, gudang_kode, qm, qk, catatan) =
+                r.map_err(|e| e.to_string())?;
+            hpp_apply_event(
+                &mut s,
+                waktu,
+                &tanggal,
+                &jenis,
+                &referensi,
+                &gudang_kode,
+                "",
+                qm,
+                qk,
+                &catatan,
+                &pembelian_map,
+                &koreksi_map,
+                &produksi_map,
+                &stok_awal_map,
+                &kode_db,
+            );
+        }
+
+        Ok(ProduksiHppSnapshot {
+            kode: kode_db,
+            nama,
+            satuan,
+            tipe,
+            stok_global: s.stok,
+            hpp_per_unit: s.hpp(),
+        })
+    })
+}
+
+#[tauri::command]
+pub fn produksi_insert(
+    app: tauri::AppHandle,
+    state: State<DbState>,
+    payload: ProduksiInsertPayload,
+) -> Result<String, String> {
+    let (tgl, gudang_bb, gudang_hasil, _tot_bb, _tot_hasil) =
+        produksi_validate_payload(&payload)?;
+    let tanggal_str = tgl.format("%Y-%m-%d").to_string();
+    let nomor = format!("PROD-{}", Utc::now().timestamp_millis());
+    let ts = now_ts();
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    crate::activation::assert_can_create_transaction(&app, &conn)?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let akun_biaya = payload
+        .akun_biaya_kode
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    if let Some(ref a) = akun_biaya {
+        produksi_validate_akun_exists(&tx, a)?;
+    }
+
+    tx.execute(
+        "INSERT INTO produksi (nomor, tanggal, gudang_bb_kode, gudang_hasil_kode, status, biaya_produksi, akun_biaya_kode, catatan, dibuat_oleh, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
+            &nomor,
+            &tanggal_str,
+            &gudang_bb,
+            &gudang_hasil,
+            PROD_STATUS_MENUNGGU,
+            payload.biaya_produksi,
+            akun_biaya.as_deref(),
+            payload.catatan.trim(),
+            payload.dibuat_oleh.trim(),
+            ts,
+            ts
+        ],
+    )
+    .map_err(|e| {
+        if e.to_string().contains("FOREIGN KEY") {
+            "Gudang tidak ditemukan.".into()
+        } else if e.to_string().contains("UNIQUE") {
+            "Nomor produksi bentrok — coba lagi.".into()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    let mut bahan_rows: Vec<ProduksiLineRow> = Vec::with_capacity(payload.bahan_baku.len());
+    let mut hasil_rows: Vec<ProduksiLineRow> = Vec::with_capacity(payload.hasil.len());
+    for line in &payload.bahan_baku {
+        let mut row = produksi_line_input_to_row(&tx, line)?;
+        tx.execute(
+            "INSERT INTO produksi_bahan_baku (produksi_nomor, barang_kode, qty, satuan_tingkat, hpp_per_unit, subtotal_nilai, catatan)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &nomor,
+                &row.barang_kode,
+                row.qty,
+                row.satuan_tingkat,
+                row.hpp_per_unit,
+                row.subtotal_nilai,
+                &row.catatan
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        row.id = tx.last_insert_rowid();
+        bahan_rows.push(row);
+    }
+    for line in &payload.hasil {
+        let mut row = produksi_line_input_to_row(&tx, line)?;
+        tx.execute(
+            "INSERT INTO produksi_hasil (produksi_nomor, barang_kode, qty, satuan_tingkat, hpp_per_unit, subtotal_nilai, catatan)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &nomor,
+                &row.barang_kode,
+                row.qty,
+                row.satuan_tingkat,
+                row.hpp_per_unit,
+                row.subtotal_nilai,
+                &row.catatan
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        row.id = tx.last_insert_rowid();
+        hasil_rows.push(row);
+    }
+
+    if payload.status_selesai {
+        let total_bb = bahan_rows.iter().map(|l| l.subtotal_nilai).sum();
+        let total_hasil = hasil_rows.iter().map(|l| l.subtotal_nilai).sum();
+        produksi_apply_completion(
+            &tx,
+            &nomor,
+            &tanggal_str,
+            &gudang_bb,
+            &gudang_hasil,
+            payload.biaya_produksi,
+            akun_biaya.as_deref(),
+            &bahan_rows,
+            &hasil_rows,
+            total_bb,
+            total_hasil,
+            ts,
+        )?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(nomor)
+}
+
+#[tauri::command]
+pub fn produksi_update(
+    state: State<DbState>,
+    nomor: String,
+    payload: ProduksiInsertPayload,
+) -> Result<(), String> {
+    let nomor_t = nomor.trim().to_string();
+    if nomor_t.is_empty() {
+        return Err("Nomor produksi wajib diisi.".into());
+    }
+    let (tgl, gudang_bb, gudang_hasil, _tot_bb, _tot_hasil) =
+        produksi_validate_payload(&payload)?;
+    let tanggal_str = tgl.format("%Y-%m-%d").to_string();
+    let ts = now_ts();
+
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let status: String = tx
+        .query_row(
+            "SELECT status FROM produksi WHERE nomor = ?",
+            params![nomor_t],
+            |r| r.get(0),
+        )
+        .map_err(|_| "Produksi tidak ditemukan.".to_string())?;
+    if status != PROD_STATUS_MENUNGGU {
+        return Err("Hanya produksi berstatus 'Menunggu' yang bisa diedit.".into());
+    }
+
+    let akun_biaya = payload
+        .akun_biaya_kode
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    if let Some(ref a) = akun_biaya {
+        produksi_validate_akun_exists(&tx, a)?;
+    }
+
+    tx.execute(
+        "UPDATE produksi SET tanggal = ?, gudang_bb_kode = ?, gudang_hasil_kode = ?, biaya_produksi = ?, akun_biaya_kode = ?, catatan = ?, updated_at = ? WHERE nomor = ?",
+        params![
+            &tanggal_str,
+            &gudang_bb,
+            &gudang_hasil,
+            payload.biaya_produksi,
+            akun_biaya.as_deref(),
+            payload.catatan.trim(),
+            ts,
+            &nomor_t
+        ],
+    )
+    .map_err(|e| {
+        if e.to_string().contains("FOREIGN KEY") {
+            "Gudang tidak ditemukan.".into()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    tx.execute(
+        "DELETE FROM produksi_bahan_baku WHERE produksi_nomor = ?",
+        params![&nomor_t],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "DELETE FROM produksi_hasil WHERE produksi_nomor = ?",
+        params![&nomor_t],
+    )
+    .map_err(|e| e.to_string())?;
+
+    for line in &payload.bahan_baku {
+        let row = produksi_line_input_to_row(&tx, line)?;
+        tx.execute(
+            "INSERT INTO produksi_bahan_baku (produksi_nomor, barang_kode, qty, satuan_tingkat, hpp_per_unit, subtotal_nilai, catatan)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![&nomor_t, &row.barang_kode, row.qty, row.satuan_tingkat, row.hpp_per_unit, row.subtotal_nilai, &row.catatan],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    for line in &payload.hasil {
+        let row = produksi_line_input_to_row(&tx, line)?;
+        tx.execute(
+            "INSERT INTO produksi_hasil (produksi_nomor, barang_kode, qty, satuan_tingkat, hpp_per_unit, subtotal_nilai, catatan)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![&nomor_t, &row.barang_kode, row.qty, row.satuan_tingkat, row.hpp_per_unit, row.subtotal_nilai, &row.catatan],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn produksi_delete(state: State<DbState>, nomor: String) -> Result<(), String> {
+    let nomor_t = nomor.trim().to_string();
+    if nomor_t.is_empty() {
+        return Err("Nomor produksi wajib diisi.".into());
+    }
+    with_conn_app(&state, |conn| {
+        let status: String = conn
+            .query_row(
+                "SELECT status FROM produksi WHERE nomor = ?",
+                params![nomor_t],
+                |r| r.get(0),
+            )
+            .map_err(|_| "Produksi tidak ditemukan.".to_string())?;
+        if status == PROD_STATUS_SELESAI {
+            return Err(
+                "Produksi berstatus 'Selesai' tidak dapat dihapus — batalkan dulu sebelum dihapus.".into(),
+            );
+        }
+        let n = conn
+            .execute("DELETE FROM produksi WHERE nomor = ?", params![nomor_t])
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Produksi tidak ditemukan.".into());
+        }
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn produksi_tandai_selesai(
+    app: tauri::AppHandle,
+    state: State<DbState>,
+    nomor: String,
+) -> Result<(), String> {
+    let nomor_t = nomor.trim().to_string();
+    if nomor_t.is_empty() {
+        return Err("Nomor produksi wajib diisi.".into());
+    }
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    crate::activation::assert_can_create_transaction(&app, &conn)?;
+    let ts = now_ts();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let (status, tanggal, gudang_bb, gudang_hasil, biaya, akun_biaya): (String, String, String, String, i64, Option<String>) =
+        tx.query_row(
+            "SELECT status, tanggal, gudang_bb_kode, gudang_hasil_kode, biaya_produksi, akun_biaya_kode
+             FROM produksi WHERE nomor = ?",
+            params![nomor_t],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+        )
+        .map_err(|_| "Produksi tidak ditemukan.".to_string())?;
+    if status != PROD_STATUS_MENUNGGU {
+        return Err("Hanya produksi berstatus 'Menunggu' yang bisa diselesaikan.".into());
+    }
+
+    let bahan_rows: Vec<ProduksiLineRow> = {
+        let mut stmt = tx
+            .prepare(
+                "SELECT b.id, b.barang_kode, COALESCE(j.nama, b.barang_kode), b.qty, b.satuan_tingkat,
+                        b.hpp_per_unit, b.subtotal_nilai, b.catatan
+                 FROM produksi_bahan_baku b
+                 LEFT JOIN barang_jasa j ON lower(j.kode) = lower(b.barang_kode)
+                 WHERE b.produksi_nomor = ?
+                 ORDER BY b.id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![nomor_t], |r| {
+                Ok(ProduksiLineRow {
+                    id: r.get(0)?,
+                    barang_kode: r.get(1)?,
+                    barang_nama: r.get(2)?,
+                    qty: r.get(3)?,
+                    satuan_tingkat: r.get(4)?,
+                    satuan_nama: String::new(),
+                    hpp_per_unit: r.get(5)?,
+                    subtotal_nilai: r.get(6)?,
+                    catatan: r.get(7)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        let mut v: Vec<ProduksiLineRow> = Vec::new();
+        for row in rows {
+            v.push(row.map_err(|e| e.to_string())?);
+        }
+        v
+    };
+    let hasil_rows: Vec<ProduksiLineRow> = {
+        let mut stmt = tx
+            .prepare(
+                "SELECT h.id, h.barang_kode, COALESCE(j.nama, h.barang_kode), h.qty, h.satuan_tingkat,
+                        h.hpp_per_unit, h.subtotal_nilai, h.catatan
+                 FROM produksi_hasil h
+                 LEFT JOIN barang_jasa j ON lower(j.kode) = lower(h.barang_kode)
+                 WHERE h.produksi_nomor = ?
+                 ORDER BY h.id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![nomor_t], |r| {
+                Ok(ProduksiLineRow {
+                    id: r.get(0)?,
+                    barang_kode: r.get(1)?,
+                    barang_nama: r.get(2)?,
+                    qty: r.get(3)?,
+                    satuan_tingkat: r.get(4)?,
+                    satuan_nama: String::new(),
+                    hpp_per_unit: r.get(5)?,
+                    subtotal_nilai: r.get(6)?,
+                    catatan: r.get(7)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        let mut v: Vec<ProduksiLineRow> = Vec::new();
+        for row in rows {
+            v.push(row.map_err(|e| e.to_string())?);
+        }
+        v
+    };
+    if bahan_rows.is_empty() {
+        return Err("Tambahkan baris bahan baku dulu sebelum menyelesaikan.".into());
+    }
+    if hasil_rows.is_empty() {
+        return Err("Tambahkan baris barang jadi dulu sebelum menyelesaikan.".into());
+    }
+    let total_bb: i64 = bahan_rows.iter().map(|l| l.subtotal_nilai).sum();
+    let total_hasil: i64 = hasil_rows.iter().map(|l| l.subtotal_nilai).sum();
+    produksi_apply_completion(
+        &tx,
+        &nomor_t,
+        &tanggal,
+        &gudang_bb,
+        &gudang_hasil,
+        biaya,
+        akun_biaya.as_deref(),
+        &bahan_rows,
+        &hasil_rows,
+        total_bb,
+        total_hasil,
+        ts,
+    )?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn produksi_batalkan(
+    state: State<DbState>,
+    nomor: String,
+) -> Result<(), String> {
+    let nomor_t = nomor.trim().to_string();
+    if nomor_t.is_empty() {
+        return Err("Nomor produksi wajib diisi.".into());
+    }
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let ts = now_ts();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let status: String = tx
+        .query_row(
+            "SELECT status FROM produksi WHERE nomor = ?",
+            params![nomor_t],
+            |r| r.get(0),
+        )
+        .map_err(|_| "Produksi tidak ditemukan.".to_string())?;
+    if status == PROD_STATUS_DIBATALKAN {
+        return Err("Produksi sudah dalam status 'Dibatalkan'.".into());
+    }
+    if status == PROD_STATUS_MENUNGGU {
+        // Belum ada efek; cukup ubah status.
+        tx.execute(
+            "UPDATE produksi SET status = ?, updated_at = ? WHERE nomor = ?",
+            params![PROD_STATUS_DIBATALKAN, ts, nomor_t],
+        )
+        .map_err(|e| e.to_string())?;
+    } else {
+        // status == 'Selesai' → reverse stok + jurnal.
+        produksi_reverse_completion(&tx, &nomor_t, ts)?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+

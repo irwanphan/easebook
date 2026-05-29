@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "pos",
+  "description": "Capability for the POS (cashier) window",
+  "windows": ["pos"],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "core:window:allow-set-focus",
+    "core:window:allow-close",
+    "core:window:allow-maximize",
+    "core:window:allow-minimize",
+    "core:webview:allow-webview-close"
+  ]
+}

@@ -2,29 +2,24 @@ import type {
   KasTransaksiDetailData,
   KasTransaksiDetailVariant,
 } from "@/features/keuangan/KasTransaksiDetailView";
+import { buildPagedCss, pagedjsPolyfill } from "@/features/keuangan/printPaged";
+import {
+  buildSignatureBlockHtml,
+  SIGNATURE_BLOCK_CSS,
+  type SignatureColumn,
+  type SignatureMode,
+} from "@/features/keuangan/printSignature";
+import {
+  buildCompanyHeaderHtml,
+  COMPANY_HEADER_CSS,
+} from "@/features/keuangan/printCompanyHeader";
 import { escapeHtml, wrapPrintableDocument } from "@/lib/print";
 import {
   isPaperPaged,
   isReceiptPaper,
   paperSizeCss,
-  paperSizeValue,
   type PaperSize,
 } from "@/lib/paperSize";
-
-// Polyfill paged.js — di-inline ke setiap dokumen print paged.
-// Memberi support penuh @page margin boxes + counter(page)/counter(pages)
-// yang tidak reliabel di Chrome native (issue 24913). Browser tinggal cetak
-// hasil paginated paged.js, jadi page numbering & header berulang konsisten.
-//
-// Ukuran ~500KB minified. Acceptable overhead per print job di desktop app.
-//
-// File di-vendor di `src/lib/vendor/` karena paket pagedjs punya `exports`
-// field restricted yang tidak expose `dist/paged.polyfill.min.js` ke
-// bundler. Kalau pagedjs di-update, copy ulang dari
-// `node_modules/pagedjs/dist/paged.polyfill.min.js`.
-//
-// `?raw` adalah Vite feature: file di-inline sebagai string saat build.
-import pagedjsPolyfill from "@/lib/vendor/paged.polyfill.min.js?raw";
 
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -67,140 +62,47 @@ function formatWaktuSekarang() {
 }
 
 /**
- * Escape teks untuk dimasukkan ke dalam CSS string literal (mis. `content: "..."`).
- * Hanya escape karakter yang merusak quote — control char dianggap tidak ada
- * di input kita (nomor bukti, judul, tanggal terformat).
- */
-function escapeCssString(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
-/**
- * CSS untuk paged docs (A4, Letter, ½ continuous) dengan paged.js aktif.
- *
- * @page margin boxes yang dipakai:
- * - @top-left      → "{judul dokumen}"               (mis. "Bukti pengeluaran kas")
- * - @top-right     → "No. {nomor} · {tanggal}"
- * - @bottom-left   → "Dicetak dari EasyBook · {waktu}"
- * - @bottom-right  → "Halaman X dari Y"
- *
- * Semua ini bekerja konsisten karena paged.js me-render pagination di JS-side,
- * BUKAN bergantung pada native Chrome paged-media engine.
- */
-function buildPagedCss(
-  paperSize: PaperSize,
-  judulDokumen: string,
-  detail: KasTransaksiDetailData,
-): string {
-  const sizeValue = paperSizeValue(paperSize);
-  const judul = escapeCssString(judulDokumen);
-  const refNomor = escapeCssString(`No. ${detail.nomor} · ${formatTanggal(detail.tanggal)}`);
-  const refDicetak = escapeCssString(`Dicetak dari EasyBook · ${formatWaktuSekarang()}`);
-
-  return `
-    @page {
-      size: ${sizeValue};
-      /* Margin kiri/kanan 12mm — kompromi antara "tighter look" (request user)
-         dan "headroom untuk Chrome scale offset". User Chrome yang punya
-         Scale ≠ 100 (sticky preference) akan tetap dapat hasil yang fit di
-         A4 sampai sekitar Scale 110%. Top/bottom 14mm cukup untuk margin
-         boxes (judul header & nomor halaman). */
-      margin: 14mm 12mm 12mm 12mm;
-
-      @top-left {
-        content: "${judul}";
-        font-size: 9pt;
-        font-weight: 600;
-        color: #3f3f46;
-        vertical-align: bottom;
-        padding-bottom: 4mm;
-      }
-      @top-right {
-        content: "${refNomor}";
-        font-size: 9pt;
-        color: #71717a;
-        vertical-align: bottom;
-        padding-bottom: 4mm;
-      }
-      @bottom-left {
-        content: "${refDicetak}";
-        font-size: 8pt;
-        color: #a1a1aa;
-        vertical-align: top;
-        padding-top: 3mm;
-      }
-      @bottom-right {
-        content: "Halaman " counter(page) " dari " counter(pages);
-        font-size: 8pt;
-        color: #a1a1aa;
-        vertical-align: top;
-        padding-top: 3mm;
-      }
-    }
-
-    /* Page break behavior — PENTING untuk paged.js:
-       - table/tbody: izinkan break antar halaman supaya konten mengisi
-         page 1 dulu sebelum overflow ke page 2. Base CSS dari
-         wrapPrintableDocument hanya set 'tr { page-break-inside: avoid }'
-         yang justru bikin paged.js push seluruh table ke page berikutnya
-         kalau dia anggap tidak muat utuh.
-       - tr: tetap avoid (jangan pecah di tengah baris).
-       - h2 (heading): page-break-after: avoid supaya stick dengan tabel
-         berikutnya (kalau tidak muat keduanya, paged.js akan pindah
-         keduanya ke page baru — bukan h2 sendirian dengan tabel di page lain).
-       - .grid: auto supaya tidak treat container sebagai monolitik. */
-    table, tbody { page-break-inside: auto; break-inside: auto; }
-    tr { page-break-inside: avoid; break-inside: avoid; }
-    h2 { page-break-after: avoid; break-after: avoid; }
-    .grid { page-break-inside: auto; break-inside: auto; }
-
-    /* Saat preview (sebelum print), paged.js render hasil paginated di body.
-       Beri sedikit padding & background biar visible sebagai "preview pages". */
-    body {
-      background: #f4f4f5;
-    }
-    .pagedjs_pages {
-      margin: 0 auto;
-    }
-    .pagedjs_page {
-      background: #ffffff;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-      margin-bottom: 8mm;
-    }
-
-    /* Saat print, hilangkan background preview. */
-    @media print {
-      body { background: #ffffff; }
-      .pagedjs_page {
-        box-shadow: none;
-        margin: 0;
-      }
-    }
-  `;
-}
-
-/**
  * Bangun HTML dokumen print-ready untuk transaksi kas (penerimaan/pengeluaran).
  * Layout otomatis menyesuaikan ukuran kertas:
  * - Kertas paged (A4, Letter, ½ continuous): invoice 2 kolom + paged.js untuk
- *   header/footer berulang + page numbering.
- * - Kertas thermal (58/80mm): receipt 1 kolom kompak, flow natural tanpa paged.js.
+ *   header/footer berulang + page numbering + blok tanda tangan.
+ * - Kertas thermal (58/80mm): receipt 1 kolom kompak, flow natural tanpa
+ *   paged.js & tanpa blok tanda tangan (kertas terlalu sempit).
+ *
+ * @param signatures Optional 2+ kolom tanda tangan untuk serah-terima uang.
+ *   Hanya ditampilkan pada paged docs (A4/Letter/½ continuous). Convention:
+ *   pemberi uang di kiri, penerima uang di kanan.
+ * @param signatureMode Default `"tanda-tangan"` (~47mm) untuk dokumen formal.
+ *   Pakai `"paraf"` (~31mm) supaya signature lebih kompak & seluruh dokumen
+ *   muat di satu halaman.
  */
 export function buildKasTransaksiPrintHtml(
   detail: KasTransaksiDetailData,
   variant: KasTransaksiDetailVariant,
   judulDokumen: string,
   paperSize?: PaperSize,
+  signatures?: SignatureColumn[],
+  signatureMode?: SignatureMode,
 ): string {
   const receipt = paperSize ? isReceiptPaper(paperSize) : false;
   const paged = paperSize ? isPaperPaged(paperSize) : true;
   // paged.js dipakai untuk paged non-thermal. Thermal/continuous tidak punya
   // konsep halaman & cetakan biasanya 1-page, jadi pakai flow biasa.
   const usePagedJs = paged && !receipt;
+  // Blok tanda tangan hanya untuk paged non-thermal. Thermal width terlalu
+  // sempit untuk 2 kolom ttd.
+  const showSignatures = !receipt && signatures && signatures.length > 0;
 
   const body = receipt
     ? buildReceiptBody(detail, variant, judulDokumen)
-    : buildInvoiceBody(detail, variant, judulDokumen, !usePagedJs);
+    : buildInvoiceBody(
+        detail,
+        variant,
+        judulDokumen,
+        !usePagedJs,
+        showSignatures ? signatures : undefined,
+        signatureMode,
+      );
 
   let extraCss = "";
   let inlineScripts: string[] | undefined;
@@ -208,12 +110,26 @@ export function buildKasTransaksiPrintHtml(
 
   if (paperSize) {
     if (usePagedJs) {
-      extraCss = buildPagedCss(paperSize, judulDokumen, detail);
+      extraCss = buildPagedCss(
+        paperSize,
+        judulDokumen,
+        detail.nomor,
+        formatTanggal(detail.tanggal),
+        formatWaktuSekarang(),
+      );
       inlineScripts = [pagedjsPolyfill];
       printOn = "pagedjs-after-rendered";
     } else {
       extraCss = paperSizeCss(paperSize);
     }
+  }
+
+  if (showSignatures) {
+    extraCss += SIGNATURE_BLOCK_CSS;
+  }
+
+  if (!receipt) {
+    extraCss += COMPANY_HEADER_CSS;
   }
 
   return wrapPrintableDocument({
@@ -233,20 +149,25 @@ export function buildKasTransaksiPrintHtml(
  *   header inline di body (judul + nomor + tanggal di paling atas).
  * - `showInlineHeader=false` saat paged.js aktif: header dipindah ke
  *   @page margin boxes (lihat `buildPagedCss`). Body cukup berisi konten inti.
+ * - `signatures`: kalau diisi, blok tanda tangan dirender setelah tabel
+ *   rincian. CSS-nya (`SIGNATURE_BLOCK_CSS`) di-append di pemanggil.
  */
 function buildInvoiceBody(
   detail: KasTransaksiDetailData,
   variant: KasTransaksiDetailVariant,
   judulDokumen: string,
   showInlineHeader: boolean,
+  signatures?: SignatureColumn[],
+  signatureMode?: SignatureMode,
 ): string {
+  const companyHeader = buildCompanyHeaderHtml("invoice");
   const baris = detail.lines
     .map(
       (line) => `
       <tr>
         <td style="border: 1px solid #d4d4d8;">
           <div><strong>${escapeHtml(line.akunNama || line.akunKode)}</strong></div>
-          <div class="mono muted">${escapeHtml(line.akunKode)}</div>
+          <!-- <div class="mono muted">${escapeHtml(line.akunKode)}</div> -->
         </td>
         <td>${line.catatan ? escapeHtml(line.catatan) : "—"}</td>
         <td class="num">${escapeHtml(formatRupiah(line.jumlah))}</td>
@@ -266,19 +187,20 @@ function buildInvoiceBody(
     : "";
 
   return `
+    ${companyHeader}
     ${inlineHeader}
     <div class="grid">
-      <div>
-        <div class="label">${escapeHtml(variant.kasLabel)}</div>
-        <div class="value">${escapeHtml(detail.akunKasNama || detail.akunKasKode)}</div>
-        <div class="mono muted">${escapeHtml(detail.akunKasKode)}</div>
+      <div class="flex">
+        <span class="label">${escapeHtml(variant.kasLabel)}: </span>
+        <span class="mono">${escapeHtml(detail.akunKasKode)}</span>
+        ${detail.akunKasNama ? `<span class="muted"> — ${escapeHtml(detail.akunKasNama)}</span>` : ""}
       </div>
-      <div>
-        <div class="label">Dicatat pada</div>
-        <div class="value">${escapeHtml(formatWaktu(detail.createdAt))}</div>
+      <div class="flex">
+        <span class="label">Dicatat pada: </span>
+        <span class="mono">${escapeHtml(formatWaktu(detail.createdAt))}</span>
         ${
           detail.updatedAt > detail.createdAt
-            ? `<div class="muted">Diperbarui ${escapeHtml(formatWaktu(detail.updatedAt))}</div>`
+            ? `<span class="muted"> (diperbarui ${escapeHtml(formatWaktu(detail.updatedAt))})</span>`
             : ""
         }
       </div>
@@ -315,6 +237,8 @@ function buildInvoiceBody(
           : ""
       }
     </table>
+
+    ${signatures ? buildSignatureBlockHtml(signatures, { mode: signatureMode }) : ""}
   `;
 }
 
@@ -324,6 +248,7 @@ function buildReceiptBody(
   variant: KasTransaksiDetailVariant,
   judulDokumen: string,
 ): string {
+  const companyHeader = buildCompanyHeaderHtml("receipt");
   const baris = detail.lines
     .map(
       (line) => `
@@ -342,6 +267,7 @@ function buildReceiptBody(
     .join("");
 
   return `
+    ${companyHeader}
     <div style="text-align: center; border-bottom: 1px dashed #18181b; padding-bottom: 4px; margin-bottom: 6px;">
       <strong style="font-size: 13px;">${escapeHtml(judulDokumen)}</strong>
       <div class="mono">${escapeHtml(detail.nomor)}</div>

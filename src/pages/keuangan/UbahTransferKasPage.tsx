@@ -135,7 +135,7 @@ export function UbahTransferKasPage() {
         </Link>
         <PageHeader
           title={`Ubah transfer ${nomorTrim || ""}`.trim()}
-          description="Perbarui data transfer kas. Jurnal dan saldo otomatis diselaraskan lewat jurnal pembalik."
+          // description="Perbarui data transfer kas. Jurnal dan saldo otomatis diselaraskan lewat jurnal pembalik."
         />
       </div>
 
@@ -184,7 +184,7 @@ export function UbahTransferKasPage() {
         <div className="flex flex-wrap justify-end gap-3">
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             onClick={() => navigate("/keuangan/transfer")}
             disabled={submitting}
           >

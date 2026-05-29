@@ -221,7 +221,7 @@ export function MutasiAntarGudangPage() {
         </Link>
         <PageHeader
           title="Mutasi antar gudang"
-          description="Pindahkan stok barang dari satu gudang ke gudang lain. Total stok perusahaan tidak berubah; hanya alokasi per gudang yang bergeser."
+          description="Pindahkan stok barang dari satu gudang ke gudang lain."
         />
       </div>
 
@@ -466,7 +466,7 @@ export function MutasiAntarGudangPage() {
         </Card>
 
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button type="button" variant="ghost" disabled={submitting} onClick={() => navigate("/barang-jasa")}>
+          <Button type="button" variant="outline" disabled={submitting} onClick={() => navigate("/barang-jasa")}>
             Batal
           </Button>
           <Button

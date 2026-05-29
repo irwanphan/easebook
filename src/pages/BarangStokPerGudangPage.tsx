@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, RotateCcw, Sheet } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -13,6 +13,8 @@ import {
 } from "@/data/barangJasa";
 import { useBarangJasa } from "@/features/barang-jasa/BarangJasaContext";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { useXlsxExport } from "@/lib/useXlsxExport";
+import type { BarangStokPerGudangRow } from "@/data/stokPerGudang";
 
 const inputClass =
   "rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
@@ -27,6 +29,7 @@ export function BarangStokPerGudangPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cari, setCari] = useState("");
+  const { exporting, exportNow } = useXlsxExport();
 
   const barangByKode = useMemo(() => {
     const m = new Map<string, (typeof barangItems)[number]>();
@@ -66,6 +69,56 @@ export function BarangStokPerGudangPage() {
 
   const minWidth = 520 + gudang.length * 120;
 
+  const handleExport = useCallback(async () => {
+    if (barangFiltered.length === 0 || gudang.length === 0) return;
+
+    // Kolom statis di awal + 1 kolom numeric per gudang.
+    const staticCols = [
+      { header: "Kode", value: (r: BarangStokPerGudangRow) => r.kode, type: "text" as const, width: 14 },
+      { header: "Nama", value: (r: BarangStokPerGudangRow) => r.nama, type: "text" as const, width: 30 },
+      {
+        header: "Satuan stok",
+        value: (r: BarangStokPerGudangRow) => {
+          const b = barangByKode.get(r.kode.toLowerCase());
+          return b ? getSatuanStokBarang(b) : r.satuan || "";
+        },
+        type: "text" as const,
+        width: 12,
+      },
+      {
+        header: "Total stok",
+        value: (r: BarangStokPerGudangRow) => r.totalStok,
+        type: "integer" as const,
+        width: 14,
+      },
+    ];
+
+    const gudangCols = gudang.map((g, idx) => ({
+      header: `${g.kode} — ${g.nama}`,
+      value: (r: BarangStokPerGudangRow) => r.stokPerGudang[idx] ?? 0,
+      type: "integer" as const,
+      width: 18,
+    }));
+
+    await exportNow<BarangStokPerGudangRow>({
+      fileName: "stok_barang_per_gudang",
+      sheetName: "Stok per gudang",
+      title: "Stok Barang per Gudang",
+      meta: [
+        { label: "Tanggal cetak", value: new Date().toLocaleString("id-ID") },
+        { label: "Pencarian", value: cari.trim() || "—" },
+        { label: "Jumlah barang", value: barangFiltered.length },
+        { label: "Jumlah gudang", value: gudang.length },
+        {
+          label: "Catatan",
+          value: "Angka stok dalam satuan terkecil tiap barang (kolom Satuan stok).",
+        },
+      ],
+      columns: [...staticCols, ...gudangCols],
+      data: barangFiltered,
+    });
+  }, [barangByKode, barangFiltered, cari, exportNow, gudang]);
+
   return (
     <div className="mx-auto flex max-w-[96rem] flex-col gap-6">
       <div>
@@ -81,6 +134,7 @@ export function BarangStokPerGudangPage() {
           description="Satu baris per barang; kolom dinamis mengikuti gudang yang terdaftar. Angka stok dihitung dari mutasi masuk/keluar per gudang, dalam satuan terkecil tiap barang."
           actions={
             <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>
+              <RotateCcw className="h-4 w-4" aria-hidden />
               {loading ? "Memuat…" : "Refresh"}
             </Button>
           }
@@ -93,22 +147,42 @@ export function BarangStokPerGudangPage() {
         </div>
       ) : null}
 
-      <Card className="p-4 sm:p-6">
-        <label htmlFor="cari-barang-gudang" className="block text-sm font-medium text-zinc-700">
-          Cari barang
-        </label>
-        <input
-          id="cari-barang-gudang"
-          type="search"
-          value={cari}
-          onChange={(e) => setCari(e.target.value)}
-          placeholder="Kode atau nama barang…"
-          className={`${inputClass} mt-1 max-w-md`}
-          disabled={loading}
-        />
-      </Card>
-
       <Card className="overflow-hidden p-0">
+        <div className="flex flex-col gap-3 border-b border-zinc-100 mb-3 pb-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex-1">
+            <label htmlFor="cari-barang-gudang" className="block text-sm font-medium text-zinc-700">
+              Cari barang
+            </label>
+            <input
+              id="cari-barang-gudang"
+              type="search"
+              value={cari}
+              onChange={(e) => setCari(e.target.value)}
+              placeholder="Kode atau nama barang…"
+              className={`${inputClass} mt-1 w-full max-w-md`}
+              disabled={loading}
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void handleExport()}
+              disabled={loading || exporting || barangFiltered.length === 0 || gudang.length === 0}
+              title={
+                gudang.length === 0
+                  ? "Tidak ada gudang"
+                  : barangFiltered.length === 0
+                    ? "Tidak ada barang pada filter ini"
+                    : `Export ${barangFiltered.length} barang × ${gudang.length} gudang ke .xlsx`
+              }
+            >
+              <Sheet className="h-4 w-4" aria-hidden />
+              {exporting ? "Mengexport…" : "Export XLSX"}
+            </Button>
+          </div>
+        </div>
+
         <div className="border-b border-zinc-100 px-6 py-3">
           <p className="text-sm text-zinc-500">
             {loading

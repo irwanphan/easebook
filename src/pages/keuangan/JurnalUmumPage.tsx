@@ -7,6 +7,10 @@ import { Badge } from "@/components/ui/Badge";
 import { JurnalTambahModal } from "@/features/keuangan/JurnalTambahModal";
 import type { AkunKeuanganRow, JurnalUmumListRow } from "@/data/keuangan";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { VerticalSeparator } from "@/components/ui/Separator";
+import { Plus, RefreshCcw } from "lucide-react";
+import { TokoInput } from "@/components/ui/TokoInput";
+import { jenisBadgeVariant, jenisLabel } from "@/features/keuangan/jurnalJenis";
 
 const inputClass =
   "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
@@ -36,41 +40,6 @@ function formatRupiah(n: number) {
     currency: "IDR",
     maximumFractionDigits: 0,
   }).format(n);
-}
-
-const JENIS_LABELS: Record<string, string> = {
-  PEMBELIAN: "Pembelian (hutang / inventori)",
-  PEMBELIAN_TUNAI: "Pembelian tunai (kas keluar)",
-  PENJUALAN: "Penjualan (piutang)",
-  PENJUALAN_TUNAI: "Penjualan tunai (kas masuk)",
-  PELUNASAN_PIUTANG: "Pelunasan piutang (kas masuk)",
-  PELUNASAN_HUTANG: "Pelunasan hutang (kas keluar)",
-  PELUNASAN_PIUTANG_REVERSAL: "Pembalik pelunasan piutang",
-  PELUNASAN_HUTANG_REVERSAL: "Pembalik pelunasan hutang",
-  TRANSFER_REVERSAL: "Pembalik transfer kas",
-  PENERIMAAN: "Penerimaan (pendapatan / kas masuk)",
-  PENERIMAAN_LAINNYA: "Penerimaan lain (kas masuk)",
-  PENGELUARAN: "Pengeluaran (biaya / kas keluar)",
-  PENGELUARAN_LAINNYA: "Pengeluaran lain (kas keluar)",
-  TRANSFER: "Transfer antar akun kas",
-  MANUAL: "Jurnal manual",
-};
-
-function jenisBadgeVariant(jenis: string) {
-  if (jenis.endsWith("_REVERSAL")) return "delayed" as const;
-  if (jenis === "MANUAL") return "neutral" as const;
-  if (jenis === "PEMBELIAN" || jenis === "PEMBELIAN_TUNAI") return "neutral" as const;
-  if (jenis === "PENJUALAN" || jenis === "PENJUALAN_TUNAI") return "success" as const;
-  if (jenis === "PELUNASAN_PIUTANG" || jenis === "PENERIMAAN" || jenis === "PENERIMAAN_LAINNYA")
-    return "processing" as const;
-  if (jenis === "PELUNASAN_HUTANG" || jenis === "PENGELUARAN" || jenis === "PENGELUARAN_LAINNYA")
-    return "delayed" as const;
-  if (jenis === "TRANSFER") return "warning" as const;
-  return "neutral" as const;
-}
-
-function jenisLabel(jenis: string) {
-  return JENIS_LABELS[jenis] ?? jenis;
 }
 
 export function JurnalUmumPage() {
@@ -135,6 +104,19 @@ export function JurnalUmumPage() {
       <PageHeader
         title="Jurnal umum"
         description="Riwayat semua entri jurnal. Tambah jurnal manual dengan baris debit dan kredit yang seimbang."
+        actions={
+          <>
+            <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={listLoading || rentangInvalid}>
+              <RefreshCcw className="h-4 w-4" aria-hidden />
+              {listLoading ? "Memuat…" : "Refresh"}
+            </Button>
+            <VerticalSeparator />
+            <Button type="button" onClick={() => setModalOpen(true)} disabled={akunLoading}>
+              <Plus className="h-4 w-4" aria-hidden />
+              Tambah jurnal
+            </Button>
+          </>
+        }
       />
 
       {error ? (
@@ -144,7 +126,7 @@ export function JurnalUmumPage() {
       ) : null}
 
       <Card className="overflow-hidden p-0">
-        <div className="flex flex-col gap-4 border-b border-zinc-100 p-6 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-4 border-b border-zinc-100 pb-3 mb-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-sm font-semibold text-zinc-900">Riwayat jurnal</h2>
             <p className="mt-1 text-sm text-zinc-500">
@@ -152,22 +134,17 @@ export function JurnalUmumPage() {
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
-            <Button type="button" onClick={() => setModalOpen(true)} disabled={akunLoading}>
-              Tambah jurnal
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={listLoading || rentangInvalid}>
-              {listLoading ? "Memuat…" : "Refresh"}
-            </Button>
+            
           </div>
         </div>
 
-        <div className="border-b border-zinc-100 px-6 pb-5">
+        <div className="border-b border-zinc-100 py-3">
           <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-end">
             <div>
               <label htmlFor="jurnal-dari" className="block text-sm font-medium text-zinc-700">
                 Tanggal mulai
               </label>
-              <input
+              <TokoInput
                 id="jurnal-dari"
                 type="date"
                 value={tanggalDari}
@@ -179,7 +156,7 @@ export function JurnalUmumPage() {
               <label htmlFor="jurnal-sampai" className="block text-sm font-medium text-zinc-700">
                 Tanggal akhir
               </label>
-              <input
+              <TokoInput
                 id="jurnal-sampai"
                 type="date"
                 value={tanggalSampai}

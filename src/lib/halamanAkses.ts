@@ -40,11 +40,12 @@ export function canAccessHalaman(
 }
 
 /** Halaman yang boleh diakses semua pengguna login tanpa entri hak akses. */
-const PUBLIC_AUTHENTICATED_PATHS = new Set(["profil"]);
+const PUBLIC_AUTHENTICATED_PATHS = new Set(["profil", "profil/akses-cepat"]);
 
 export function canAccessPath(pathname: string, isAdmin: boolean, allowedKeys: Set<string>): boolean {
   const segments = splitPath(pathname);
-  if (segments.length === 1 && PUBLIC_AUTHENTICATED_PATHS.has(segments[0]!.toLowerCase())) {
+  const joined = segments.map((s) => s.toLowerCase()).join("/");
+  if (PUBLIC_AUTHENTICATED_PATHS.has(joined)) {
     return true;
   }
   const key = resolveHalamanKeyFromPath(pathname);

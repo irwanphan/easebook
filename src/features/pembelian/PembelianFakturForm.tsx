@@ -555,15 +555,15 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
                         <span className="inline-block pt-2.5">{formatRupiah(sub)}</span>
                       </td>
                       <td className="px-2 py-2 align-top text-center">
-                        <button
+                        <Button
                           type="button"
                           onClick={() => removeLine(row.id)}
-                          className="mt-1.5 inline-flex rounded-lg p-2 text-zinc-400 transition hover:bg-rose-50 hover:text-rose-600"
+                          variant="danger"
                           aria-label="Hapus baris"
                           disabled={hydrating}
                         >
                           <Trash2 className="h-4 w-4" />
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                   );
@@ -640,7 +640,7 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
         </Card>
 
         <div className="flex flex-wrap justify-end gap-3">
-          <Button type="button" variant="ghost" onClick={() => navigate(cancelHref)}>
+          <Button type="button" variant="outline" onClick={() => navigate(cancelHref)}>
             Batal
           </Button>
           <Button type="submit" disabled={masterLoading || hydrating || saving}>

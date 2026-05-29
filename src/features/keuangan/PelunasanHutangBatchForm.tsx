@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Save, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -9,9 +9,10 @@ import { Badge } from "@/components/ui/Badge";
 import type { AkunKeuanganRow } from "@/data/keuangan";
 import type { HutangBelumLunasRow, PelunasanHutangBatchPayload } from "@/data/pelunasanHutang";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { TokoInput } from "@/components/ui/TokoInput";
+import { TokoLookup } from "@/components/ui/TokoLookup";
 
-const inputClass =
-  "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
+type PemasokOption = { kode: string; nama: string };
 
 function todayLocalISODate(): string {
   const d = new Date();
@@ -244,24 +245,20 @@ export function PelunasanHutangBatchForm({
           <h2 className="text-sm font-semibold text-zinc-900">Pemasok</h2>
           <p className="mt-1 text-sm text-zinc-500">Hanya pemasok dengan hutang belum lunas ditampilkan.</p>
           <div className="mt-4 max-w-md">
-            <label htmlFor="phb-pemasok" className="block text-sm font-medium text-zinc-700">
-              Pemasok
-            </label>
-            <select
+            <TokoLookup<PemasokOption>
               id="phb-pemasok"
-              value={pemasokKode}
-              onChange={(e) => handlePemasokChange(e.target.value)}
-              className={inputClass}
+              label="Pemasok"
+              options={pemasokOptions}
+              value={pemasokKode || null}
+              getKey={(p) => p.kode}
+              getLabel={(p) => `${p.kode} — ${p.nama}`}
+              onChange={(opt) => handlePemasokChange(opt ? opt.kode : "")}
+              placeholder="— Pilih pemasok —"
+              searchPlaceholder="Cari kode atau nama pemasok…"
+              emptyMessage="Pemasok tidak ditemukan."
               disabled={formDisabled || pemasokOptions.length === 0}
               required
-            >
-              <option value="">— Pilih pemasok —</option>
-              {pemasokOptions.map((p) => (
-                <option key={p.kode} value={p.kode}>
-                  {p.kode} — {p.nama}
-                </option>
-              ))}
-            </select>
+            />
             {loading ? (
               <p className="mt-1.5 text-xs text-zinc-400">Memuat hutang…</p>
             ) : pemasokOptions.length === 0 ? (
@@ -271,7 +268,7 @@ export function PelunasanHutangBatchForm({
         </Card>
 
         <Card className="overflow-hidden p-0">
-          <div className="border-b border-zinc-100 px-5 py-4 sm:px-6">
+          <div className="border-b border-zinc-100 pb-4">
             <h2 className="text-sm font-semibold text-zinc-900">Faktur hutang</h2>
             <p className="mt-1 text-sm text-zinc-500">
               {!pemasokKode
@@ -391,35 +388,31 @@ export function PelunasanHutangBatchForm({
               <label htmlFor="phb-tgl" className="block text-sm font-medium text-zinc-700">
                 Tanggal pelunasan
               </label>
-              <input
+              <TokoInput
                 id="phb-tgl"
                 type="date"
                 value={tanggal}
                 onChange={(e) => setTanggal(e.target.value)}
-                className={inputClass}
                 disabled={formDisabled}
                 required
               />
             </div>
             <div>
-              <label htmlFor="phb-kas" className="block text-sm font-medium text-zinc-700">
-                Dibayar melalui (kas / bank)
-              </label>
-              <select
+              <TokoLookup<AkunKeuanganRow>
                 id="phb-kas"
-                value={kasKode}
-                onChange={(e) => setKasKode(e.target.value)}
-                className={inputClass}
+                label="Dibayar melalui (kas / bank)"
+                options={akunKasList}
+                value={kasKode || null}
+                getKey={(a) => a.kode}
+                getLabel={(a) => `${a.kode} — ${a.nama}`}
+                getDescription={(a) => `Saldo: ${formatRupiah(a.saldo)}`}
+                onChange={(opt) => setKasKode(opt ? opt.kode : "")}
+                placeholder="— Pilih akun kas —"
+                searchPlaceholder="Cari kode atau nama akun kas…"
+                emptyMessage="Akun kas tidak ditemukan."
                 disabled={formDisabled}
                 required
-              >
-                <option value="">— Pilih akun kas —</option>
-                {akunKasList.map((a) => (
-                  <option key={a.kode} value={a.kode}>
-                    {a.kode} — {a.nama}
-                  </option>
-                ))}
-              </select>
+              />
               {akunKasLoading ? (
                 <p className="mt-1.5 text-xs text-zinc-400">Memuat akun kas…</p>
               ) : akunKasList.length === 0 ? (
@@ -432,14 +425,13 @@ export function PelunasanHutangBatchForm({
             <label htmlFor="phb-catatan" className="block text-sm font-medium text-zinc-700">
               Catatan
             </label>
-            <input
+            <TokoInput
               id="phb-catatan"
               type="text"
               value={catatan}
               onChange={(e) => setCatatan(e.target.value)}
-              className={inputClass}
               disabled={formDisabled}
-              placeholder="opsional"
+              placeholder="Catatan pelunasan"
             />
           </div>
 
@@ -451,12 +443,14 @@ export function PelunasanHutangBatchForm({
 
         <div className="flex flex-wrap justify-end gap-3">
           <Button type="button" variant="ghost" onClick={() => navigate(cancelHref)} disabled={submitting}>
+            <X className="h-4 w-4" aria-hidden />
             Batal
           </Button>
           <Button
             type="submit"
             disabled={formDisabled || !pemasokKode || selectedNomor.size === 0 || akunKasList.length === 0}
           >
+            <Save className="h-4 w-4" aria-hidden />
             {submitting ? "Menyimpan…" : "Simpan pelunasan"}
           </Button>
         </div>

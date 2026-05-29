@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Save, X } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -75,7 +75,10 @@ export function UbahPelangganPage() {
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Kembali ke daftar
         </Link>
-        <PageHeader title="Ubah pelanggan" description="Perbarui data kontak; kode tidak dapat diubah." />
+        <PageHeader 
+          title="Ubah pelanggan" 
+          description="Perbarui data kontak; kode tidak dapat diubah." 
+        />
       </div>
 
       <Card>
@@ -96,11 +99,13 @@ export function UbahPelangganPage() {
           )}
 
           <div className="flex flex-wrap items-center justify-end gap-3 border-t border-zinc-100 pt-5">
-            <Button type="button" variant="ghost" onClick={() => navigate("/manajemen/pelanggan")}>
+            <Button type="button" variant="outline" onClick={() => navigate("/manajemen/pelanggan")}>
+              <X className="h-4 w-4" aria-hidden />
               Batal
             </Button>
             <Button type="submit" disabled={loading || !ready || !found}>
-              Simpan perubahan
+              <Save className="h-4 w-4" aria-hidden />
+              {loading || !ready || !found ? "Menyimpan…" : "Simpan perubahan"}
             </Button>
           </div>
         </form>

@@ -19,6 +19,8 @@ export function labelJenisMutasi(jenis: string): string {
   if (jenis === "PEMBELIAN") return "Pembelian";
   if (jenis === "PENJUALAN") return "Penjualan";
   if (jenis === "MUTASI_GUDANG") return "Mutasi antar gudang";
+  if (jenis === "KOREKSI_MASUK") return "Koreksi masuk";
+  if (jenis === "KOREKSI_KELUAR") return "Koreksi keluar";
   if (jenis === "ADJUSTMENT") return "Penyesuaian";
   return jenis;
 }

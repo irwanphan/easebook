@@ -4,6 +4,10 @@ import {
   SIGNATURE_BLOCK_CSS,
   type SignatureColumn,
 } from "@/features/keuangan/printSignature";
+import {
+  buildCompanyHeaderHtml,
+  COMPANY_HEADER_CSS,
+} from "@/features/keuangan/printCompanyHeader";
 import { escapeHtml, wrapPrintableDocument } from "@/lib/print";
 import {
   isPaperPaged,
@@ -109,6 +113,10 @@ export function buildTransferKasPrintHtml(
 
   if (showSignatures) {
     extraCss += SIGNATURE_BLOCK_CSS;
+  }
+
+  if (!receipt) {
+    extraCss += COMPANY_HEADER_CSS;
   }
 
   return wrapPrintableDocument({
@@ -321,6 +329,7 @@ function buildInvoiceBody(
   showInlineHeader: boolean,
   signatures?: SignatureColumn[],
 ): string {
+  const companyHeader = buildCompanyHeaderHtml("invoice");
   const inlineHeader = showInlineHeader
     ? `
     <div class="header">
@@ -356,6 +365,7 @@ function buildInvoiceBody(
     : "";
 
   return `
+    ${companyHeader}
     ${inlineHeader}
     <div class="grid">
       <div class="flex">
@@ -437,8 +447,10 @@ function buildInvoiceBody(
 
 /** Layout receipt 1 kolom untuk thermal printer 58/80mm. */
 function buildReceiptBody(detail: TransferKasDetail): string {
+  const companyHeader = buildCompanyHeaderHtml("receipt");
   const adaBiaya = detail.biayaTransfer > 0;
   return `
+    ${companyHeader}
     <div style="text-align: center; border-bottom: 1px dashed #18181b; padding-bottom: 4px; margin-bottom: 6px;">
       <strong style="font-size: 13px;">${escapeHtml(JUDUL_DOKUMEN)}</strong>
       <div class="mono">${escapeHtml(detail.nomor)}</div>

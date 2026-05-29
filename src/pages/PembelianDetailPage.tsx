@@ -10,7 +10,7 @@ import { PrintButton } from "@/components/ui/PrintButton";
 import {
   buildFakturPrintHtml,
   type FakturPrintConfig,
-} from "@/features/keuangan/templates/fakturPrintTemplate";
+} from "@/features/templates/fakturPrintTemplate";
 import type { SignatureColumn } from "@/features/keuangan/printSignature";
 import type { PembelianDetail } from "@/data/pembelian";
 import { labelMetodePembayaran } from "@/data/pembelian";

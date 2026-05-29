@@ -9,7 +9,7 @@ import {
   KasTransaksiDetailView,
   type KasTransaksiDetailVariant,
 } from "@/features/keuangan/KasTransaksiDetailView";
-import { buildKasTransaksiPrintHtml } from "@/features/keuangan/templates/kasTransaksiPrintTemplate";
+import { buildKasTransaksiPrintHtml } from "@/features/templates/kasTransaksiPrintTemplate";
 import type { SignatureColumn } from "@/features/keuangan/printSignature";
 import type { PenerimaanDetail } from "@/data/penerimaan";
 import { tauriErrorMessage } from "@/lib/tauriError";

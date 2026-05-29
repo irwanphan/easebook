@@ -5,6 +5,10 @@ import {
   type SignatureColumn,
   type SignatureMode,
 } from "@/features/keuangan/printSignature";
+import {
+  buildCompanyHeaderHtml,
+  COMPANY_HEADER_CSS,
+} from "@/features/keuangan/printCompanyHeader";
 import { escapeHtml, wrapPrintableDocument } from "@/lib/print";
 import {
   isPaperPaged,
@@ -157,6 +161,10 @@ export function buildPelunasanPrintHtml(
     extraCss += SIGNATURE_BLOCK_CSS;
   }
 
+  if (!receipt) {
+    extraCss += COMPANY_HEADER_CSS;
+  }
+
   return wrapPrintableDocument({
     title: `${config.judulDokumen} ${data.nomor}`,
     bodyHtml: body,
@@ -180,6 +188,7 @@ function buildInvoiceBody(
   showInlineHeader: boolean,
   signatures?: SignatureColumn[],
 ): string {
+  const companyHeader = buildCompanyHeaderHtml("invoice");
   const baris = data.faktur
     .map(
       (f) => `
@@ -204,6 +213,7 @@ function buildInvoiceBody(
     : "";
 
   return `
+    ${companyHeader}
     ${inlineHeader}
     <div class="grid">
       <div class="flex">
@@ -269,6 +279,7 @@ function buildReceiptBody(
   data: PelunasanPrintData,
   config: PelunasanPrintConfig,
 ): string {
+  const companyHeader = buildCompanyHeaderHtml("receipt");
   const baris = data.faktur
     .map(
       (f) => `
@@ -283,6 +294,7 @@ function buildReceiptBody(
     .join("");
 
   return `
+    ${companyHeader}
     <div style="text-align: center; border-bottom: 1px dashed #18181b; padding-bottom: 4px; margin-bottom: 6px;">
       <strong style="font-size: 13px;">${escapeHtml(config.judulDokumen)}</strong>
       <div class="mono">${escapeHtml(data.nomor)}</div>

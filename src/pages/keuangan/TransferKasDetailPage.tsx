@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { PrintButton } from "@/components/ui/PrintButton";
-import { buildTransferKasPrintHtml } from "@/features/keuangan/templates/transferKasPrintTemplate";
+import { buildTransferKasPrintHtml } from "@/features/templates/transferKasPrintTemplate";
 import type { SignatureColumn } from "@/features/keuangan/printSignature";
 import type { TransferKasDetail } from "@/data/transferKas";
 import { tauriErrorMessage } from "@/lib/tauriError";

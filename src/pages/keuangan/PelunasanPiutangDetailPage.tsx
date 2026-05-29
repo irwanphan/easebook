@@ -9,7 +9,7 @@ import { PrintButton } from "@/components/ui/PrintButton";
 import {
   buildPelunasanPrintHtml,
   type PelunasanPrintConfig,
-} from "@/features/keuangan/templates/pelunasanPrintTemplate";
+} from "@/features/templates/pelunasanPrintTemplate";
 import type { SignatureColumn } from "@/features/keuangan/printSignature";
 import type { PelunasanPiutangDetail } from "@/data/pelunasanPiutang";
 import { tauriErrorMessage } from "@/lib/tauriError";

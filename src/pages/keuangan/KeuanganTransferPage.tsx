@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, Eye, Filter, Pencil, Plus } from "lucide-react";
+import { ArrowRight, Eye, Filter, Pencil, Plus, Sheet } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import type { TransferKasListRow } from "@/data/transferKas";
 import { TransferKasModal } from "@/features/keuangan/TransferKasModal";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { useXlsxExport } from "@/lib/useXlsxExport";
 
 const inputClass =
   "mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
@@ -52,6 +53,7 @@ export function KeuanganTransferPage() {
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  const { exporting, exportNow } = useXlsxExport();
 
   const rentangInvalid = useMemo(() => {
     if (!tanggalDari || !tanggalSampai) return true;
@@ -99,6 +101,52 @@ export function KeuanganTransferPage() {
     setFlash(`Transfer tersimpan dengan nomor ${nomor}.`);
     void fetchRows();
   }
+
+  const handleExport = useCallback(async () => {
+    if (rentangInvalid || rows.length === 0) return;
+    const totalTerima = rows.reduce((s, r) => s + r.nominalTerima, 0);
+    await exportNow<TransferKasListRow>({
+      fileName: `transfer_kas_${tanggalDari}_sd_${tanggalSampai}`,
+      sheetName: "Transfer kas",
+      title: "Daftar Transfer Antar Kas",
+      meta: [
+        { label: "Periode", value: `${formatTanggal(tanggalDari)} – ${formatTanggal(tanggalSampai)}` },
+        { label: "Jumlah transfer", value: rows.length },
+        { label: "Total dikirim", value: formatRupiah(totalKirim) },
+        { label: "Total diterima", value: formatRupiah(totalTerima) },
+        { label: "Total biaya", value: formatRupiah(totalBiaya) },
+      ],
+      columns: [
+        { header: "No.", value: (r) => r.nomor, type: "text", width: 18 },
+        { header: "Tanggal", value: (r) => r.tanggal, type: "date" },
+        { header: "Kas asal (kode)", value: (r) => r.akunSumberKode, type: "text", width: 14 },
+        { header: "Kas asal (nama)", value: (r) => r.akunSumberNama, type: "text", width: 24 },
+        { header: "Kas tujuan (kode)", value: (r) => r.akunTujuanKode, type: "text", width: 14 },
+        { header: "Kas tujuan (nama)", value: (r) => r.akunTujuanNama, type: "text", width: 24 },
+        { header: "Dikirim", value: (r) => r.nominalKirim, type: "currency", width: 16 },
+        { header: "Diterima", value: (r) => r.nominalTerima, type: "currency", width: 16 },
+        { header: "Biaya", value: (r) => r.biayaTransfer, type: "currency", width: 14 },
+        { header: "Akun biaya (kode)", value: (r) => r.akunBiayaKode ?? "", type: "text", width: 14 },
+        { header: "Akun biaya (nama)", value: (r) => r.akunBiayaNama ?? "", type: "text", width: 24 },
+        { header: "Catatan", value: (r) => r.catatan, type: "text", width: 30 },
+      ],
+      data: rows,
+      footerRow: [
+        null,
+        null,
+        null,
+        null,
+        null,
+        { value: "TOTAL", type: "text" },
+        { value: totalKirim, type: "currency" },
+        { value: rows.reduce((s, r) => s + r.nominalTerima, 0), type: "currency" },
+        { value: totalBiaya, type: "currency" },
+        null,
+        null,
+        null,
+      ],
+    });
+  }, [exportNow, rentangInvalid, rows, tanggalDari, tanggalSampai, totalBiaya, totalKirim]);
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -159,15 +207,31 @@ export function KeuanganTransferPage() {
               />
             </div>
           </div>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => void fetchRows()}
-            disabled={loading}
-          >
-            <Filter className="h-4 w-4" aria-hidden />
-            {loading ? "Memuat…" : "Terapkan filter"}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void fetchRows()}
+              disabled={loading}
+            >
+              <Filter className="h-4 w-4" aria-hidden />
+              {loading ? "Memuat…" : "Terapkan filter"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void handleExport()}
+              disabled={loading || exporting || rentangInvalid || rows.length === 0}
+              title={
+                rows.length === 0
+                  ? "Tidak ada data pada filter ini"
+                  : `Export ${rows.length} transfer ke .xlsx`
+              }
+            >
+              <Sheet className="h-4 w-4" aria-hidden />
+              {exporting ? "Mengexport…" : "Export XLSX"}
+            </Button>
+          </div>
         </div>
 
         <div className="border-b border-zinc-100 px-6 py-3">

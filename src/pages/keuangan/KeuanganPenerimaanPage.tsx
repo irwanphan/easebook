@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FileText, Filter, Plus } from "lucide-react";
+import { FileText, Filter, Plus, Sheet } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/Button";
 import type { PenerimaanListRow } from "@/data/penerimaan";
 import { tauriErrorMessage } from "@/lib/tauriError";
 import { TokoInput } from "@/components/ui/TokoInput";
+import { exportToXlsx } from "@/lib/exportXlsx";
+import { notify } from "@/lib/notify";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 function toIsoDate(d: Date) {
   const y = d.getFullYear();
@@ -46,6 +49,7 @@ export function KeuanganPenerimaanPage() {
   const [tanggalSampai, setTanggalSampai] = useState(defaultTanggalSampaiBulanIni);
   const [rows, setRows] = useState<PenerimaanListRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const rentangInvalid = useMemo(() => {
@@ -81,6 +85,78 @@ export function KeuanganPenerimaanPage() {
   useEffect(() => {
     void fetchRows();
   }, [fetchRows]);
+
+  const handleExport = useCallback(async () => {
+    if (rentangInvalid) {
+      setError("Tanggal akhir tidak boleh sebelum tanggal mulai.");
+      return;
+    }
+    if (rows.length === 0) {
+      setError("Tidak ada data pada filter saat ini untuk diexport.");
+      return;
+    }
+    setExporting(true);
+    setError(null);
+    try {
+      const result = await exportToXlsx<PenerimaanListRow>({
+        fileName: `penerimaan_${tanggalDari}_sd_${tanggalSampai}`,
+        sheetName: "Penerimaan",
+        title: "Daftar Penerimaan",
+        meta: [
+          { label: "Periode", value: `${formatTanggal(tanggalDari)} – ${formatTanggal(tanggalSampai)}` },
+          { label: "Jumlah transaksi", value: rows.length },
+          { label: "Total periode", value: formatRupiah(totalPeriode) },
+        ],
+        columns: [
+          { header: "No. bukti", value: (r) => r.nomor, type: "text", width: 18 },
+          { header: "Tanggal", value: (r) => r.tanggal, type: "date" },
+          { header: "Akun kas (kode)", value: (r) => r.akunKasKode, type: "text", width: 14 },
+          { header: "Akun kas (nama)", value: (r) => r.akunKasNama, type: "text", width: 28 },
+          { header: "Jumlah baris", value: (r) => r.jumlahBaris, type: "integer", width: 12 },
+          { header: "Total", value: (r) => r.total, type: "currency", width: 18 },
+          { header: "Catatan", value: (r) => r.catatan, type: "text", width: 40 },
+        ],
+        data: rows,
+        footerRow: [
+          null,
+          null,
+          null,
+          null,
+          { value: "TOTAL", type: "text" },
+          { value: totalPeriode, type: "currency" },
+          null,
+        ],
+      });
+
+      if (result.cancelled) {
+        notify.info("Export dibatalkan.");
+        return;
+      }
+
+      notify.success("File Excel berhasil disimpan", {
+        description: result.filePath ?? result.fileName,
+        duration: 6000,
+        action: result.filePath
+          ? {
+              label: "Buka folder",
+              onClick: () => {
+                void revealItemInDir(result.filePath as string).catch((e) => {
+                  notify.error("Gagal membuka folder", {
+                    description: tauriErrorMessage(e),
+                  });
+                });
+              },
+            }
+          : undefined,
+      });
+    } catch (e) {
+      const msg = tauriErrorMessage(e);
+      setError(msg);
+      notify.error("Gagal export Excel", { description: msg });
+    } finally {
+      setExporting(false);
+    }
+  }, [rentangInvalid, rows, tanggalDari, tanggalSampai, totalPeriode]);
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -127,10 +203,16 @@ export function KeuanganPenerimaanPage() {
               />
             </div>
           </div>
-          <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
-            <Filter className="h-4 w-4" aria-hidden />
-            {loading ? "Memuat…" : "Terapkan filter"}
-          </Button>
+          <div className="flex gap-2">
+            <Button type="button" variant="secondary" onClick={() => void handleExport()} disabled={loading || exporting || rentangInvalid || rows.length === 0} title={rows.length === 0 ? "Tidak ada data pada filter ini" : `Export ${rows.length} transaksi ke .xlsx`}>
+              <Sheet className="h-4 w-4" aria-hidden />
+              {exporting ? "Mengexport…" : "Export XLSX"}
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => void fetchRows()} disabled={loading}>
+              <Filter className="h-4 w-4" aria-hidden />
+              {loading ? "Memuat…" : "Terapkan filter"}
+            </Button>
+          </div>
         </div>
 
         <div className="border-b border-zinc-100 px-6 py-3">

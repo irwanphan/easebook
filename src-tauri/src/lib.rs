@@ -1,6 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 
 mod activation;
+mod backup_commands;
 mod db;
 mod master_commands;
 mod print_commands;
@@ -22,12 +23,27 @@ pub fn run() {
             let dir = app.path().app_data_dir().expect("app_data_dir");
             std::fs::create_dir_all(&dir).expect("create app data dir");
             let db_path = dir.join("easybook.db");
+
+            // Finalize pending restore (jika ada) SEBELUM open connection,
+            // supaya DB yang dibuka adalah hasil restore. Kegagalan finalize
+            // tidak menghentikan startup — user tetap masuk ke DB lama dan
+            // bisa coba ulang restore.
+            if let Err(e) = db::finalize_pending_restore_if_any(&dir, &db_path) {
+                eprintln!("[backup] finalize_pending_restore_if_any gagal: {e}");
+            }
+
             let mut conn = db::open_connection(&db_path).expect("open sqlite");
             db::migrate(&conn).expect("db migrate");
             db::seed_if_empty(&mut conn).expect("db seed");
             let ts = chrono::Utc::now().timestamp();
             seed_akun_keuangan::seed_akun_keuangan_if_empty(&mut conn, ts)
                 .expect("seed akun keuangan");
+
+            // Catat log RESTORE jika finalize tadi meninggalkan jejak followup.
+            if let Err(e) = db::log_pending_restore_followup_if_any(&conn, &dir) {
+                eprintln!("[backup] log_pending_restore_followup_if_any gagal: {e}");
+            }
+
             drop(conn);
             app.manage(DbState { path: db_path });
 
@@ -187,6 +203,13 @@ pub fn run() {
             activation::activation_save,
             activation::activation_apply_offline_code,
             print_commands::print_open_html,
+            backup_commands::backup_folder_path,
+            backup_commands::backup_create,
+            backup_commands::backup_list,
+            backup_commands::backup_delete,
+            backup_commands::backup_restore_stage,
+            backup_commands::backup_restore_cancel,
+            backup_commands::backup_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

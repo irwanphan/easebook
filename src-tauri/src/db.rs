@@ -19,6 +19,119 @@ pub fn open_connection(path: &Path) -> rusqlite::Result<Connection> {
     Ok(conn)
 }
 
+/// Nama file staging yang dibuat oleh `backup_restore_stage`. Diletakkan
+/// di app_data_dir bersebelahan dengan `easybook.db`. Saat app startup,
+/// file ini akan dipromosikan menjadi DB aktif.
+pub const RESTORE_PENDING_FILENAME: &str = "easybook.db.pending-restore";
+
+/// Manifest text (single line) berisi nama file backup sumber yang
+/// di-restore. Dipakai untuk mencatat log RESTORE setelah finalize.
+pub const RESTORE_MANIFEST_FILENAME: &str = "easybook.db.pending-restore.manifest";
+
+/// Backup keamanan dari DB sebelum di-overwrite oleh hasil restore. Tetap
+/// disimpan agar bisa dikembalikan manual bila restore ternyata bermasalah.
+pub const PRE_RESTORE_BACKUP_PREFIX: &str = "easybook.db.before-restore";
+
+/// File flag yang menandakan pending restore harus dicatat ke log setelah
+/// migrate selesai. Berisi nama file backup sumber. Caller tetap harus
+/// hapus file ini setelah log dicatat.
+pub const RESTORE_FOLLOWUP_FILENAME: &str = "easybook.db.restore-followup";
+
+/// Jika ada file `RESTORE_PENDING_FILENAME` di app_data_dir, finalisasi
+/// restore: rename DB lama menjadi backup keamanan, lalu rename file
+/// pending menjadi DB aktif. Manifest dipindahkan ke "followup" agar log
+/// RESTORE bisa dicatat setelah migrate berjalan di DB baru.
+///
+/// Idempotent — aman dipanggil di setiap startup. Bila tidak ada file
+/// pending, langsung return Ok(()).
+///
+/// Error apa pun selama finalize TIDAK boleh menghentikan startup app
+/// (kita tetap return Ok), tetapi kita catat ke stderr supaya bisa
+/// di-debug. Akibatnya, kalau finalize gagal, user akan tetap masuk ke
+/// DB lama dan bisa coba ulang restore.
+pub fn finalize_pending_restore_if_any(
+    app_data_dir: &Path,
+    db_path: &Path,
+) -> std::io::Result<()> {
+    let pending = app_data_dir.join(RESTORE_PENDING_FILENAME);
+    if !pending.exists() {
+        return Ok(());
+    }
+
+    let manifest = app_data_dir.join(RESTORE_MANIFEST_FILENAME);
+    let source_name = std::fs::read_to_string(&manifest)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+
+    if db_path.exists() {
+        let ts = Utc::now().format("%Y%m%d_%H%M%S").to_string();
+        let backup_name = format!("{PRE_RESTORE_BACKUP_PREFIX}_{ts}.db");
+        let pre_backup_path = app_data_dir.join(backup_name);
+        std::fs::rename(db_path, &pre_backup_path)?;
+
+        let sidecars = [
+            format!("{}-wal", db_path.file_name().unwrap_or_default().to_string_lossy()),
+            format!("{}-shm", db_path.file_name().unwrap_or_default().to_string_lossy()),
+        ];
+        for s in sidecars {
+            let sp = app_data_dir.join(&s);
+            if sp.exists() {
+                let _ = std::fs::remove_file(&sp);
+            }
+        }
+    }
+
+    std::fs::rename(&pending, db_path)?;
+
+    let followup = app_data_dir.join(RESTORE_FOLLOWUP_FILENAME);
+    if !source_name.is_empty() {
+        std::fs::write(&followup, source_name)?;
+    }
+    let _ = std::fs::remove_file(&manifest);
+
+    Ok(())
+}
+
+/// Catat event RESTORE ke `backup_log` jika ada file followup yang
+/// ditinggalkan oleh `finalize_pending_restore_if_any`. File followup
+/// dihapus setelah log berhasil dicatat. Dipanggil setelah migrate.
+pub fn log_pending_restore_followup_if_any(
+    conn: &Connection,
+    app_data_dir: &Path,
+) -> rusqlite::Result<()> {
+    let followup = app_data_dir.join(RESTORE_FOLLOWUP_FILENAME);
+    if !followup.exists() {
+        return Ok(());
+    }
+
+    let source_name = std::fs::read_to_string(&followup)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "(tidak diketahui)".to_string());
+
+    let backups_dir = app_data_dir.join("backups");
+    let src_path = backups_dir.join(&source_name);
+    let file_size = std::fs::metadata(&src_path)
+        .map(|m| m.len() as i64)
+        .unwrap_or(0);
+
+    conn.execute(
+        "INSERT INTO backup_log (jenis, file_name, file_path, file_size_bytes, catatan, created_at)
+         VALUES ('RESTORE', ?, ?, ?, ?, ?)",
+        params![
+            source_name,
+            src_path.to_string_lossy().to_string(),
+            file_size,
+            "Database dipulihkan dari backup pada startup aplikasi.",
+            now_ts(),
+        ],
+    )?;
+
+    let _ = std::fs::remove_file(&followup);
+    Ok(())
+}
+
 pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "
@@ -362,6 +475,33 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     migrate_operasional_konfigurasi(conn)?;
     migrate_jurnal_konfigurasi_historical(conn)?;
     migrate_stok_awal_tables(conn)?;
+    migrate_backup_log_table(conn)?;
+    Ok(())
+}
+
+/// Log riwayat backup & restore database. Setiap entri merepresentasikan
+/// satu peristiwa terkait integritas data: pembuatan backup, atau
+/// finalisasi restore (dijalankan otomatis di app startup setelah user
+/// memilih backup untuk di-restore).
+fn migrate_backup_log_table(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS backup_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            jenis TEXT NOT NULL CHECK (jenis IN ('BACKUP', 'RESTORE')),
+            file_name TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            file_size_bytes INTEGER NOT NULL DEFAULT 0,
+            catatan TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_backup_log_created
+            ON backup_log(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_backup_log_jenis
+            ON backup_log(jenis, created_at DESC);
+        ",
+    )?;
     Ok(())
 }
 

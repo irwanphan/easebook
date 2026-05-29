@@ -8,6 +8,7 @@ import { AktivasiSection } from "@/features/activation/AktivasiSection";
 import { useLicenseGate } from "@/features/activation/useLicenseGate";
 import { PosKonfigurasiForm } from "@/features/pengaturan/PosKonfigurasiForm";
 import { OperasionalKonfigurasiForm } from "@/features/pengaturan/OperasionalKonfigurasiForm";
+import { DataBackupRestoreSection } from "@/features/pengaturan/DataBackupRestoreSection";
 import type { InformasiPerusahaan } from "@/features/pengaturan/informasiPerusahaanStorage";
 import {
   loadInformasiPerusahaan,
@@ -25,6 +26,7 @@ const PENGATURAN_TABS = [
   { id: "transaksi", label: "Transaksi" },
   { id: "aktivasi", label: "Aktivasi" },
   { id: "operasional", label: "Operasional" },
+  { id: "data", label: "Data" },
 ] as const;
 
 function FieldLabel({ htmlFor, children }: { htmlFor: string; children: ReactNode }) {
@@ -101,8 +103,10 @@ export function PengaturanPage() {
     setSavedHint("Pengaturan transaksi telah disimpan.");
   }
 
+  const containerMaxWidth = activeTab === "data" ? "max-w-5xl" : "max-w-3xl";
+
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6">
+    <div className={`mx-auto flex ${containerMaxWidth} flex-col gap-6`}>
       <PageHeader
         title="Pengaturan"
         // description="Data perusahaan dan preferensi operasional aplikasi."
@@ -302,6 +306,8 @@ export function PengaturanPage() {
           {activeTab === "aktivasi" ? (
             <AktivasiSection license={license} onActivated={() => void refreshLicense()} />
           ) : null}
+
+          {activeTab === "data" ? <DataBackupRestoreSection /> : null}
         </div>
       </Card>
     </div>

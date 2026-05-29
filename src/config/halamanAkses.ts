@@ -120,6 +120,11 @@ export const halamanAksesGroups: HalamanAksesGroup[] = [
         pathPattern: "laporan/neraca",
       },
       {
+        key: "lap-arus-kas",
+        label: "Arus kas",
+        pathPattern: "laporan/arus-kas",
+      },
+      {
         key: "lap-log-shift-pos",
         label: "Log shift POS",
         pathPattern: "laporan/log-shift-pos",

@@ -256,6 +256,82 @@ export type NeracaSnapshot = {
   selisih: number;
 };
 
+/** Seksi pada laporan arus kas (metode langsung, sesuai PSAK 2). */
+export type ArusKasSeksi = "OPERASI" | "INVESTASI" | "PENDANAAN";
+
+export function labelArusKasSeksi(seksi: string): string {
+  if (seksi === "OPERASI") return "Aktivitas operasi";
+  if (seksi === "INVESTASI") return "Aktivitas investasi";
+  if (seksi === "PENDANAAN") return "Aktivitas pendanaan";
+  return seksi || "—";
+}
+
+/** Satu baris akun lawan kas (non-kas) pada laporan arus kas. */
+export type ArusKasAkunRow = {
+  akunKode: string;
+  akunNama: string;
+  /** Kelompok besar akun (AKTIVA_LANCAR, BIAYA, dst.). */
+  kelompok: string;
+  seksi: ArusKasSeksi | string;
+  kasMasuk: number;
+  kasKeluar: number;
+  /** = kasMasuk − kasKeluar. Positif: akun ini menambah kas neto. */
+  net: number;
+};
+
+/** Rincian saldo per akun kas (KAS TUNAI, BCA, dll.) pada periode. */
+export type ArusKasSaldoKasRow = {
+  akunKode: string;
+  akunNama: string;
+  saldoAwal: number;
+  kasMasuk: number;
+  kasKeluar: number;
+  saldoAkhir: number;
+};
+
+/**
+ * Snapshot Laporan Arus Kas — Metode Langsung (Direct Method).
+ *
+ * Total perubahan kas (`netPerubahanKas`) dihitung dari distribusi akun lawan
+ * kas. `saldoKasAkhir` dihitung independen dari mutasi akun kas langsung.
+ * Selisih keduanya tercatat di `selisihRekonsiliasi` — idealnya 0.
+ */
+export type ArusKasSnapshot = {
+  tanggalDari: string;
+  tanggalSampai: string;
+
+  saldoKasAwal: number;
+  saldoKasAkhir: number;
+
+  akunOperasi: ArusKasAkunRow[];
+  akunInvestasi: ArusKasAkunRow[];
+  akunPendanaan: ArusKasAkunRow[];
+
+  kasMasukOperasi: number;
+  kasKeluarOperasi: number;
+  netOperasi: number;
+
+  kasMasukInvestasi: number;
+  kasKeluarInvestasi: number;
+  netInvestasi: number;
+
+  kasMasukPendanaan: number;
+  kasKeluarPendanaan: number;
+  netPendanaan: number;
+
+  totalKasMasuk: number;
+  totalKasKeluar: number;
+  /** = netOperasi + netInvestasi + netPendanaan. */
+  netPerubahanKas: number;
+
+  /** = saldoKasAwal + netPerubahanKas. Idealnya = saldoKasAkhir. */
+  saldoKasAkhirProyeksi: number;
+  /** = saldoKasAkhir − saldoKasAkhirProyeksi. Idealnya 0. */
+  selisihRekonsiliasi: number;
+
+  saldoPerKas: ArusKasSaldoKasRow[];
+};
+
 /** Snapshot buku besar untuk satu akun pada rentang tanggal tertentu. */
 export type BukuBesarSnapshot = {
   akunKode: string;

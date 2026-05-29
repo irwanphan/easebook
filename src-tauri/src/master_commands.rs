@@ -7693,6 +7693,349 @@ pub fn neraca_get(state: State<DbState>, tanggal: String) -> Result<NeracaSnapsh
     })
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Laporan Arus Kas (Cash Flow Statement) — Metode Langsung
+// ──────────────────────────────────────────────────────────────────────────
+
+/// Klasifikasi seksi arus kas berdasarkan kelompok akun lawan.
+///
+/// Mengikuti pengelompokan standar PSAK 2 / IFRS:
+/// - **OPERASI**   — aktivitas penghasil utama (pendapatan, biaya) + perubahan
+///                   modal kerja (piutang, hutang dagang, persediaan, dll.)
+/// - **INVESTASI** — perolehan/pelepasan aktiva tetap & investasi jangka panjang
+/// - **PENDANAAN** — perubahan modal pemilik & hutang jangka panjang (pinjaman)
+fn klasifikasi_seksi_arus_kas(kelompok: &str) -> &'static str {
+    match kelompok.trim().to_uppercase().as_str() {
+        "AKTIVA_TETAP" => "INVESTASI",
+        "MODAL" | "HUTANG_JANGKA_PANJANG" => "PENDANAAN",
+        // PENDAPATAN, BIAYA, AKTIVA_LANCAR, HUTANG_LANCAR → operasi
+        _ => "OPERASI",
+    }
+}
+
+/// Satu baris akun lawan kas pada laporan arus kas. Nilai sudah dipisah antara
+/// kas masuk (kas didebet, akun lawan dikredit) dan kas keluar (kas dikredit,
+/// akun lawan didebet) supaya gampang dibaca di kolom format akuntansi.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ArusKasAkunRow {
+    pub akun_kode: String,
+    pub akun_nama: String,
+    pub kelompok: String,
+    pub seksi: String,
+    pub kas_masuk: i64,
+    pub kas_keluar: i64,
+    /// = kas_masuk − kas_keluar. Positif berarti akun ini menambah kas neto.
+    pub net: i64,
+}
+
+/// Rincian per akun kas: saldo awal, mutasi (masuk/keluar), saldo akhir.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ArusKasSaldoKasRow {
+    pub akun_kode: String,
+    pub akun_nama: String,
+    pub saldo_awal: i64,
+    pub kas_masuk: i64,
+    pub kas_keluar: i64,
+    pub saldo_akhir: i64,
+}
+
+/// Snapshot lengkap Laporan Arus Kas (metode langsung) untuk satu rentang.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ArusKasSnapshot {
+    pub tanggal_dari: String,
+    pub tanggal_sampai: String,
+
+    /// Total saldo seluruh akun kas pada awal periode (sebelum `tanggal_dari`).
+    pub saldo_kas_awal: i64,
+    /// Total saldo seluruh akun kas pada akhir periode (≤ `tanggal_sampai`).
+    /// Dihitung langsung dari mutasi `jurnal_umum_line`.
+    pub saldo_kas_akhir: i64,
+
+    pub akun_operasi: Vec<ArusKasAkunRow>,
+    pub akun_investasi: Vec<ArusKasAkunRow>,
+    pub akun_pendanaan: Vec<ArusKasAkunRow>,
+
+    pub kas_masuk_operasi: i64,
+    pub kas_keluar_operasi: i64,
+    pub net_operasi: i64,
+
+    pub kas_masuk_investasi: i64,
+    pub kas_keluar_investasi: i64,
+    pub net_investasi: i64,
+
+    pub kas_masuk_pendanaan: i64,
+    pub kas_keluar_pendanaan: i64,
+    pub net_pendanaan: i64,
+
+    pub total_kas_masuk: i64,
+    pub total_kas_keluar: i64,
+    /// = net_operasi + net_investasi + net_pendanaan.
+    pub net_perubahan_kas: i64,
+
+    /// = saldo_kas_awal + net_perubahan_kas. Idealnya sama dengan
+    /// `saldo_kas_akhir`. Jika berbeda, ada jurnal kas yang akun lawannya
+    /// hilang (mis. saldo awal yang belum dijurnal) — tercermin di
+    /// `selisih_rekonsiliasi`.
+    pub saldo_kas_akhir_proyeksi: i64,
+    /// = saldo_kas_akhir − saldo_kas_akhir_proyeksi. Idealnya 0.
+    pub selisih_rekonsiliasi: i64,
+
+    /// Rincian saldo per akun kas (KAS TUNAI, BANK BCA, dll.) pada periode.
+    pub saldo_per_kas: Vec<ArusKasSaldoKasRow>,
+}
+
+/// Laporan Arus Kas — Metode Langsung.
+///
+/// Algoritma:
+/// 1. Hitung **saldo kas awal** = Σ(debit − kredit) untuk semua akun yang
+///    ditandai `is_akun_kas = 1`, dengan `j.tanggal < tanggal_dari`.
+/// 2. Hitung **mutasi per akun kas** dalam periode (Σ debit, Σ kredit) →
+///    rincian saldo per akun kas + saldo akhir total.
+/// 3. Untuk **distribusi per kategori**, agregasikan line akun **non-kas**
+///    dari jurnal yang ada line akun kas-nya dalam periode. Setiap akun lawan
+///    diklasifikasikan ke OPERASI / INVESTASI / PENDANAAN berdasarkan
+///    kelompoknya:
+///    - Net line akun lawan `> 0` (didebet)  → akun lawan menyerap kas → **kas keluar**
+///    - Net line akun lawan `< 0` (dikredit) → akun lawan menghasilkan kas → **kas masuk**
+/// 4. Selisih antara total perubahan kas (dari step 2) dan total yang
+///    terdistribusi (dari step 3) dilaporkan sebagai `selisih_rekonsiliasi`
+///    — idealnya 0, non-zero menandakan jurnal kas yang akun lawannya
+///    tidak terbaca (mis. line ganjil tanpa pasangan).
+///
+/// Transfer antar-rekening kas (kas ↔ kas saja) otomatis tidak muncul di
+/// distribusi karena tidak ada line non-kas, dan netto-nya 0 di step 2.
+#[tauri::command]
+pub fn arus_kas_get(
+    state: State<DbState>,
+    tanggal_dari: String,
+    tanggal_sampai: String,
+) -> Result<ArusKasSnapshot, String> {
+    let dari = tanggal_dari.trim();
+    let sampai = tanggal_sampai.trim();
+    let d1 = NaiveDate::parse_from_str(dari, "%Y-%m-%d")
+        .map_err(|_| "Tanggal mulai tidak valid (YYYY-MM-DD).".to_string())?;
+    let d2 = NaiveDate::parse_from_str(sampai, "%Y-%m-%d")
+        .map_err(|_| "Tanggal akhir tidak valid (YYYY-MM-DD).".to_string())?;
+    if d2 < d1 {
+        return Err("Tanggal akhir tidak boleh sebelum tanggal mulai.".into());
+    }
+
+    with_conn(&state, |conn| {
+        // ── 1. Saldo kas awal (sebelum tanggal_dari) ──────────────────────
+        let saldo_kas_awal: i64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(l.debit) - SUM(l.kredit), 0)
+                 FROM jurnal_umum_line l
+                 INNER JOIN jurnal_umum j ON j.id = l.jurnal_id
+                 INNER JOIN akun_keuangan a ON lower(a.kode) = lower(l.akun_kode)
+                 WHERE COALESCE(a.is_akun_kas, 0) = 1
+                   AND j.tanggal < ?",
+                params![dari],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0);
+
+        // ── 2. Rincian saldo per akun kas dalam periode ────────────────────
+        let mut stmt_saldo = conn.prepare(
+            "SELECT a.kode, a.nama,
+                    -- saldo awal per akun kas
+                    COALESCE((
+                        SELECT SUM(l2.debit) - SUM(l2.kredit)
+                        FROM jurnal_umum_line l2
+                        INNER JOIN jurnal_umum j2 ON j2.id = l2.jurnal_id
+                        WHERE lower(l2.akun_kode) = lower(a.kode)
+                          AND j2.tanggal < ?
+                    ), 0) AS saldo_awal,
+                    -- mutasi periode
+                    COALESCE((
+                        SELECT SUM(l3.debit) FROM jurnal_umum_line l3
+                        INNER JOIN jurnal_umum j3 ON j3.id = l3.jurnal_id
+                        WHERE lower(l3.akun_kode) = lower(a.kode)
+                          AND j3.tanggal >= ? AND j3.tanggal <= ?
+                    ), 0) AS sum_d,
+                    COALESCE((
+                        SELECT SUM(l4.kredit) FROM jurnal_umum_line l4
+                        INNER JOIN jurnal_umum j4 ON j4.id = l4.jurnal_id
+                        WHERE lower(l4.akun_kode) = lower(a.kode)
+                          AND j4.tanggal >= ? AND j4.tanggal <= ?
+                    ), 0) AS sum_k
+             FROM akun_keuangan a
+             WHERE COALESCE(a.is_akun_kas, 0) = 1
+             ORDER BY a.kode COLLATE NOCASE",
+        )?;
+        let saldo_iter = stmt_saldo.query_map(
+            params![dari, dari, sampai, dari, sampai],
+            |r| {
+                let kode: String = r.get(0)?;
+                let nama: String = r.get(1)?;
+                let saldo_awal: i64 = r.get(2)?;
+                let sum_d: i64 = r.get(3)?;
+                let sum_k: i64 = r.get(4)?;
+                Ok((kode, nama, saldo_awal, sum_d, sum_k))
+            },
+        )?;
+
+        let mut saldo_per_kas: Vec<ArusKasSaldoKasRow> = Vec::new();
+        let mut saldo_kas_akhir: i64 = 0;
+        let mut total_kas_masuk_aktual: i64 = 0;
+        let mut total_kas_keluar_aktual: i64 = 0;
+        for raw in saldo_iter {
+            let (kode, nama, saldo_awal, sum_d, sum_k) = raw?;
+            let saldo_akhir = saldo_awal + sum_d - sum_k;
+            // Sembunyikan akun kas yang tidak ada saldo & tidak ada mutasi sama
+            // sekali — supaya laporan ringkas. Tetap dihitung di total.
+            if saldo_awal != 0 || sum_d != 0 || sum_k != 0 {
+                saldo_per_kas.push(ArusKasSaldoKasRow {
+                    akun_kode: kode,
+                    akun_nama: nama,
+                    saldo_awal,
+                    kas_masuk: sum_d,
+                    kas_keluar: sum_k,
+                    saldo_akhir,
+                });
+            }
+            saldo_kas_akhir += saldo_akhir;
+            total_kas_masuk_aktual += sum_d;
+            total_kas_keluar_aktual += sum_k;
+        }
+
+        // ── 3. Distribusi: akun lawan kas (non-kas) per akun, dalam periode ──
+        let mut stmt_lawan = conn.prepare(
+            "SELECT l.akun_kode, a.nama, COALESCE(a.kelompok, ''),
+                    COALESCE(SUM(l.debit), 0), COALESCE(SUM(l.kredit), 0)
+             FROM jurnal_umum_line l
+             INNER JOIN jurnal_umum j ON j.id = l.jurnal_id
+             INNER JOIN akun_keuangan a ON lower(a.kode) = lower(l.akun_kode)
+             WHERE j.tanggal >= ? AND j.tanggal <= ?
+               AND COALESCE(a.is_akun_kas, 0) = 0
+               AND EXISTS (
+                   SELECT 1 FROM jurnal_umum_line l2
+                   INNER JOIN akun_keuangan a2 ON lower(a2.kode) = lower(l2.akun_kode)
+                   WHERE l2.jurnal_id = j.id
+                     AND COALESCE(a2.is_akun_kas, 0) = 1
+               )
+             GROUP BY l.akun_kode, a.nama, a.kelompok
+             HAVING SUM(l.debit) <> 0 OR SUM(l.kredit) <> 0
+             ORDER BY l.akun_kode COLLATE NOCASE",
+        )?;
+        let lawan_iter = stmt_lawan.query_map(params![dari, sampai], |r| {
+            let kode: String = r.get(0)?;
+            let nama: String = r.get(1)?;
+            let kelompok: String = r.get(2)?;
+            let sum_d: i64 = r.get(3)?;
+            let sum_k: i64 = r.get(4)?;
+            Ok((kode, nama, kelompok, sum_d, sum_k))
+        })?;
+
+        let mut akun_operasi: Vec<ArusKasAkunRow> = Vec::new();
+        let mut akun_investasi: Vec<ArusKasAkunRow> = Vec::new();
+        let mut akun_pendanaan: Vec<ArusKasAkunRow> = Vec::new();
+
+        let mut kas_masuk_operasi: i64 = 0;
+        let mut kas_keluar_operasi: i64 = 0;
+        let mut kas_masuk_investasi: i64 = 0;
+        let mut kas_keluar_investasi: i64 = 0;
+        let mut kas_masuk_pendanaan: i64 = 0;
+        let mut kas_keluar_pendanaan: i64 = 0;
+
+        for raw in lawan_iter {
+            let (kode, nama, kelompok, sum_d, sum_k) = raw?;
+            let net_line = sum_d - sum_k;
+            // Konvensi:
+            // - Line lawan didebet (net > 0) → kas dikredit di line pasangannya
+            //   → AKUN INI menyerap kas → kas_keluar
+            // - Line lawan dikredit (net < 0) → kas didebet → kas_masuk
+            let (kas_masuk, kas_keluar) = if net_line >= 0 {
+                (0, net_line)
+            } else {
+                (-net_line, 0)
+            };
+            let seksi = klasifikasi_seksi_arus_kas(&kelompok);
+            let net_kas = kas_masuk - kas_keluar; // positif = masuk neto
+            let row = ArusKasAkunRow {
+                akun_kode: kode,
+                akun_nama: nama,
+                kelompok,
+                seksi: seksi.to_string(),
+                kas_masuk,
+                kas_keluar,
+                net: net_kas,
+            };
+            match seksi {
+                "OPERASI" => {
+                    kas_masuk_operasi += kas_masuk;
+                    kas_keluar_operasi += kas_keluar;
+                    akun_operasi.push(row);
+                }
+                "INVESTASI" => {
+                    kas_masuk_investasi += kas_masuk;
+                    kas_keluar_investasi += kas_keluar;
+                    akun_investasi.push(row);
+                }
+                "PENDANAAN" => {
+                    kas_masuk_pendanaan += kas_masuk;
+                    kas_keluar_pendanaan += kas_keluar;
+                    akun_pendanaan.push(row);
+                }
+                _ => {}
+            }
+        }
+
+        // Sortir tiap seksi: nominal terbesar lebih dulu (kas_masuk + kas_keluar).
+        let by_magnitude = |a: &ArusKasAkunRow, b: &ArusKasAkunRow| {
+            let ma = a.kas_masuk.max(a.kas_keluar);
+            let mb = b.kas_masuk.max(b.kas_keluar);
+            mb.cmp(&ma)
+        };
+        akun_operasi.sort_by(by_magnitude);
+        akun_investasi.sort_by(by_magnitude);
+        akun_pendanaan.sort_by(by_magnitude);
+
+        let net_operasi = kas_masuk_operasi - kas_keluar_operasi;
+        let net_investasi = kas_masuk_investasi - kas_keluar_investasi;
+        let net_pendanaan = kas_masuk_pendanaan - kas_keluar_pendanaan;
+        let total_kas_masuk = kas_masuk_operasi + kas_masuk_investasi + kas_masuk_pendanaan;
+        let total_kas_keluar = kas_keluar_operasi + kas_keluar_investasi + kas_keluar_pendanaan;
+        let net_perubahan_kas = net_operasi + net_investasi + net_pendanaan;
+
+        let saldo_kas_akhir_proyeksi = saldo_kas_awal + net_perubahan_kas;
+        let selisih_rekonsiliasi = saldo_kas_akhir - saldo_kas_akhir_proyeksi;
+
+        // Sanity: total_kas_masuk/keluar dari distribusi seharusnya sama dengan
+        // total_kas_masuk/keluar_aktual (yang dihitung dari sisi kas langsung).
+        // Selisihnya = selisih_rekonsiliasi (sudah dihitung di atas).
+        let _ = (total_kas_masuk_aktual, total_kas_keluar_aktual);
+
+        Ok(ArusKasSnapshot {
+            tanggal_dari: dari.to_string(),
+            tanggal_sampai: sampai.to_string(),
+            saldo_kas_awal,
+            saldo_kas_akhir,
+            akun_operasi,
+            akun_investasi,
+            akun_pendanaan,
+            kas_masuk_operasi,
+            kas_keluar_operasi,
+            net_operasi,
+            kas_masuk_investasi,
+            kas_keluar_investasi,
+            net_investasi,
+            kas_masuk_pendanaan,
+            kas_keluar_pendanaan,
+            net_pendanaan,
+            total_kas_masuk,
+            total_kas_keluar,
+            net_perubahan_kas,
+            saldo_kas_akhir_proyeksi,
+            selisih_rekonsiliasi,
+            saldo_per_kas,
+        })
+    })
+}
+
 #[tauri::command]
 pub fn jurnal_umum_list(
     state: State<DbState>,

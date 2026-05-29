@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ClipboardList, FileText, Plus, Store } from "lucide-react";
+import { ClipboardList, FileText, Plus, Sheet, Store } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -14,6 +14,7 @@ import type { PesananPenjualanListRow } from "@/data/pesananPenjualan";
 import { TransactionGateBanner } from "@/features/activation/TransactionGateBanner";
 import { useLicenseGate } from "@/features/activation/useLicenseGate";
 import { tauriErrorMessage } from "@/lib/tauriError";
+import { useXlsxExport } from "@/lib/useXlsxExport";
 
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -70,6 +71,8 @@ export function PenjualanPage() {
   // Jumlah pesanan aktif (status Draft / belum difakturkan) untuk ditampilkan
   // sebagai bubble pada tombol "Pesanan".
   const [pesananAktif, setPesananAktif] = useState(0);
+
+  const { exporting, exportNow } = useXlsxExport();
 
   const refresh = useCallback(async () => {
     setLoadError(null);
@@ -135,6 +138,46 @@ export function PenjualanPage() {
     setTanggalSampai(INITIAL_TANGGAL_SAMPAI);
     setQuery("");
   }, []);
+
+  const handleExport = useCallback(async () => {
+    if (rentangInvalid || filteredRows.length === 0) return;
+    await exportNow<PenjualanListRow>({
+      fileName: `penjualan_${tanggalDari}_sd_${tanggalSampai}`,
+      sheetName: "Penjualan",
+      title: "Daftar Faktur Penjualan",
+      meta: [
+        { label: "Periode", value: `${formatTanggal(tanggalDari)} – ${formatTanggal(tanggalSampai)}` },
+        { label: "Pencarian", value: query.trim() || "—" },
+        { label: "Jumlah faktur", value: filteredRows.length },
+        { label: "Total periode", value: formatRupiah(totalPeriode) },
+      ],
+      columns: [
+        { header: "No. faktur", value: (r) => r.nomor, type: "text", width: 18 },
+        { header: "Tanggal", value: (r) => r.tanggalFaktur, type: "date" },
+        { header: "Pelanggan", value: (r) => r.pelangganNama, type: "text", width: 30 },
+        { header: "Salesman", value: (r) => r.salesman, type: "text", width: 20 },
+        { header: "Total", value: (r) => r.total, type: "currency", width: 18 },
+        { header: "Status", value: (r) => r.status, type: "text", width: 14 },
+      ],
+      data: filteredRows,
+      footerRow: [
+        null,
+        null,
+        null,
+        { value: "TOTAL", type: "text" },
+        { value: totalPeriode, type: "currency" },
+        null,
+      ],
+    });
+  }, [
+    exportNow,
+    filteredRows,
+    query,
+    rentangInvalid,
+    tanggalDari,
+    tanggalSampai,
+    totalPeriode,
+  ]);
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -205,35 +248,49 @@ export function PenjualanPage() {
       ) : null}
 
       <Card className="overflow-hidden p-0">
-        <ListFilterBar
-          dateRange={{
-            from: tanggalDari,
-            to: tanggalSampai,
-            onFromChange: setTanggalDari,
-            onToChange: setTanggalSampai,
-          }}
-          search={{
-            value: query,
-            onChange: setQuery,
-            placeholder: "Cari no. faktur, pelanggan, salesman, atau status…",
-          }}
-          onReset={handleReset}
-          canReset={!isDefault}
-          errorMessage={
-            rentangInvalid
-              ? "Tanggal akhir tidak boleh sebelum tanggal mulai."
-              : null
-          }
-          summary={
-            loading
-              ? "Memuat daftar faktur…"
-              : filteredRows.length === 0
-                ? rows.length === 0
-                  ? "Belum ada faktur penjualan."
-                  : "Tidak ada faktur pada periode/pencarian ini."
-                : `${filteredRows.length} faktur · total ${formatRupiah(totalPeriode)}`
-          }
-        />
+        <div className="flex justify-between gap-4">
+          <ListFilterBar
+            dateRange={{
+              from: tanggalDari,
+              to: tanggalSampai,
+              onFromChange: setTanggalDari,
+              onToChange: setTanggalSampai,
+            }}
+            search={{
+              value: query,
+              onChange: setQuery,
+              placeholder: "Cari no. faktur, pelanggan, salesman, atau status…",
+            }}
+            onReset={handleReset}
+            canReset={!isDefault}
+            errorMessage={
+              rentangInvalid
+                ? "Tanggal akhir tidak boleh sebelum tanggal mulai."
+                : null
+            }
+            summary={
+              loading
+                ? "Memuat daftar faktur…"
+                : filteredRows.length === 0
+                  ? rows.length === 0
+                    ? "Belum ada faktur penjualan."
+                    : "Tidak ada faktur pada periode/pencarian ini."
+                  : `${filteredRows.length} faktur · total ${formatRupiah(totalPeriode)}`
+            }
+          >
+            <Button 
+              type="button"
+              variant="secondary"
+              className="h-9 self-end"
+              onClick={() => void handleExport()}
+              disabled={loading || exporting || filteredRows.length === 0}
+              title={filteredRows.length === 0 ? "Tidak ada data pada filter ini" : `Export ${filteredRows.length} faktur ke .xlsx`}
+            >
+              <Sheet className="h-4 w-4" aria-hidden />
+              {exporting ? "Mengexport…" : "Export XLSX"}
+            </Button>
+          </ListFilterBar>
+        </div>
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[800px] text-left text-sm">

@@ -1,6 +1,7 @@
-import { useId, type ReactNode } from "react";
-import { CalendarRange, ListFilter, RotateCcw, Search } from "lucide-react";
+import { Children, useId, type ReactNode } from "react";
+import { CalendarRange, ChevronDown, ListFilter, RotateCcw, Search } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { TokoInput, TokoSelect } from "./TokoInput";
 
 /**
  * Konfigurasi opsional rentang tanggal. Saat di-pass, dua input date
@@ -68,6 +69,7 @@ export type ListFilterBarProps = {
   summary?: ReactNode;
   /** Pesan error/warning validasi (mis. tanggal akhir < mulai). */
   errorMessage?: string | null;
+  children?: ReactNode;
 };
 
 const inputBaseClass =
@@ -94,7 +96,7 @@ function SelectFilterControl({ select }: { select: SelectFilter }) {
           className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400"
           aria-hidden
         />
-        <select
+        <TokoSelect
           id={id}
           value={select.value}
           onChange={(e) => select.onChange(e.target.value)}
@@ -105,21 +107,8 @@ function SelectFilterControl({ select }: { select: SelectFilter }) {
               {opt.label}
             </option>
           ))}
-        </select>
-        <svg
-          className="pointer-events-none absolute right-3 top-1/2 h-3 w-3 -translate-y-1/2 text-zinc-400"
-          viewBox="0 0 10 6"
-          fill="none"
-          aria-hidden
-        >
-          <path
-            d="M1 1l4 4 4-4"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        </TokoSelect>
+        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" aria-hidden />
       </div>
     </div>
   );
@@ -148,6 +137,7 @@ export function ListFilterBar({
   canReset = false,
   summary,
   errorMessage,
+  children,
 }: ListFilterBarProps) {
   const fromId = useId();
   const toId = useId();
@@ -158,103 +148,107 @@ export function ListFilterBar({
   const hasSelects = Boolean(selects && selects.length > 0);
 
   return (
-    <div className="flex flex-col gap-3 border-b border-zinc-100 mb-3 pb-3">
-      <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
-        {hasDate && dateRange ? (
-          <div className="grid flex-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:max-w-md">
-            <div>
+    <div className="flex flex-col gap-3 border-b border-zinc-100 mb-3 pb-3 w-full">
+      <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end w-full justify-between">
+        <div className="flex gap-4">
+          {hasDate && dateRange ? (
+            <div className="grid flex-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:max-w-md">
+              <div>
+                <label
+                  htmlFor={fromId}
+                  className="block text-xs font-semibold uppercase tracking-wide text-zinc-500"
+                >
+                  {dateRange.fromLabel ?? "Tanggal mulai"}
+                </label>
+                <div className="relative mt-1">
+                  <CalendarRange
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400"
+                    aria-hidden
+                  />
+                  <TokoInput
+                    id={fromId}
+                    type="date"
+                    value={dateRange.from}
+                    onChange={(e) => dateRange.onFromChange(e.target.value)}
+                    className={`${inputWithIconClass} w-full`}
+                  />
+                </div>
+              </div>
+              <div>
+                <label
+                  htmlFor={toId}
+                  className="block text-xs font-semibold uppercase tracking-wide text-zinc-500"
+                >
+                  {dateRange.toLabel ?? "Tanggal akhir"}
+                </label>
+                <div className="relative mt-1">
+                  <CalendarRange
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400"
+                    aria-hidden
+                  />
+                  <TokoInput
+                    id={toId}
+                    type="date"
+                    value={dateRange.to}
+                    onChange={(e) => dateRange.onToChange(e.target.value)}
+                    className={`${inputWithIconClass} w-full`}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {hasSearch && search ? (
+            <div className="flex-1 lg:min-w-[240px] lg:max-w-md">
               <label
-                htmlFor={fromId}
+                htmlFor={searchId}
                 className="block text-xs font-semibold uppercase tracking-wide text-zinc-500"
               >
-                {dateRange.fromLabel ?? "Tanggal mulai"}
+                {search.label ?? "Pencarian"}
               </label>
               <div className="relative mt-1">
-                <CalendarRange
+                <Search
                   className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400"
                   aria-hidden
                 />
-                <input
-                  id={fromId}
-                  type="date"
-                  value={dateRange.from}
-                  onChange={(e) => dateRange.onFromChange(e.target.value)}
+                <TokoInput
+                  id={searchId}
+                  type="search"
+                  value={search.value}
+                  onChange={(e) => search.onChange(e.target.value)}
+                  placeholder={search.placeholder ?? "Cari…"}
                   className={`${inputWithIconClass} w-full`}
                 />
               </div>
             </div>
-            <div>
-              <label
-                htmlFor={toId}
-                className="block text-xs font-semibold uppercase tracking-wide text-zinc-500"
+          ) : null}
+
+          {hasSelects && selects
+            ? selects.map((select, idx) => (
+                <SelectFilterControl
+                  key={`${select.label}-${idx}`}
+                  select={select}
+                />
+              ))
+            : null}
+
+          {onReset && canReset ? (
+            <div className="lg:self-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onReset}
+                className="!px-3"
+                aria-label="Reset filter"
               >
-                {dateRange.toLabel ?? "Tanggal akhir"}
-              </label>
-              <div className="relative mt-1">
-                <CalendarRange
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400"
-                  aria-hidden
-                />
-                <input
-                  id={toId}
-                  type="date"
-                  value={dateRange.to}
-                  onChange={(e) => dateRange.onToChange(e.target.value)}
-                  className={`${inputWithIconClass} w-full`}
-                />
-              </div>
+                <RotateCcw className="h-4 w-4" aria-hidden />
+                Reset
+              </Button>
             </div>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
 
-        {hasSearch && search ? (
-          <div className="flex-1 lg:min-w-[240px] lg:max-w-md">
-            <label
-              htmlFor={searchId}
-              className="block text-xs font-semibold uppercase tracking-wide text-zinc-500"
-            >
-              {search.label ?? "Pencarian"}
-            </label>
-            <div className="relative mt-1">
-              <Search
-                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400"
-                aria-hidden
-              />
-              <input
-                id={searchId}
-                type="search"
-                value={search.value}
-                onChange={(e) => search.onChange(e.target.value)}
-                placeholder={search.placeholder ?? "Cari…"}
-                className={`${inputWithIconClass} w-full`}
-              />
-            </div>
-          </div>
-        ) : null}
-
-        {hasSelects && selects
-          ? selects.map((select, idx) => (
-              <SelectFilterControl
-                key={`${select.label}-${idx}`}
-                select={select}
-              />
-            ))
-          : null}
-
-        {onReset && canReset ? (
-          <div className="lg:self-end">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onReset}
-              className="!px-3"
-              aria-label="Reset filter"
-            >
-              <RotateCcw className="h-4 w-4" aria-hidden />
-              Reset
-            </Button>
-          </div>
-        ) : null}
+        {Children.count(children) > 0 ? children : null}
       </div>
 
       {errorMessage ? (

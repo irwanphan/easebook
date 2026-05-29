@@ -62,7 +62,7 @@ export function SidebarNavGroup({ group, sidebarExpanded, rowClass }: SidebarNav
           <Icon className="h-5 w-5 shrink-0" strokeWidth={1.75} aria-hidden />
           <span className="min-w-0 flex-1 truncate text-left text-sm font-medium">{group.label}</span>
           <ChevronDown
-            className={`h-4 w-4 shrink-0 text-zinc-500 transition-transform ${accordionOpen ? "rotate-180" : ""}`}
+            className={`h-4 w-4 shrink-0 transition-transform ${accordionOpen ? "rotate-180" : ""}`}
             aria-hidden
           />
         </button>

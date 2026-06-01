@@ -65,8 +65,9 @@ export const StepSelesai = forwardRef<OnboardingStepHandle, Props>(function Step
             aria-hidden
             className="absolute inset-0 -z-10 rounded-3xl bg-gradient-to-br from-emerald-400/30 to-brand-500/30 blur-xl"
           />
-          <span className="inline-flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-500 text-white shadow-lg shadow-emerald-500/30">
-            <PartyPopper className="h-8 w-8" aria-hidden />
+          <span className="inline-flex h-16 w-16 items-center justify-center rounded-3xl bg-purple-500 shadow-lg shadow-emerald-500/30 relative">
+            <PartyPopper className="h-8 w-8 text-white z-1" aria-hidden />
+            <PartyPopper className="h-8 w-8 absolute text-yellow-500/50 left-4.5 top-4.5" aria-hidden />
           </span>
         </span>
 

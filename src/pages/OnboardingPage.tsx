@@ -23,6 +23,7 @@ import { useOnboardingFlow } from "@/features/onboarding/useOnboardingFlow";
 import type { OnboardingStepHandle } from "@/features/onboarding/stepHandle";
 import { StepInfoPerusahaan } from "@/features/onboarding/steps/StepInfoPerusahaan";
 import { StepPeriodePembukuan } from "@/features/onboarding/steps/StepPeriodePembukuan";
+import { StepCoA } from "@/features/onboarding/steps/StepCoA";
 import { StepGudang } from "@/features/onboarding/steps/StepGudang";
 import { StepSaldoAwal } from "@/features/onboarding/steps/StepSaldoAwal";
 import { StepPasswordAdmin } from "@/features/onboarding/steps/StepPasswordAdmin";
@@ -101,6 +102,8 @@ export function OnboardingPage() {
         return <StepInfoPerusahaan ref={stepRef} onSaved={refreshChecklist} />;
       case "periode-pembukuan":
         return <StepPeriodePembukuan ref={stepRef} onSaved={refreshChecklist} />;
+      case "coa":
+        return <StepCoA ref={stepRef} onSaved={refreshChecklist} />;
       case "gudang":
         return <StepGudang ref={stepRef} onSaved={refreshChecklist} />;
       case "saldo-awal":

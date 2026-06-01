@@ -14,6 +14,7 @@
 export type OnboardingStepId =
   | "info-perusahaan"
   | "periode-pembukuan"
+  | "coa"
   | "gudang"
   | "saldo-awal"
   | "password-admin";
@@ -45,22 +46,29 @@ export const ONBOARDING_STEPS: OnboardingStepMeta[] = [
     wajib: true,
   },
   {
-    id: "gudang",
+    id: "coa",
     nomor: 3,
+    judul: "Struktur akun (CoA)",
+    subjudul: "Pilih template atau mulai kosong",
+    wajib: true,
+  },
+  {
+    id: "gudang",
+    nomor: 4,
     judul: "Gudang default",
     subjudul: "Lokasi penyimpanan utama",
     wajib: false,
   },
   {
     id: "saldo-awal",
-    nomor: 4,
+    nomor: 5,
     judul: "Saldo awal kas & stok",
     subjudul: "Opsional, dapat diisi nanti",
     wajib: false,
   },
   {
     id: "password-admin",
-    nomor: 5,
+    nomor: 6,
     judul: "Ganti password admin",
     subjudul: "Amankan akun bawaan",
     wajib: true,

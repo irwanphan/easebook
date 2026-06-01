@@ -7092,6 +7092,107 @@ pub fn akun_keuangan_delete(state: State<DbState>, kode: String) -> Result<(), S
     Ok(())
 }
 
+/// Idempotent seeder untuk CoA standar (PSAK/Indonesia). Dipakai oleh
+/// step "Struktur akun" di wizard onboarding agar user yang sebelumnya
+/// memilih opsi "kosongkan" bisa kembali mengisi dengan template standar.
+///
+/// Tidak menyentuh data lain — kalau tabel `akun_keuangan` masih punya
+/// isi, command ini no-op (mengembalikan jumlah baris yang ada).
+#[tauri::command]
+pub fn akun_keuangan_seed_standard(state: State<DbState>) -> Result<i64, String> {
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let ts = now_ts();
+    crate::seed_akun_keuangan::seed_akun_keuangan_if_empty(&mut conn, ts)
+        .map_err(|e| e.to_string())?;
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM akun_keuangan", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    Ok(count)
+}
+
+/// Hapus semua akun keuangan — diperuntukkan **hanya** untuk fase
+/// onboarding (sebelum ada transaksi). Operasi:
+///   1. Validasi: belum ada `jurnal_umum` (proxy untuk "belum ada
+///      transaksi user"). Termasuk POS shift juga (`pos_shift`).
+///   2. Validasi: tidak ada `pos_metode_bayar` aktif yang masih
+///      mereferensikan akun (NOT NULL FK).
+///   3. Set NULL semua referensi nullable ke `akun_keuangan` di tabel
+///      konfigurasi (jurnal_konfigurasi, pos_konfigurasi, pengaturan
+///      lain bila ada).
+///   4. `DELETE FROM akun_keuangan`.
+///
+/// Setelah operasi ini, modul jurnal/POS tidak bisa dipakai sampai user
+/// mengisi ulang konfigurasi akun — itu disengaja. Jika gagal (FK
+/// violation karena ada referensi yang tidak kita anticipate), seluruh
+/// transaksi di-rollback.
+#[tauri::command]
+pub fn akun_keuangan_reset_all(state: State<DbState>) -> Result<(), String> {
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let jurnal_count: i64 = tx
+        .query_row("SELECT COUNT(*) FROM jurnal_umum", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    if jurnal_count > 0 {
+        return Err(
+            "Tidak dapat mengosongkan CoA: sudah ada jurnal/transaksi tersimpan. \
+             Gunakan menu Akuntansi > Akun Keuangan untuk menyesuaikan akun satu per satu."
+                .into(),
+        );
+    }
+
+    let metode_count: i64 = tx
+        .query_row("SELECT COUNT(*) FROM pos_metode_bayar", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    if metode_count > 0 {
+        return Err(
+            "Tidak dapat mengosongkan CoA: masih ada metode bayar POS yang merujuk akun kas. \
+             Hapus dulu metode bayar di menu POS sebelum mereset."
+                .into(),
+        );
+    }
+
+    // Nullify referensi yang nullable supaya FK tidak menghalangi DELETE.
+    tx.execute(
+        "UPDATE jurnal_konfigurasi
+         SET akun_piutang = NULL, akun_hutang = NULL, akun_pendapatan = NULL,
+             akun_pembelian = NULL, akun_penerimaan_lainnya = NULL,
+             akun_pengeluaran_lainnya = NULL, akun_historical_balance = NULL
+         WHERE id = 1",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // pos_konfigurasi (id=1) — boleh tidak ada row sama sekali.
+    tx.execute(
+        "UPDATE pos_konfigurasi
+         SET kas_utama_kode = NULL, kas_kasir_kode = NULL,
+             akun_selisih_kas_kode = NULL
+         WHERE id = 1",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Lepas induk_kode self-ref dulu agar DELETE tidak terkena ON DELETE
+    // SET NULL trigger berurutan yang bisa membuat order delete jadi
+    // bermasalah (defensif — sebenarnya SET NULL aman).
+    tx.execute("UPDATE akun_keuangan SET induk_kode = NULL", [])
+        .map_err(|e| e.to_string())?;
+
+    tx.execute("DELETE FROM akun_keuangan", []).map_err(|e| {
+        if e.to_string().contains("FOREIGN KEY") {
+            "Tidak dapat mengosongkan CoA: ada data lain yang masih merujuk akun. \
+             Hubungi support atau hapus data terkait terlebih dahulu."
+                .to_string()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn jurnal_konfigurasi_get(state: State<DbState>) -> Result<JurnalKonfigurasiRow, String> {
     let ts = now_ts();

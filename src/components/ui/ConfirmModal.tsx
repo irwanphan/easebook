@@ -1,12 +1,15 @@
+import type { ReactNode } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 
 type ConfirmModalProps = {
   open: boolean;
   title: string;
-  message: string;
-  confirmLabel?: string;
-  cancelLabel?: string;
+  /** String atau ReactNode bebas — untuk pesan kaya (list, badge, dll). */
+  message: ReactNode;
+  /** Label tombol konfirmasi. Boleh ReactNode untuk ikon + teks. */
+  confirmLabel?: ReactNode;
+  cancelLabel?: ReactNode;
   variant?: "danger" | "default";
   loading?: boolean;
   onConfirm: () => void;
@@ -48,7 +51,7 @@ export function ConfirmModal({
         </div>
       }
     >
-      <p className="text-sm leading-relaxed text-zinc-600">{message}</p>
+      <div className="text-sm leading-relaxed text-zinc-600">{message}</div>
     </Modal>
   );
 }

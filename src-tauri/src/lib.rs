@@ -159,6 +159,8 @@ pub fn run() {
             master_commands::akun_keuangan_insert,
             master_commands::akun_keuangan_update,
             master_commands::akun_keuangan_delete,
+            master_commands::akun_keuangan_seed_standard,
+            master_commands::akun_keuangan_reset_all,
             master_commands::jurnal_konfigurasi_get,
             master_commands::jurnal_konfigurasi_set,
             master_commands::jurnal_umum_list,

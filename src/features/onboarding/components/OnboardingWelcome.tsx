@@ -16,6 +16,7 @@ import {
   CalendarDays,
   Coins,
   KeyRound,
+  Layers,
   Sparkles,
   Warehouse,
 } from "lucide-react";
@@ -27,6 +28,7 @@ import { ONBOARDING_STEPS } from "@/features/onboarding/onboardingSteps";
 const STEP_ICON: Record<(typeof ONBOARDING_STEPS)[number]["id"], LucideIcon> = {
   "info-perusahaan": Building2,
   "periode-pembukuan": CalendarDays,
+  coa: Layers,
   gudang: Warehouse,
   "saldo-awal": Coins,
   "password-admin": KeyRound,
@@ -72,9 +74,9 @@ export function OnboardingWelcome({ namaPengguna, onMulai }: Props) {
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-relaxed text-zinc-600 sm:text-base">
               Sebelum mulai bertransaksi, kami akan memandu Anda mengatur
-              <span className="font-semibold text-zinc-800"> 5 hal penting</span> agar pembukuan
-              berjalan rapi sejak hari pertama. Cukup beberapa menit, dan setelah ini Anda
-              langsung bisa memakai aplikasi sepenuhnya.
+              <span className="font-semibold text-zinc-800"> {ONBOARDING_STEPS.length} hal penting</span>
+              {" "}agar pembukuan berjalan rapi sejak hari pertama. Cukup beberapa menit, dan setelah
+              ini Anda langsung bisa memakai aplikasi sepenuhnya.
             </p>
           </header>
 

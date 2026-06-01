@@ -5,6 +5,11 @@
  * Setiap langkah punya satu sumber kebenaran:
  *  - `info-perusahaan`   → localStorage `easybook-informasi-perusahaan` (nama wajib).
  *  - `periode-pembukuan` → `operasional_konfigurasi_get.awalPeriode` + localStorage PPN.
+ *  - `coa`               → `akun_keuangan_list`. Step dianggap done baik
+ *                          jika sudah ada akun (user memilih opsi
+ *                          "Standar") maupun jika user eksplisit memilih
+ *                          "Mulai dari nol" (jejak ada di localStorage
+ *                          `easybook-onboarding-coa-pilihan`).
  *  - `gudang`            → `gudang_list` (minimal 1 entri).
  *  - `saldo-awal`        → `kas_awal_get` + `stok_awal_get` (cukup salah satu).
  *  - `password-admin`    → `pengguna_verifikasi_kata_sandi("admin", "admin123")`
@@ -20,6 +25,8 @@ import { loadInformasiPerusahaan } from "@/features/pengaturan/informasiPerusaha
 import { loadPengaturanTransaksi } from "@/features/pengaturan/pengaturanTransaksiStorage";
 import { kasAwalGet } from "@/features/keuangan/kasAwalInvoke";
 import { stokAwalGet } from "@/features/barang-jasa/stokAwalInvoke";
+import { loadCoAPilihan } from "@/features/onboarding/coaPilihanStorage";
+import type { AkunKeuanganRow } from "@/data/keuangan";
 import type { GudangRow } from "@/data/gudang";
 import type { OnboardingStepId } from "@/features/onboarding/onboardingSteps";
 
@@ -28,6 +35,7 @@ export type OnboardingChecklist = Record<OnboardingStepId, boolean>;
 const DEFAULT_CHECKLIST: OnboardingChecklist = {
   "info-perusahaan": false,
   "periode-pembukuan": false,
+  coa: false,
   gudang: false,
   "saldo-awal": false,
   "password-admin": false,
@@ -61,9 +69,11 @@ export function useOnboardingChecklist() {
 
     const info = loadInformasiPerusahaan();
     const transaksi = loadPengaturanTransaksi();
+    const coaPilihan = loadCoAPilihan();
 
-    const [opCfg, gudangList, kasAwal, stokAwal, adminDefault] = await Promise.all([
+    const [opCfg, akunList, gudangList, kasAwal, stokAwal, adminDefault] = await Promise.all([
       operasionalKonfigurasiGet().catch(() => ({ awalPeriode: null })),
+      invoke<AkunKeuanganRow[]>("akun_keuangan_list").catch(() => [] as AkunKeuanganRow[]),
       invoke<GudangRow[]>("gudang_list").catch(() => [] as GudangRow[]),
       kasAwalGet().catch(() => null),
       stokAwalGet().catch(() => null),
@@ -73,10 +83,14 @@ export function useOnboardingChecklist() {
     const periodeSiap = Boolean(opCfg.awalPeriode) && Number.isFinite(transaksi.ppnPersen);
     const kasAdaEntries = (kasAwal?.entries?.length ?? 0) > 0;
     const stokAdaEntries = (stokAwal?.entries?.length ?? 0) > 0;
+    // CoA done bila: ada akun di DB (user pakai standar) ATAU user
+    // eksplisit memilih "kosong" via wizard.
+    const coaSiap = akunList.length > 0 || coaPilihan === "kosong";
 
     setChecklist({
       "info-perusahaan": info.namaPerusahaan.trim().length > 0,
       "periode-pembukuan": periodeSiap,
+      coa: coaSiap,
       gudang: gudangList.length > 0,
       "saldo-awal": kasAdaEntries || stokAdaEntries,
       "password-admin": !adminDefault,

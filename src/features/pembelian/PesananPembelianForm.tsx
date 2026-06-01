@@ -16,7 +16,7 @@ import {
   pembelianHitungPajakPpn,
   pembelianLineSubtotal,
 } from "@/data/pembelian";
-import { loadPengaturanTransaksi } from "@/features/pengaturan/pengaturanTransaksiStorage";
+import { getPpnEfektif } from "@/features/pengaturan/pengaturanTransaksiStorage";
 import type {
   PesananPembelianDetail,
   PesananPembelianInsertPayload,
@@ -90,7 +90,7 @@ export function PesananPembelianForm({
   const [error, setError] = useState<string | null>(null);
   const [hydrating, setHydrating] = useState(mode === "edit");
   const [saving, setSaving] = useState(false);
-  const ppnPersen = loadPengaturanTransaksi().ppnPersen;
+  const { terkenaPajak, ppnPersen } = getPpnEfektif();
 
   const masterLoading = loadPemasok || loadGudang || loadBarang;
   const busy = masterLoading || hydrating || saving;
@@ -657,14 +657,16 @@ export function PesananPembelianForm({
                 disabled={busy}
               />
             </div>
-            <div className="flex items-center justify-between gap-4 text-sm">
-              <span className="shrink-0 text-zinc-500">
-                Pajak (PPN {ppnPersen}%)
-              </span>
-              <span className="font-medium text-zinc-900">
-                {formatRupiah(pajak)}
-              </span>
-            </div>
+            {terkenaPajak ? (
+              <div className="flex items-center justify-between gap-4 text-sm">
+                <span className="shrink-0 text-zinc-500">
+                  Pajak (PPN {ppnPersen}%)
+                </span>
+                <span className="font-medium text-zinc-900">
+                  {formatRupiah(pajak)}
+                </span>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between gap-4 border-t border-zinc-100 pt-3">
               <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
                 Total estimasi

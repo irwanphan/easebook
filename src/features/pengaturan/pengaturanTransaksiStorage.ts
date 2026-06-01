@@ -62,3 +62,28 @@ export function persistPengaturanTransaksi(data: PengaturanTransaksi) {
     }),
   );
 }
+
+/**
+ * Tarif PPN **efektif** untuk perhitungan transaksi.
+ *
+ * Bila `terkenaPajak=false`, tarif efektif selalu `0` walau di storage
+ * tersimpan nilai lain — sehingga `pajak = subtotal * 0 = 0` dan baris
+ * pajak otomatis menjadi nol di seluruh form. Tarif tersimpan (asli)
+ * tetap tidak diubah; hanya nilai yang diserahkan ke kalkulasi yang
+ * di-override.
+ *
+ * Pakai helper ini di setiap form transaksi (faktur/pesanan) alih-alih
+ * `loadPengaturanTransaksi().ppnPersen` langsung, agar logika "matikan
+ * PPN saat off" cukup didefinisikan sekali di sini.
+ *
+ * UI tetap baca `terkenaPajak` untuk memutuskan apakah perlu
+ * menampilkan baris "Pajak (PPN x%)" sama sekali — perhitungan 0 yang
+ * tetap dirender hanya menambah noise visual.
+ */
+export function getPpnEfektif(): { terkenaPajak: boolean; ppnPersen: number } {
+  const t = loadPengaturanTransaksi();
+  return {
+    terkenaPajak: t.terkenaPajak,
+    ppnPersen: t.terkenaPajak ? t.ppnPersen : 0,
+  };
+}

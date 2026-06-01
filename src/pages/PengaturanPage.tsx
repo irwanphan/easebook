@@ -252,8 +252,23 @@ export function PengaturanPage() {
                     </label>
 
                     <div>
-                      <FieldLabel htmlFor="p-ppn">Nilai PPN (%)</FieldLabel>
-                      <p className="mt-1 text-sm text-zinc-500">
+                      <label
+                        htmlFor="p-ppn"
+                        className={
+                          transaksi.terkenaPajak
+                            ? "block text-sm font-medium text-zinc-700"
+                            : "block text-sm font-medium text-zinc-400"
+                        }
+                      >
+                        Nilai PPN (%)
+                      </label>
+                      <p
+                        className={
+                          transaksi.terkenaPajak
+                            ? "mt-1 text-sm text-zinc-500"
+                            : "mt-1 text-sm text-zinc-400"
+                        }
+                      >
                         Tarif Pajak Pertambahan Nilai default untuk perhitungan pajak pada faktur
                         pembelian dan penjualan.
                       </p>
@@ -280,7 +295,11 @@ export function PengaturanPage() {
                           disabled={!transaksi.terkenaPajak}
                         />
                         <span
-                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-zinc-400"
+                          className={
+                            transaksi.terkenaPajak
+                              ? "pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-zinc-400"
+                              : "pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-zinc-300"
+                          }
                           aria-hidden
                         >
                           %

@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/features/auth/AuthContext";
 import { OnboardingShell } from "@/features/onboarding/components/OnboardingShell";
 import { OnboardingStepFooter } from "@/features/onboarding/components/OnboardingStepFooter";
+import { OnboardingWelcome } from "@/features/onboarding/components/OnboardingWelcome";
 import { onboardingComplete } from "@/features/onboarding/onboardingApi";
 import { useOnboardingChecklist } from "@/features/onboarding/useOnboardingChecklist";
 import { useOnboardingFlow } from "@/features/onboarding/useOnboardingFlow";
@@ -35,11 +36,24 @@ export function OnboardingPage() {
   const flow = useOnboardingFlow(checklist);
   const stepRef = useRef<OnboardingStepHandle | null>(null);
   const [busy, setBusy] = useState(false);
+  /**
+   * Welcome screen di-render setiap kali user masuk ke wizard, hingga
+   * mereka eksplisit klik "Mulai". State ini di-reset pada tiap
+   * mount (page reload / app restart) — disengaja, karena Welcome
+   * berperan sebagai "ruang transisi" yang mengonfirmasi user benar-benar
+   * siap melanjutkan setup, bukan sekadar onboarding sekali untuk satu
+   * mesin. Posisi step aktif setelah klik Mulai ditentukan oleh
+   * `useOnboardingFlow` (auto-skip ke step pertama yang belum done),
+   * jadi user yang sudah maju 4/5 tidak akan diulang dari step 1.
+   */
+  const [sudahKlikMulai, setSudahKlikMulai] = useState(false);
 
   const doneCount = useMemo(
     () => flow.steps.reduce((acc, s) => acc + (checklist[s.id] ? 1 : 0), 0),
     [checklist, flow.steps],
   );
+
+  const tampilkanWelcome = !checklistLoading && !sudahKlikMulai;
 
   const handleNext = useCallback(async () => {
     if (busy) return;
@@ -97,6 +111,15 @@ export function OnboardingPage() {
         return null;
     }
   };
+
+  if (tampilkanWelcome) {
+    return (
+      <OnboardingWelcome
+        namaPengguna={session?.namaLengkap ?? session?.username ?? null}
+        onMulai={() => setSudahKlikMulai(true)}
+      />
+    );
+  }
 
   return (
     <OnboardingShell

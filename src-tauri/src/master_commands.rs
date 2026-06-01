@@ -2090,6 +2090,72 @@ pub fn pengguna_update(
     })
 }
 
+/// Ubah username (PK) pengguna. Aman karena semua FK ke
+/// `pengguna(username)` (`pengguna_halaman_akses`, `pos_shift`,
+/// `retur_penjualan`, dll.) sudah `ON UPDATE CASCADE`.
+///
+/// Validasi:
+///  - `new_username` lulus `normalize_username` (3+ char, alnum/._-).
+///  - User lama harus ada.
+///  - `new_username` (case-insensitive) belum dipakai user lain.
+///  - Jika `new` == `old` (case-insensitive), no-op (idempoten).
+///
+/// Catatan: kolom log audit lain (mis. `activity_log.actor_username`,
+/// `pos_shift_event_log.actor_username`) yang **tidak** punya FK
+/// formal **tidak** ikut ter-rename — itu disengaja: jejak audit
+/// menggambarkan siapa pelaku saat itu (snapshot historis), bukan
+/// "siapa user dengan PK X sekarang". Untuk skenario onboarding ini
+/// (sebelum ada data riil) tidak menjadi masalah.
+#[tauri::command]
+pub fn pengguna_rename(
+    state: State<DbState>,
+    old_username: String,
+    new_username: String,
+) -> Result<(), String> {
+    let old = normalize_username(&old_username)?;
+    let new = normalize_username(&new_username)?;
+    if old == new {
+        return Ok(());
+    }
+    let ts = now_ts();
+
+    with_conn_app(&state, |conn| {
+        let exists_old: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pengguna WHERE lower(username) = lower(?)",
+                params![old],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if exists_old == 0 {
+            return Err("Pengguna tidak ditemukan.".into());
+        }
+
+        let exists_new: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pengguna WHERE lower(username) = lower(?)",
+                params![new],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if exists_new > 0 {
+            return Err("Username baru sudah dipakai pengguna lain.".into());
+        }
+
+        let n = conn
+            .execute(
+                "UPDATE pengguna SET username = ?, updated_at = ?
+                 WHERE lower(username) = lower(?)",
+                params![new, ts, old],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Pengguna tidak ditemukan.".into());
+        }
+        Ok(())
+    })
+}
+
 #[tauri::command]
 pub fn pengguna_delete(state: State<DbState>, username: String) -> Result<(), String> {
     let key = normalize_username(&username)?;

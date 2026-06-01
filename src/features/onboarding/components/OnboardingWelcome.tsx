@@ -15,10 +15,10 @@ import {
   Building2,
   CalendarDays,
   Coins,
-  KeyRound,
   Layers,
   PartyPopper,
   Sparkles,
+  UserCog,
   Warehouse,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -32,7 +32,7 @@ const STEP_ICON: Record<(typeof ONBOARDING_STEPS)[number]["id"], LucideIcon> = {
   coa: Layers,
   gudang: Warehouse,
   "saldo-awal": Coins,
-  "password-admin": KeyRound,
+  "password-admin": UserCog,
   selesai: PartyPopper,
 };
 

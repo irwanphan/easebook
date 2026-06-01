@@ -26,7 +26,7 @@ import { StepPeriodePembukuan } from "@/features/onboarding/steps/StepPeriodePem
 import { StepCoA } from "@/features/onboarding/steps/StepCoA";
 import { StepGudang } from "@/features/onboarding/steps/StepGudang";
 import { StepSaldoAwal } from "@/features/onboarding/steps/StepSaldoAwal";
-import { StepPasswordAdmin } from "@/features/onboarding/steps/StepPasswordAdmin";
+import { StepAkunAdmin } from "@/features/onboarding/steps/StepAkunAdmin";
 import { StepSelesai } from "@/features/onboarding/steps/StepSelesai";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
@@ -152,7 +152,7 @@ export function OnboardingPage() {
       case "saldo-awal":
         return <StepSaldoAwal ref={stepRef} onSaved={refreshChecklist} />;
       case "password-admin":
-        return <StepPasswordAdmin ref={stepRef} onSaved={refreshChecklist} />;
+        return <StepAkunAdmin ref={stepRef} onSaved={refreshChecklist} />;
       case "selesai":
         return (
           <StepSelesai ref={stepRef} checklist={checklist} onSaved={refreshChecklist} />

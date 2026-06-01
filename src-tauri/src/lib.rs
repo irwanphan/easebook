@@ -115,6 +115,7 @@ pub fn run() {
             master_commands::pengguna_list,
             master_commands::pengguna_insert,
             master_commands::pengguna_update,
+            master_commands::pengguna_rename,
             master_commands::pengguna_delete,
             master_commands::pengguna_username_exists,
             master_commands::pengguna_halaman_akses_get,

@@ -70,8 +70,8 @@ export const ONBOARDING_STEPS: OnboardingStepMeta[] = [
   {
     id: "password-admin",
     nomor: 6,
-    judul: "Ganti password admin",
-    subjudul: "Amankan akun bawaan",
+    judul: "Akun admin Anda",
+    subjudul: "Identitas & kata sandi",
     wajib: true,
   },
   {

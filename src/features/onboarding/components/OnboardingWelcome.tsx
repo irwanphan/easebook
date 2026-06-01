@@ -12,6 +12,7 @@
  */
 import {
   ArrowRight,
+  Blocks,
   Building2,
   CalendarDays,
   Coins,
@@ -33,6 +34,7 @@ const STEP_ICON: Record<(typeof ONBOARDING_STEPS)[number]["id"], LucideIcon> = {
   gudang: Warehouse,
   "saldo-awal": Coins,
   "password-admin": UserCog,
+  "modul-bisnis": Blocks,
   selesai: PartyPopper,
 };
 

@@ -1,16 +1,24 @@
 /**
- * Radio button dengan presentasi "card + check" — selected state ditandai
- * ikon Check (mirip checkbox) di pojok, bukan titik bulat radio
- * tradisional. Berperilaku sebagai radio (single-select dalam satu
- * `name` group), tetapi visualnya membantu user awam yang lebih familiar
- * dengan ikon centang sebagai indikator pilihan aktif.
+ * Opsi pilihan ber-tampilan "card + check" — selected state ditandai
+ * ikon Check di pojok, bukan titik bulat radio tradisional. Visual ini
+ * membantu user awam yang lebih familiar dengan ikon centang.
+ *
+ * Dapat beroperasi sebagai **radio** (single-select, default) maupun
+ * **checkbox** (multi-select) lewat prop `selectionMode`. Visual sama
+ * persis di kedua mode — hanya semantic input (HTML `type` + role yang
+ * di-derive otomatis oleh browser) yang berbeda. Itu disengaja: kami
+ * ingin pengguna tidak bingung membedakan radio vs checkbox secara
+ * visual; semua "pilih satu" dan "pilih banyak" terasa konsisten.
  *
  * Single-Responsibility: komponen ini **hanya** merepresentasikan satu
  * opsi. Grouping/orchestration (state pilihan aktif, perubahan, dll)
- * ditangani parent. Untuk pemakaian a11y yang benar, bungkus sekelompok
- * `TokoOption` dengan `<fieldset>` + `<legend>` dan beri semua item
- * `name` yang sama (browser otomatis menerapkan keyboard nav antar-
- * radio dalam group).
+ * ditangani parent. Untuk pemakaian a11y yang benar:
+ *  - Mode `radio`: bungkus sekelompok dengan `<fieldset>` + `<legend>`,
+ *    semua item beri `name` yang sama (browser otomatis menerapkan
+ *    keyboard nav antar-radio dalam group).
+ *  - Mode `checkbox`: tetap bungkus dengan `<fieldset>` + `<legend>`
+ *    untuk grup; `name` boleh sama (sebagai array submission) atau
+ *    berbeda (toggle independen).
  *
  * Open/Closed: `description` & `badge` opsional; bila perlu konten kaya
  * (mis. preview tabel) gunakan `children` — slot rendering bebas di
@@ -37,6 +45,12 @@ export type TokoOptionProps = Omit<
   children?: ReactNode;
   /** Kelas tambahan untuk wrapper luar. */
   wrapperClassName?: string;
+  /**
+   * Mode pemilihan: `radio` (single-select dalam grup) atau `checkbox`
+   * (toggle multi-select). Default `radio` agar pemakaian existing
+   * tetap kompatibel.
+   */
+  selectionMode?: "radio" | "checkbox";
 };
 
 const BADGE_CLASS: Record<NonNullable<TokoOptionProps["badgeVariant"]>, string> = {
@@ -59,6 +73,7 @@ export function TokoOption({
   id,
   checked,
   disabled,
+  selectionMode = "radio",
   ...rest
 }: TokoOptionProps) {
   const autoId = useId();
@@ -85,7 +100,7 @@ export function TokoOption({
     <label htmlFor={inputId} className={baseClass}>
       <input
         id={inputId}
-        type="radio"
+        type={selectionMode}
         className="sr-only"
         checked={checked}
         disabled={disabled}

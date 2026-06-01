@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Outlet } from "react-router-dom";
 import { SidebarNav } from "@/app/layout/SidebarNav";
 import { primaryNavEntries } from "@/config/navigation";
@@ -11,10 +12,19 @@ import { PelangganProvider } from "@/features/pelanggan/PelangganContext";
 import { PemasokProvider } from "@/features/pemasok/PemasokContext";
 import { QuickAccessProvider } from "@/features/quick-access/QuickAccessContext";
 import { QuickAccessFab } from "@/features/quick-access/QuickAccessFab";
+import { filterNavByModul } from "@/features/modul-bisnis/navFilter";
+import { useModulAktif } from "@/features/modul-bisnis/useModulAktif";
 
 function AppShellInner() {
   const { filterNav } = useAuth();
-  const navItems = filterNav(primaryNavEntries);
+  const modulAktif = useModulAktif();
+  // Urutan filter: modul dulu (preferensi tampilan), lalu hak akses
+  // halaman (auth). Hasil akhir: sidebar hanya menampilkan menu yang
+  // (a) modul-nya diaktifkan user, (b) user punya hak akses.
+  const navItems = useMemo(
+    () => filterNav(filterNavByModul(primaryNavEntries, modulAktif)),
+    [filterNav, modulAktif],
+  );
 
   return (
     <div

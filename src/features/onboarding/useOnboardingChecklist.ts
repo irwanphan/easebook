@@ -26,6 +26,7 @@ import { loadPengaturanTransaksi } from "@/features/pengaturan/pengaturanTransak
 import { kasAwalGet } from "@/features/keuangan/kasAwalInvoke";
 import { stokAwalGet } from "@/features/barang-jasa/stokAwalInvoke";
 import { loadCoAPilihan } from "@/features/onboarding/coaPilihanStorage";
+import { loadModulAktif } from "@/features/modul-bisnis/modulBisnisStorage";
 import type { AkunKeuanganRow } from "@/data/keuangan";
 import type { GudangRow } from "@/data/gudang";
 import type { OnboardingStepId } from "@/features/onboarding/onboardingSteps";
@@ -39,6 +40,9 @@ const DEFAULT_CHECKLIST: OnboardingChecklist = {
   gudang: false,
   "saldo-awal": false,
   "password-admin": false,
+  // Default true: storage default = semua modul aktif, jadi "siap"
+  // kecuali user secara eksplisit mengosongkan & belum submit.
+  "modul-bisnis": true,
   // Step closing — selalu false di checklist; "centang"-nya terjadi
   // implisit saat user menekan Selesai (yang langsung navigate ke "/").
   selesai: false,
@@ -73,6 +77,7 @@ export function useOnboardingChecklist() {
     const info = loadInformasiPerusahaan();
     const transaksi = loadPengaturanTransaksi();
     const coaPilihan = loadCoAPilihan();
+    const modulAktif = loadModulAktif();
 
     const [opCfg, akunList, gudangList, kasAwal, stokAwal, adminDefault] = await Promise.all([
       operasionalKonfigurasiGet().catch(() => ({ awalPeriode: null })),
@@ -97,6 +102,7 @@ export function useOnboardingChecklist() {
       gudang: gudangList.length > 0,
       "saldo-awal": kasAdaEntries || stokAdaEntries,
       "password-admin": !adminDefault,
+      "modul-bisnis": modulAktif.size > 0,
       selesai: false,
     });
     setLoading(false);

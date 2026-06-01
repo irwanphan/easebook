@@ -78,6 +78,14 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
   const [akunKasLoading, setAkunKasLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { terkenaPajak, ppnPersen } = getPpnEfektif();
+  /**
+   * Nilai pajak asli dari faktur tersimpan (mode edit). Dipakai untuk
+   * **preserve** historical PPN ketika user mengedit faktur lama saat
+   * pengaturan PPN global sedang dinonaktifkan — tanpa ini, form akan
+   * me-recompute pajak ke 0 dan saat save data pajak faktur lama
+   * terhapus. Tetap 0 di mode create.
+   */
+  const [pajakTersimpan, setPajakTersimpan] = useState(0);
   const [hydrating, setHydrating] = useState(mode === "edit");
   const [saving, setSaving] = useState(false);
 
@@ -132,6 +140,7 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
         setMetodePembayaran(d.metodePembayaran || "LAINNYA");
         setDiskonFaktur(d.diskonFaktur ?? 0);
         setAkunKasKode(d.akunKasKode ?? "");
+        setPajakTersimpan(d.pajak ?? 0);
         setLines(
           d.lines.length > 0
             ? d.lines.map((l) => ({
@@ -207,10 +216,15 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
     [lines],
   );
 
-  const pajak = useMemo(
-    () => pembelianHitungPajakPpn(subtotalBarang, diskonFaktur, ppnPersen),
-    [subtotalBarang, diskonFaktur, ppnPersen],
-  );
+  const pajak = useMemo(() => {
+    if (terkenaPajak) {
+      return pembelianHitungPajakPpn(subtotalBarang, diskonFaktur, ppnPersen);
+    }
+    // PPN global off:
+    //  - mode edit  → preserve nilai pajak faktur lama (jangan reset jadi 0).
+    //  - mode create → memang 0, faktur baru tidak menghitung PPN.
+    return mode === "edit" ? pajakTersimpan : 0;
+  }, [terkenaPajak, mode, pajakTersimpan, subtotalBarang, diskonFaktur, ppnPersen]);
 
   const grandTotal = useMemo(
     () => pembelianFakturTotal(subtotalBarang, diskonFaktur, pajak),
@@ -276,7 +290,9 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
     }
 
     const diskonFakturVal = Math.round(diskonFaktur);
-    const pajakVal = pembelianHitungPajakPpn(subtotalBarang, diskonFakturVal, ppnPersen);
+    // Pakai nilai `pajak` yang sudah memo'd — sudah handle skenario PPN
+    // off + mode edit (preserve nilai asli faktur).
+    const pajakVal = pajak;
     if (diskonFakturVal < 0) {
       setError("Diskon faktur tidak valid.");
       return;
@@ -597,6 +613,17 @@ export function PembelianFakturForm({ mode, nomor, cancelHref, onSuccess }: Pemb
             {terkenaPajak ? (
               <div className="flex items-center justify-between gap-4 text-sm">
                 <span className="shrink-0 text-zinc-500">Pajak (PPN {ppnPersen}%)</span>
+                <span className="font-medium text-zinc-900">{formatRupiah(pajak)}</span>
+              </div>
+            ) : pajak > 0 ? (
+              // PPN global sedang off, tapi faktur ini punya nilai pajak
+              // tersimpan dari sebelumnya — tampilkan agar user sadar &
+              // tidak mengira PPN hilang. Nilai tidak dapat di-edit dari
+              // sini; untuk mengubah, aktifkan PPN dulu di Pengaturan.
+              <div className="flex items-center justify-between gap-4 text-sm">
+                <span className="shrink-0 text-zinc-500">
+                  Pajak <span className="text-xs italic text-zinc-400">(tersimpan, PPN global nonaktif)</span>
+                </span>
                 <span className="font-medium text-zinc-900">{formatRupiah(pajak)}</span>
               </div>
             ) : null}

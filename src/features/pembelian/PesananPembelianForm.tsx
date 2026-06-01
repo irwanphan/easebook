@@ -91,6 +91,11 @@ export function PesananPembelianForm({
   const [hydrating, setHydrating] = useState(mode === "edit");
   const [saving, setSaving] = useState(false);
   const { terkenaPajak, ppnPersen } = getPpnEfektif();
+  /**
+   * Nilai pajak asli dari pesanan tersimpan (mode edit). Lihat catatan
+   * di `PembelianFakturForm` untuk alasan preserve historical PPN.
+   */
+  const [pajakTersimpan, setPajakTersimpan] = useState(0);
 
   const masterLoading = loadPemasok || loadGudang || loadBarang;
   const busy = masterLoading || hydrating || saving;
@@ -128,6 +133,7 @@ export function PesananPembelianForm({
         setTanggalKirim(d.tanggalKirim ?? "");
         setCatatan(d.catatan ?? "");
         setDiskonFaktur(d.diskonFaktur ?? 0);
+        setPajakTersimpan(d.pajak ?? 0);
         setLines(
           d.lines.length > 0
             ? d.lines.map((l) => ({
@@ -208,10 +214,12 @@ export function PesananPembelianForm({
     [lines],
   );
 
-  const pajak = useMemo(
-    () => pembelianHitungPajakPpn(subtotalBarang, diskonFaktur, ppnPersen),
-    [subtotalBarang, diskonFaktur, ppnPersen],
-  );
+  const pajak = useMemo(() => {
+    if (terkenaPajak) {
+      return pembelianHitungPajakPpn(subtotalBarang, diskonFaktur, ppnPersen);
+    }
+    return mode === "edit" ? pajakTersimpan : 0;
+  }, [terkenaPajak, mode, pajakTersimpan, subtotalBarang, diskonFaktur, ppnPersen]);
 
   const grandTotal = useMemo(
     () => pembelianFakturTotal(subtotalBarang, diskonFaktur, pajak),
@@ -278,11 +286,9 @@ export function PesananPembelianForm({
       setError("Diskon faktur tidak boleh melebihi subtotal barang.");
       return;
     }
-    const pajakVal = pembelianHitungPajakPpn(
-      subtotalBarang,
-      diskonFakturVal,
-      ppnPersen,
-    );
+    // Pakai nilai `pajak` yang sudah memo'd — sudah handle skenario PPN
+    // off + mode edit (preserve nilai asli pesanan).
+    const pajakVal = pajak;
 
     const payload: PesananPembelianInsertPayload = {
       pemasokKode: pemasokKode.trim(),
@@ -661,6 +667,18 @@ export function PesananPembelianForm({
               <div className="flex items-center justify-between gap-4 text-sm">
                 <span className="shrink-0 text-zinc-500">
                   Pajak (PPN {ppnPersen}%)
+                </span>
+                <span className="font-medium text-zinc-900">
+                  {formatRupiah(pajak)}
+                </span>
+              </div>
+            ) : pajak > 0 ? (
+              <div className="flex items-center justify-between gap-4 text-sm">
+                <span className="shrink-0 text-zinc-500">
+                  Pajak{" "}
+                  <span className="text-xs italic text-zinc-400">
+                    (tersimpan, PPN global nonaktif)
+                  </span>
                 </span>
                 <span className="font-medium text-zinc-900">
                   {formatRupiah(pajak)}

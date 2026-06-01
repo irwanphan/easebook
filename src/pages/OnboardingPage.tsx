@@ -17,7 +17,10 @@ import { useAuth } from "@/features/auth/AuthContext";
 import { OnboardingShell } from "@/features/onboarding/components/OnboardingShell";
 import { OnboardingStepFooter } from "@/features/onboarding/components/OnboardingStepFooter";
 import { OnboardingWelcome } from "@/features/onboarding/components/OnboardingWelcome";
-import { onboardingComplete } from "@/features/onboarding/onboardingApi";
+import {
+  onboardingComplete,
+  onboardingStatusGet,
+} from "@/features/onboarding/onboardingApi";
 import { useOnboardingChecklist } from "@/features/onboarding/useOnboardingChecklist";
 import { useOnboardingFlow } from "@/features/onboarding/useOnboardingFlow";
 import type { OnboardingStepHandle } from "@/features/onboarding/stepHandle";
@@ -95,6 +98,21 @@ export function OnboardingPage() {
       await onboardingComplete({
         completedBy: session?.username ?? null,
       });
+
+      // Verifikasi backend benar-benar persist `completed_at`. Kalau
+      // gagal verifikasi (mis. tx error tertelan, race condition,
+      // backend tidak ter-restart setelah perubahan), kita JANGAN
+      // logout — itu bakal membuat user terjebak loop: logout → login →
+      // gate cek status (masih false) → redirect kembali ke
+      // /onboarding. Lebih baik kasih signal jelas & user retry.
+      const verifikasi = await onboardingStatusGet();
+      if (!verifikasi.completed) {
+        toast.error(
+          "Status onboarding gagal tersimpan di server. Coba lagi, atau restart aplikasi bila berulang.",
+        );
+        return;
+      }
+
       toast.success(
         "Pengaturan awal selesai. Silakan masuk dengan akun admin Anda.",
       );

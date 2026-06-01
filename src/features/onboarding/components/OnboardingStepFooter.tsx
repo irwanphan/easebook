@@ -37,15 +37,15 @@ export function OnboardingStepFooter({
       </div>
 
       <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onBack}
-          disabled={isFirst || busy}
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          Kembali
-        </Button>
+        {/* Tombol Kembali disembunyikan pada step pertama — tidak ada
+            tujuan ke mana harus mundur, dan menampilkannya dalam state
+            disabled hanya menambah noise visual. */}
+        {!isFirst ? (
+          <Button type="button" variant="ghost" onClick={onBack} disabled={busy}>
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            Kembali
+          </Button>
+        ) : null}
 
         {isLast ? (
           <Button type="button" variant="primary" onClick={onFinish} disabled={busy}>

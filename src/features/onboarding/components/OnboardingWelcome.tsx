@@ -98,11 +98,11 @@ export function OnboardingWelcome({ namaPengguna, onMulai }: Props) {
                         {String(step.nomor).padStart(2, "0")}
                       </span>
                       <p className="text-sm font-semibold text-zinc-900">{step.judul}</p>
-                      {!step.wajib ? (
+                      {/* {!step.wajib ? (
                         <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
                           Opsional
                         </span>
-                      ) : null}
+                      ) : null} */}
                     </div>
                     <p className="mt-0.5 text-xs text-zinc-500">{step.subjudul}</p>
                   </div>

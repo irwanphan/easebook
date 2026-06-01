@@ -16,6 +16,7 @@ import {
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { OnboardingResumeBanner } from "@/features/onboarding/components/OnboardingResumeBanner";
 import type { AkunKeuanganRow } from "@/data/keuangan";
 import type { KasAwalSnapshot } from "@/data/kasAwal";
 import { kasAwalGet, kasAwalSet } from "@/features/keuangan/kasAwalInvoke";
@@ -217,6 +218,7 @@ export function PengaturanKasAwalPage() {
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6">
+      <OnboardingResumeBanner />
       <div>
         <Link
           to="/keuangan/akun-kas"

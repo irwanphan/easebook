@@ -19,12 +19,13 @@ import {
   useState,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { CheckCircle2, ExternalLink, Info, Warehouse } from "lucide-react";
-import { Link } from "react-router-dom";
+import { CheckCircle2, Info, Settings2, Warehouse } from "lucide-react";
+import { Button } from "@/components/ui/Button";
 import { TokoInput } from "@/components/ui/TokoInput";
 import type { GudangRow } from "@/data/gudang";
 import { tauriErrorMessage } from "@/lib/tauriError";
 import { OnboardingStepHeader } from "@/features/onboarding/components/OnboardingStepHeader";
+import { KelolaGudangModal } from "@/features/onboarding/components/KelolaGudangModal";
 import type { OnboardingStepHandle } from "@/features/onboarding/stepHandle";
 
 type Props = {
@@ -68,6 +69,7 @@ export const StepGudang = forwardRef<OnboardingStepHandle, Props>(function StepG
   const [loadingList, setLoadingList] = useState(true);
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
   const [error, setError] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoadingList(true);
@@ -216,14 +218,10 @@ export const StepGudang = forwardRef<OnboardingStepHandle, Props>(function StepG
             ) : null}
           </ul>
 
-          <Link
-            to="/manajemen/gudang"
-            target="_blank"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-700 hover:text-brand-800"
-          >
-            Buka manajemen gudang
-            <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-          </Link>
+          <Button type="button" variant="outline" onClick={() => setModalOpen(true)}>
+            <Settings2 className="h-4 w-4" aria-hidden />
+            Kelola gudang
+          </Button>
         </div>
       ) : (
         <div className="flex flex-1 flex-col gap-5">
@@ -289,6 +287,12 @@ export const StepGudang = forwardRef<OnboardingStepHandle, Props>(function StepG
           </div>
         </div>
       )}
+
+      <KelolaGudangModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onChanged={() => void refresh()}
+      />
     </div>
   );
 });

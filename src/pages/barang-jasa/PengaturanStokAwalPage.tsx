@@ -23,6 +23,7 @@ import {
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { OnboardingResumeBanner } from "@/features/onboarding/components/OnboardingResumeBanner";
 import {
   getSatuanPilihanOptions,
   getSatuanStokBarang,
@@ -404,6 +405,7 @@ export function PengaturanStokAwalPage() {
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
+      <OnboardingResumeBanner />
       <div>
         <Link
           to="/barang-jasa"

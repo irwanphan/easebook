@@ -32,7 +32,7 @@ import { tauriErrorMessage } from "@/lib/tauriError";
 
 export function OnboardingPage() {
   const navigate = useNavigate();
-  const { session } = useAuth();
+  const { session, logout } = useAuth();
   const { checklist, loading: checklistLoading, refresh: refreshChecklist } =
     useOnboardingChecklist();
   const flow = useOnboardingFlow(checklist);
@@ -95,14 +95,30 @@ export function OnboardingPage() {
       await onboardingComplete({
         completedBy: session?.username ?? null,
       });
-      toast.success("Pengaturan awal selesai. Selamat menggunakan EasyBook!");
-      navigate("/", { replace: true });
+      toast.success(
+        "Pengaturan awal selesai. Silakan masuk dengan akun admin Anda.",
+      );
+      // Setelah onboarding:
+      //  1. Kredensial admin kemungkinan baru saja diubah di step "Akun
+      //     admin" (username & password). Sesi yang aktif sekarang
+      //     menyimpan identitas lama — bisa stale / tidak valid lagi.
+      //  2. `OnboardingGate` adalah parent dari rute `/onboarding` dan
+      //     `/`, sehingga ia tidak unmount saat navigate antar keduanya.
+      //     Akibatnya `useOnboardingStatus` di gate masih memegang
+      //     cache `completed=false` dan akan melempar user balik ke
+      //     wizard meski backend sudah completed.
+      //
+      // Logout memutus sesi lama dan saat user kembali login, semua
+      // hook (termasuk gate) di-mount ulang dengan status terbaru —
+      // user akan langsung ke dashboard tanpa loop.
+      logout();
+      navigate("/login", { replace: true });
     } catch (e) {
       toast.error(tauriErrorMessage(e));
     } finally {
       setBusy(false);
     }
-  }, [busy, navigate, refreshChecklist, session?.username]);
+  }, [busy, logout, navigate, refreshChecklist, session?.username]);
 
   /**
    * Shortcut Enter pada step "Selesai" — komitmen user dengan satu tap

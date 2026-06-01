@@ -67,8 +67,8 @@ function ModulCard({
       onChange={() => onToggle(modul.id)}
       badge={
         modul.wajib ? (
-          <span className="inline-flex items-center gap-1">
-            <Lock className="h-3 w-3" aria-hidden /> Inti
+          <span className="inline-flex text-sm h-4 w-4 items-center justify-center gap-1">
+            <Lock className="h-3 w-3" strokeWidth={2.5} aria-hidden />
           </span>
         ) : undefined
       }
@@ -169,9 +169,9 @@ export const StepModulBisnis = forwardRef<OnboardingStepHandle, Props>(
 
         {modulInti.length > 0 ? (
           <fieldset className="flex flex-col gap-3">
-            <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            {/* <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">
               Modul inti
-            </legend>
+            </legend> */}
             {modulInti.map((modul) => (
               <ModulCard
                 key={modul.id}
@@ -185,9 +185,9 @@ export const StepModulBisnis = forwardRef<OnboardingStepHandle, Props>(
 
         {modulOpsional.length > 0 ? (
           <fieldset className="flex flex-col gap-3">
-            <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            {/* <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">
               Modul opsional
-            </legend>
+            </legend> */}
             {modulOpsional.map((modul) => (
               <ModulCard
                 key={modul.id}

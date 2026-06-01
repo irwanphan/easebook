@@ -11,20 +11,21 @@
  *                          "Mulai dari nol" (jejak ada di localStorage
  *                          `easybook-onboarding-coa-pilihan`).
  *  - `gudang`            → `gudang_list` (minimal 1 entri).
- *  - `saldo-awal`        → `kas_awal_get` + `stok_awal_get` (cukup salah satu).
  *  - `password-admin`    → `pengguna_verifikasi_kata_sandi("admin", "admin123")`
  *                          → kalau berhasil = masih default → step belum done.
+ *  - `modul-bisnis`      → localStorage `easybook-modul-aktif` (default semua aktif).
  *
  * Hook ini cukup di-call sekali per render wizard; setiap step yang baru
  * disimpan akan memanggil `refresh()` agar checklist re-evaluasi.
+ *
+ * Catatan: saldo awal kas & stok **bukan bagian wizard** — diatur dari
+ * menu Pengaturan setelah user menambah daftar produk pasca-login.
  */
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { operasionalKonfigurasiGet } from "@/features/pengaturan/operasionalKonfigurasiInvoke";
 import { loadInformasiPerusahaan } from "@/features/pengaturan/informasiPerusahaanStorage";
 import { loadPengaturanTransaksi } from "@/features/pengaturan/pengaturanTransaksiStorage";
-import { kasAwalGet } from "@/features/keuangan/kasAwalInvoke";
-import { stokAwalGet } from "@/features/barang-jasa/stokAwalInvoke";
 import { loadCoAPilihan } from "@/features/onboarding/coaPilihanStorage";
 import { loadModulAktif } from "@/features/modul-bisnis/modulBisnisStorage";
 import type { AkunKeuanganRow } from "@/data/keuangan";
@@ -38,7 +39,6 @@ const DEFAULT_CHECKLIST: OnboardingChecklist = {
   "periode-pembukuan": false,
   coa: false,
   gudang: false,
-  "saldo-awal": false,
   "password-admin": false,
   // Default true: storage default = semua modul aktif, jadi "siap"
   // kecuali user secara eksplisit mengosongkan & belum submit.
@@ -79,18 +79,14 @@ export function useOnboardingChecklist() {
     const coaPilihan = loadCoAPilihan();
     const modulAktif = loadModulAktif();
 
-    const [opCfg, akunList, gudangList, kasAwal, stokAwal, adminDefault] = await Promise.all([
+    const [opCfg, akunList, gudangList, adminDefault] = await Promise.all([
       operasionalKonfigurasiGet().catch(() => ({ awalPeriode: null })),
       invoke<AkunKeuanganRow[]>("akun_keuangan_list").catch(() => [] as AkunKeuanganRow[]),
       invoke<GudangRow[]>("gudang_list").catch(() => [] as GudangRow[]),
-      kasAwalGet().catch(() => null),
-      stokAwalGet().catch(() => null),
       isAdminPasswordMasihDefault(),
     ]);
 
     const periodeSiap = Boolean(opCfg.awalPeriode) && Number.isFinite(transaksi.ppnPersen);
-    const kasAdaEntries = (kasAwal?.entries?.length ?? 0) > 0;
-    const stokAdaEntries = (stokAwal?.entries?.length ?? 0) > 0;
     // CoA done bila: ada akun di DB (user pakai standar) ATAU user
     // eksplisit memilih "kosong" via wizard.
     const coaSiap = akunList.length > 0 || coaPilihan === "kosong";
@@ -100,7 +96,6 @@ export function useOnboardingChecklist() {
       "periode-pembukuan": periodeSiap,
       coa: coaSiap,
       gudang: gudangList.length > 0,
-      "saldo-awal": kasAdaEntries || stokAdaEntries,
       "password-admin": !adminDefault,
       "modul-bisnis": modulAktif.size > 0,
       selesai: false,

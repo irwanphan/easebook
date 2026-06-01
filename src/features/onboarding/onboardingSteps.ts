@@ -16,7 +16,6 @@ export type OnboardingStepId =
   | "periode-pembukuan"
   | "coa"
   | "gudang"
-  | "saldo-awal"
   | "password-admin"
   | "modul-bisnis"
   | "selesai";
@@ -76,15 +75,8 @@ export const ONBOARDING_STEPS: OnboardingStepMeta[] = [
     wajib: false,
   },
   {
-    id: "saldo-awal",
-    nomor: 7,
-    judul: "Saldo awal kas & stok",
-    subjudul: "Opsional, dapat diisi nanti",
-    wajib: false,
-  },
-  {
     id: "selesai",
-    nomor: 8,
+    nomor: 7,
     judul: "Selesai",
     subjudul: "Konfirmasi & masuk aplikasi",
     wajib: true,

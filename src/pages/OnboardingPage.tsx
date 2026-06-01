@@ -10,7 +10,7 @@
  * Tombol "Kembali" tidak menyimpan — diasumsikan user memang ingin
  * meninggalkan perubahan di step ini.
  */
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "@/features/auth/AuthContext";
@@ -27,6 +27,7 @@ import { StepCoA } from "@/features/onboarding/steps/StepCoA";
 import { StepGudang } from "@/features/onboarding/steps/StepGudang";
 import { StepSaldoAwal } from "@/features/onboarding/steps/StepSaldoAwal";
 import { StepPasswordAdmin } from "@/features/onboarding/steps/StepPasswordAdmin";
+import { StepSelesai } from "@/features/onboarding/steps/StepSelesai";
 import { tauriErrorMessage } from "@/lib/tauriError";
 
 export function OnboardingPage() {
@@ -49,9 +50,19 @@ export function OnboardingPage() {
    */
   const [sudahKlikMulai, setSudahKlikMulai] = useState(false);
 
+  /**
+   * Step `selesai` adalah momen closing — bukan kerjaan yang punya
+   * status done/belum. Mengecualikannya dari hitungan progress
+   * membuat user yang sampai di step terakhir melihat 100% (semua
+   * kerjaan kelar), bukan ~86% yang terasa tanggung.
+   */
+  const stepsKerjaan = useMemo(
+    () => flow.steps.filter((s) => s.id !== "selesai"),
+    [flow.steps],
+  );
   const doneCount = useMemo(
-    () => flow.steps.reduce((acc, s) => acc + (checklist[s.id] ? 1 : 0), 0),
-    [checklist, flow.steps],
+    () => stepsKerjaan.reduce((acc, s) => acc + (checklist[s.id] ? 1 : 0), 0),
+    [checklist, stepsKerjaan],
   );
 
   const tampilkanWelcome = !checklistLoading && !sudahKlikMulai;
@@ -93,6 +104,38 @@ export function OnboardingPage() {
     }
   }, [busy, navigate, refreshChecklist, session?.username]);
 
+  /**
+   * Shortcut Enter pada step "Selesai" — komitmen user dengan satu tap
+   * di keyboard, tanpa harus meraih mouse. Diabaikan bila fokus berada
+   * di input/textarea/contenteditable (jadi tidak mengganggu form-form
+   * step lain bila bug navigasi tiba-tiba membawa fokus ke step bukan
+   * selesai), bila ada modifier Ctrl/Meta/Alt, atau saat wizard sedang
+   * busy/welcome.
+   */
+  useEffect(() => {
+    if (sudahKlikMulai !== true) return;
+    if (flow.current?.id !== "selesai") return;
+
+    function isEditable(target: EventTarget | null): boolean {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if (target.isContentEditable) return true;
+      return false;
+    }
+
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key !== "Enter") return;
+      if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      if (isEditable(ev.target)) return;
+      ev.preventDefault();
+      void handleFinish();
+    }
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [flow.current?.id, handleFinish, sudahKlikMulai]);
+
   const renderStep = () => {
     if (checklistLoading && !flow.current) {
       return <p className="text-sm text-zinc-500">Memuat status onboarding…</p>;
@@ -110,6 +153,10 @@ export function OnboardingPage() {
         return <StepSaldoAwal ref={stepRef} onSaved={refreshChecklist} />;
       case "password-admin":
         return <StepPasswordAdmin ref={stepRef} onSaved={refreshChecklist} />;
+      case "selesai":
+        return (
+          <StepSelesai ref={stepRef} checklist={checklist} onSaved={refreshChecklist} />
+        );
       default:
         return null;
     }
@@ -130,7 +177,7 @@ export function OnboardingPage() {
       checklist={checklist}
       onSelectStep={flow.goTo}
       doneCount={doneCount}
-      totalCount={flow.steps.length}
+      totalCount={stepsKerjaan.length}
     >
       <div className="flex flex-1 flex-col gap-6">{renderStep()}</div>
 
@@ -142,9 +189,11 @@ export function OnboardingPage() {
         onNext={handleNext}
         onFinish={handleFinish}
         hint={
-          flow.current?.wajib
-            ? "Klik Lanjut untuk menyimpan dan melanjutkan."
-            : "Klik Lanjut untuk melewati atau menyimpan."
+          flow.current?.id === "selesai"
+            ? "Tekan Enter atau klik Selesai untuk masuk aplikasi."
+            : flow.current?.wajib
+              ? "Klik Lanjut untuk menyimpan dan melanjutkan."
+              : "Klik Lanjut untuk melewati atau menyimpan."
         }
       />
     </OnboardingShell>

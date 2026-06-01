@@ -39,6 +39,9 @@ const DEFAULT_CHECKLIST: OnboardingChecklist = {
   gudang: false,
   "saldo-awal": false,
   "password-admin": false,
+  // Step closing — selalu false di checklist; "centang"-nya terjadi
+  // implisit saat user menekan Selesai (yang langsung navigate ke "/").
+  selesai: false,
 };
 
 /**
@@ -94,6 +97,7 @@ export function useOnboardingChecklist() {
       gudang: gudangList.length > 0,
       "saldo-awal": kasAdaEntries || stokAdaEntries,
       "password-admin": !adminDefault,
+      selesai: false,
     });
     setLoading(false);
   }, []);

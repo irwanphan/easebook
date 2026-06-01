@@ -17,7 +17,8 @@ export type OnboardingStepId =
   | "coa"
   | "gudang"
   | "saldo-awal"
-  | "password-admin";
+  | "password-admin"
+  | "selesai";
 
 export type OnboardingStepMeta = {
   id: OnboardingStepId;
@@ -71,6 +72,13 @@ export const ONBOARDING_STEPS: OnboardingStepMeta[] = [
     nomor: 6,
     judul: "Ganti password admin",
     subjudul: "Amankan akun bawaan",
+    wajib: true,
+  },
+  {
+    id: "selesai",
+    nomor: 7,
+    judul: "Selesai",
+    subjudul: "Konfirmasi & masuk aplikasi",
     wajib: true,
   },
 ];

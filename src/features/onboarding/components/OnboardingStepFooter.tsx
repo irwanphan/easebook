@@ -1,42 +1,32 @@
 /**
- * Footer navigasi step (Kembali / Lewati / Lanjut).
+ * Footer navigasi step.
  *
- * Komponen ini hanya pemicu callback — keputusan apakah `Lanjut` aktif
- * (mis. step wajib belum done) dikelola oleh `useOnboardingFlow.canAdvance`
- * yang di-pass ke prop `canAdvance`.
+ * Hanya menyajikan tombol Kembali + Lanjut/Selesai. Tindakan simpan
+ * dipicu oleh tombol Lanjut/Selesai melalui `OnboardingStepHandle.submit`
+ * yang dikelola di {@link OnboardingPage} — komponen ini sengaja tidak
+ * tahu detail validasi per step (single responsibility).
  */
-import { ArrowLeft, ArrowRight, Check, SkipForward } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
 type Props = {
   isFirst: boolean;
   isLast: boolean;
-  canAdvance: boolean;
-  canFinish: boolean;
-  finishing: boolean;
-  /** Apakah tombol "Lewati" boleh dimunculkan (step opsional). */
-  canSkip: boolean;
+  /** True saat submit/finish sedang berjalan — disable seluruh tombol. */
+  busy: boolean;
   onBack: () => void;
   onNext: () => void;
-  onSkip: () => void;
   onFinish: () => void;
-  /**
-   * Pesan kecil di sisi kiri footer (mis. "Disimpan otomatis"). Berguna
-   * untuk feedback ringkas tanpa mengganggu alur navigasi.
-   */
+  /** Pesan kecil di kiri (mis. "Auto-disimpan saat Lanjut"). Opsional. */
   hint?: string;
 };
 
 export function OnboardingStepFooter({
   isFirst,
   isLast,
-  canAdvance,
-  canFinish,
-  finishing,
-  canSkip,
+  busy,
   onBack,
   onNext,
-  onSkip,
   onFinish,
   hint,
 }: Props) {
@@ -51,43 +41,20 @@ export function OnboardingStepFooter({
           type="button"
           variant="ghost"
           onClick={onBack}
-          disabled={isFirst || finishing}
+          disabled={isFirst || busy}
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Kembali
         </Button>
 
-        {canSkip && !isLast ? (
-          <Button type="button" variant="outline" onClick={onSkip} disabled={finishing}>
-            <SkipForward className="h-4 w-4" aria-hidden />
-            Lewati
-          </Button>
-        ) : null}
-
         {isLast ? (
-          <Button
-            type="button"
-            variant="primary"
-            onClick={onFinish}
-            disabled={!canFinish || finishing}
-            title={
-              canFinish
-                ? "Selesaikan pengaturan awal"
-                : "Lengkapi semua langkah wajib terlebih dahulu"
-            }
-          >
+          <Button type="button" variant="primary" onClick={onFinish} disabled={busy}>
             <Check className="h-4 w-4" aria-hidden />
-            {finishing ? "Menyelesaikan…" : "Selesai"}
+            {busy ? "Menyelesaikan…" : "Selesai"}
           </Button>
         ) : (
-          <Button
-            type="button"
-            variant="primary"
-            onClick={onNext}
-            disabled={!canAdvance || finishing}
-            title={canAdvance ? "Lanjut ke langkah berikutnya" : "Selesaikan langkah ini dulu"}
-          >
-            Lanjut
+          <Button type="button" variant="primary" onClick={onNext} disabled={busy}>
+            {busy ? "Menyimpan…" : "Lanjut"}
             <ArrowRight className="h-4 w-4" aria-hidden />
           </Button>
         )}

@@ -1,30 +1,31 @@
 /**
  * Step 3 — Buat gudang default.
  *
- * Opsional: jika sudah ada minimal satu gudang (mis. user pernah
- * menambahkan via menu manajemen), step ini cukup menampilkan ringkasan
- * dan tombol "Lanjutkan". Jika belum ada, form ringkas (subset field
- * `gudang_insert`) muncul untuk membuat satu entri pertama.
- *
- * Field non-esensial seperti koordinat & luas tetap diminta (backend
- * memvalidasi `luas_m2 > 0`), namun dengan default sensible supaya user
- * awam tidak terhambat.
+ * Opsional. Aturan submit (lewat tombol Lanjut):
+ *  - Jika sudah ada minimal 1 gudang → no-op, lanjut.
+ *  - Jika belum ada gudang DAN user tidak mengisi field esensial
+ *    (alamat / PIC / kontak semuanya kosong) → anggap user melewati,
+ *    lanjut tanpa insert.
+ *  - Jika belum ada gudang DAN user mulai mengisi tapi tidak lengkap →
+ *    error, tetap di step.
+ *  - Jika belum ada gudang DAN form lengkap → insert.
  */
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import {
-  CheckCircle2,
-  ExternalLink,
-  Info,
-  PackagePlus,
-  Warehouse,
-} from "lucide-react";
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useState,
+} from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { CheckCircle2, ExternalLink, Info, Warehouse } from "lucide-react";
 import { Link } from "react-router-dom";
-import { Button } from "@/components/ui/Button";
 import { TokoInput } from "@/components/ui/TokoInput";
 import type { GudangRow } from "@/data/gudang";
 import { tauriErrorMessage } from "@/lib/tauriError";
 import { OnboardingStepHeader } from "@/features/onboarding/components/OnboardingStepHeader";
+import type { OnboardingStepHandle } from "@/features/onboarding/stepHandle";
 
 type Props = {
   onSaved: () => Promise<void>;
@@ -50,13 +51,23 @@ const DEFAULT_FORM: FormState = {
   kapasitasPenyimpanan: "Standar",
 };
 
-export function StepGudang({ onSaved }: Props) {
+/** True bila user belum mengisi field esensial sama sekali. */
+function isFormBelumDisentuh(form: FormState): boolean {
+  return (
+    form.alamat.trim().length === 0 &&
+    form.pic.trim().length === 0 &&
+    form.nomorKontak.trim().length === 0
+  );
+}
+
+export const StepGudang = forwardRef<OnboardingStepHandle, Props>(function StepGudang(
+  { onSaved },
+  ref,
+) {
   const [list, setList] = useState<GudangRow[]>([]);
   const [loadingList, setLoadingList] = useState(true);
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hint, setHint] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoadingList(true);
@@ -77,7 +88,6 @@ export function StepGudang({ onSaved }: Props) {
   const update = useCallback(<K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
     setError(null);
-    setHint(null);
   }, []);
 
   const sudahAda = list.length > 0;
@@ -87,44 +97,69 @@ export function StepGudang({ onSaved }: Props) {
     return list.slice(0, 3);
   }, [list, sudahAda]);
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setHint(null);
+  useImperativeHandle(
+    ref,
+    () => ({
+      async submit() {
+        if (sudahAda) {
+          return true;
+        }
+        if (isFormBelumDisentuh(form)) {
+          // User memilih tidak membuat gudang sekarang — step opsional,
+          // boleh lanjut tanpa insert.
+          return true;
+        }
 
-    const kode = form.kode.trim().toUpperCase();
-    if (!kode) return setError("Kode gudang wajib diisi.");
-    if (!form.nama.trim()) return setError("Nama gudang wajib diisi.");
-    if (!form.alamat.trim()) return setError("Alamat wajib diisi.");
-    if (!form.pic.trim()) return setError("Nama PIC wajib diisi.");
-    if (!form.nomorKontak.trim()) return setError("Nomor kontak wajib diisi.");
-    if (!Number.isFinite(form.luasM2) || form.luasM2 <= 0) {
-      return setError("Luas harus lebih dari 0.");
-    }
+        const kode = form.kode.trim().toUpperCase();
+        if (!kode) {
+          setError("Kode gudang wajib diisi.");
+          return false;
+        }
+        if (!form.nama.trim()) {
+          setError("Nama gudang wajib diisi.");
+          return false;
+        }
+        if (!form.alamat.trim()) {
+          setError("Alamat wajib diisi.");
+          return false;
+        }
+        if (!form.pic.trim()) {
+          setError("Nama PIC wajib diisi.");
+          return false;
+        }
+        if (!form.nomorKontak.trim()) {
+          setError("Nomor kontak wajib diisi.");
+          return false;
+        }
+        if (!Number.isFinite(form.luasM2) || form.luasM2 <= 0) {
+          setError("Luas harus lebih dari 0.");
+          return false;
+        }
 
-    setSaving(true);
-    try {
-      await invoke("gudang_insert", {
-        row: {
-          kode,
-          nama: form.nama.trim(),
-          alamat: form.alamat.trim(),
-          lokasi: "",
-          pic: form.pic.trim(),
-          nomorKontak: form.nomorKontak.trim(),
-          luasM2: form.luasM2,
-          kapasitasPenyimpanan: form.kapasitasPenyimpanan.trim() || "Standar",
-        },
-      });
-      setHint("Gudang dibuat.");
-      await refresh();
-      await onSaved();
-    } catch (err) {
-      setError(tauriErrorMessage(err));
-    } finally {
-      setSaving(false);
-    }
-  }
+        try {
+          await invoke("gudang_insert", {
+            row: {
+              kode,
+              nama: form.nama.trim(),
+              alamat: form.alamat.trim(),
+              lokasi: "",
+              pic: form.pic.trim(),
+              nomorKontak: form.nomorKontak.trim(),
+              luasM2: form.luasM2,
+              kapasitasPenyimpanan: form.kapasitasPenyimpanan.trim() || "Standar",
+            },
+          });
+          await refresh();
+          await onSaved();
+          return true;
+        } catch (err) {
+          setError(tauriErrorMessage(err));
+          return false;
+        }
+      },
+    }),
+    [sudahAda, form, refresh, onSaved],
+  );
 
   return (
     <div className="flex flex-1 flex-col gap-6">
@@ -143,12 +178,6 @@ export function StepGudang({ onSaved }: Props) {
           {error}
         </div>
       ) : null}
-      {hint ? (
-        <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-          <span>{hint}</span>
-        </div>
-      ) : null}
 
       {loadingList ? (
         <p className="text-sm text-zinc-500">Memuat daftar gudang…</p>
@@ -158,7 +187,7 @@ export function StepGudang({ onSaved }: Props) {
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             <div>
               <p className="font-semibold">Anda sudah memiliki {list.length} gudang.</p>
-              <p className="mt-0.5 text-xs">Langkah ini bisa dilewati.</p>
+              <p className="mt-0.5 text-xs">Klik Lanjut untuk melewati langkah ini.</p>
             </div>
           </div>
 
@@ -197,43 +226,31 @@ export function StepGudang({ onSaved }: Props) {
           </Link>
         </div>
       ) : (
-        <form onSubmit={handleSubmit} className="flex flex-1 flex-col gap-5">
+        <div className="flex flex-1 flex-col gap-5">
           <div className="flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50/60 px-3 py-2.5 text-xs leading-relaxed text-sky-900">
             <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             <span>
-              Minimal 1 gudang dibutuhkan untuk mencatat stok. Anda dapat memakai default
-              di bawah atau mengisinya sendiri.
+              Lengkapi form untuk membuat gudang pertama, atau biarkan kosong dan klik Lanjut
+              untuk melewati. Anda bisa menambahkannya kapan saja dari menu Manajemen.
             </span>
           </div>
 
           <div className="grid gap-5 sm:grid-cols-2">
             <TokoInput
-              label={
-                <span>
-                  Kode <span className="text-rose-600">*</span>
-                </span>
-              }
+              label="Kode"
               value={form.kode}
               onChange={(e) => update("kode", e.target.value.toUpperCase())}
               autoCapitalize="characters"
             />
             <TokoInput
-              label={
-                <span>
-                  Nama <span className="text-rose-600">*</span>
-                </span>
-              }
+              label="Nama"
               value={form.nama}
               onChange={(e) => update("nama", e.target.value)}
             />
           </div>
 
           <TokoInput
-            label={
-              <span>
-                Alamat <span className="text-rose-600">*</span>
-              </span>
-            }
+            label="Alamat"
             value={form.alamat}
             onChange={(e) => update("alamat", e.target.value)}
             placeholder="Jl. Contoh No. 1"
@@ -241,20 +258,12 @@ export function StepGudang({ onSaved }: Props) {
 
           <div className="grid gap-5 sm:grid-cols-2">
             <TokoInput
-              label={
-                <span>
-                  Penanggung jawab (PIC) <span className="text-rose-600">*</span>
-                </span>
-              }
+              label="Penanggung jawab (PIC)"
               value={form.pic}
               onChange={(e) => update("pic", e.target.value)}
             />
             <TokoInput
-              label={
-                <span>
-                  Nomor kontak <span className="text-rose-600">*</span>
-                </span>
-              }
+              label="Nomor kontak"
               type="tel"
               value={form.nomorKontak}
               onChange={(e) => update("nomorKontak", e.target.value)}
@@ -278,15 +287,8 @@ export function StepGudang({ onSaved }: Props) {
               placeholder="Standar / 50 palet / 100 m³"
             />
           </div>
-
-          <div className="flex justify-end">
-            <Button type="submit" disabled={saving}>
-              <PackagePlus className="h-4 w-4" aria-hidden />
-              {saving ? "Menyimpan…" : "Buat gudang default"}
-            </Button>
-          </div>
-        </form>
+        </div>
       )}
     </div>
   );
-}
+});

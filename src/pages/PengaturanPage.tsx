@@ -93,11 +93,16 @@ export function PengaturanPage() {
     e.preventDefault();
     setError(null);
     const ppn = Number.parseFloat(String(transaksi.ppnPersen));
-    if (!Number.isFinite(ppn) || ppn < 0 || ppn > 100) {
-      setError("Nilai PPN harus antara 0 dan 100 (persen).");
-      return;
+    if (transaksi.terkenaPajak) {
+      if (!Number.isFinite(ppn) || ppn < 0 || ppn > 100) {
+        setError("Nilai PPN harus antara 0 dan 100 (persen).");
+        return;
+      }
     }
-    const next = { ppnPersen: Math.round(ppn * 100) / 100 };
+    const next = {
+      terkenaPajak: Boolean(transaksi.terkenaPajak),
+      ppnPersen: Number.isFinite(ppn) ? Math.round(ppn * 100) / 100 : transaksi.ppnPersen,
+    };
     setTransaksi(next);
     persistPengaturanTransaksi(next);
     setSavedHint("Pengaturan transaksi telah disimpan.");
@@ -223,36 +228,64 @@ export function PengaturanPage() {
                     </p>
                   ) : null}
 
-                  <div>
-                    <FieldLabel htmlFor="p-ppn">Nilai PPN (%)</FieldLabel>
-                    <p className="mt-1 text-sm text-zinc-500">
-                      Tarif Pajak Pertambahan Nilai default untuk perhitungan pajak pada faktur pembelian
-                      dan penjualan.
-                    </p>
-                    <div className="relative mt-2 max-w-xs">
-                      <TokoInput
-                        id="p-ppn"
-                        name="ppnPersen"
-                        type="number"
-                        min={0}
-                        max={100}
-                        step={0.01}
-                        value={transaksi.ppnPersen}
+                  <div className="space-y-3">
+                    <label className="flex items-start gap-3 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 transition hover:border-zinc-300">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-brand-600 focus:ring-brand-500/30"
+                        checked={transaksi.terkenaPajak}
                         onChange={(e) => {
-                          const raw = e.target.value;
-                          const n = raw === "" ? 0 : Number.parseFloat(raw);
-                          setTransaksi({ ppnPersen: Number.isFinite(n) ? n : 0 });
+                          setTransaksi((prev) => ({ ...prev, terkenaPajak: e.target.checked }));
                           setSavedHint(null);
                           setError(null);
                         }}
-                        className="mt-0 pr-10"
                       />
-                      <span
-                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-zinc-400"
-                        aria-hidden
-                      >
-                        %
+                      <span className="flex flex-col">
+                        <span className="text-sm font-medium text-zinc-800">
+                          Transaksi dikenakan PPN
+                        </span>
+                        <span className="text-xs text-zinc-500">
+                          Hilangkan centang bila usaha Anda tidak memungut PPN. Tarif di bawah
+                          tetap tersimpan dan akan dipakai lagi jika diaktifkan kembali.
+                        </span>
                       </span>
+                    </label>
+
+                    <div>
+                      <FieldLabel htmlFor="p-ppn">Nilai PPN (%)</FieldLabel>
+                      <p className="mt-1 text-sm text-zinc-500">
+                        Tarif Pajak Pertambahan Nilai default untuk perhitungan pajak pada faktur
+                        pembelian dan penjualan.
+                      </p>
+                      <div className="relative mt-2 max-w-xs">
+                        <TokoInput
+                          id="p-ppn"
+                          name="ppnPersen"
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={0.01}
+                          value={transaksi.ppnPersen}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            const n = raw === "" ? 0 : Number.parseFloat(raw);
+                            setTransaksi((prev) => ({
+                              ...prev,
+                              ppnPersen: Number.isFinite(n) ? n : 0,
+                            }));
+                            setSavedHint(null);
+                            setError(null);
+                          }}
+                          className="mt-0 pr-10"
+                          disabled={!transaksi.terkenaPajak}
+                        />
+                        <span
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-zinc-400"
+                          aria-hidden
+                        >
+                          %
+                        </span>
+                      </div>
                     </div>
                   </div>
 

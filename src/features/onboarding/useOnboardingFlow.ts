@@ -1,10 +1,15 @@
 /**
  * State machine sederhana untuk navigasi step wizard onboarding.
  *
- * Tanggung jawab terbatas: hanya mengelola "step mana yang aktif" dan
- * memvalidasi transisi (tidak boleh maju kalau step wajib belum done).
- * Tidak menyentuh data — fetch & persist tetap di hook checklist /
- * komponen step masing-masing.
+ * Tugas: melacak step aktif & menyediakan helper `goNext` / `goBack` /
+ * `goTo`. Tidak menentukan apakah maju "boleh" atau tidak — keputusan
+ * itu diserahkan ke komponen step lewat `OnboardingStepHandle.submit()`
+ * (return false → tetap di posisi).
+ *
+ * `canFinish` tetap disediakan supaya UI di step terakhir dapat tahu
+ * apakah semua step wajib sudah tercentang di checklist global; jika
+ * belum, parent bisa memilih untuk auto-jump ke step yang masih
+ * kurang setelah submit step terakhir berhasil.
  */
 import { useCallback, useMemo, useState } from "react";
 import {
@@ -46,13 +51,6 @@ export function useOnboardingFlow(
     [checklist],
   );
 
-  /** Apakah step aktif boleh dilewati Lanjut. Step wajib harus done dulu. */
-  const canAdvance = useMemo(() => {
-    if (!current) return false;
-    if (current.wajib && !checklist[current.id]) return false;
-    return true;
-  }, [current, checklist]);
-
   const goNext = useCallback(() => {
     setCurrentIdx((idx) => Math.min(idx + 1, ONBOARDING_STEPS.length - 1));
   }, []);
@@ -72,7 +70,6 @@ export function useOnboardingFlow(
     currentIdx,
     isFirst,
     isLast,
-    canAdvance,
     canFinish,
     goNext,
     goBack,

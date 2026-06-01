@@ -1,17 +1,16 @@
 /**
  * Halaman utama wizard onboarding first-run.
  *
- * Bertugas merangkai 5 komponen step ke dalam {@link OnboardingShell}
- * dan mendelegasikan navigasi step ke {@link useOnboardingFlow}. Sumber
- * checklist datang dari {@link useOnboardingChecklist}; setiap aksi
- * simpan di step memanggil `refreshChecklist()` agar progress visual
- * (badge hijau di stepper + persen progress di header) langsung update.
+ * Pola interaksi: setiap step diakses lewat `ref` yang mengexpose
+ * `OnboardingStepHandle.submit()`. Tombol Lanjut/Selesai di footer akan
+ * memanggil submit step aktif; bila berhasil, wizard maju ke step
+ * berikutnya (atau menutup wizard untuk step terakhir). Bila gagal,
+ * step tetap di posisi semula dengan error inline.
  *
- * Penyelesaian wizard memanggil `onboardingComplete` di backend, lalu
- * navigasi ke "/" — `OnboardingGate` akan berhenti memaksa redirect ke
- * sini setelah status.completed = true.
+ * Tombol "Kembali" tidak menyimpan — diasumsikan user memang ingin
+ * meninggalkan perubahan di step ini.
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "@/features/auth/AuthContext";
@@ -20,6 +19,7 @@ import { OnboardingStepFooter } from "@/features/onboarding/components/Onboardin
 import { onboardingComplete } from "@/features/onboarding/onboardingApi";
 import { useOnboardingChecklist } from "@/features/onboarding/useOnboardingChecklist";
 import { useOnboardingFlow } from "@/features/onboarding/useOnboardingFlow";
+import type { OnboardingStepHandle } from "@/features/onboarding/stepHandle";
 import { StepInfoPerusahaan } from "@/features/onboarding/steps/StepInfoPerusahaan";
 import { StepPeriodePembukuan } from "@/features/onboarding/steps/StepPeriodePembukuan";
 import { StepGudang } from "@/features/onboarding/steps/StepGudang";
@@ -33,17 +33,39 @@ export function OnboardingPage() {
   const { checklist, loading: checklistLoading, refresh: refreshChecklist } =
     useOnboardingChecklist();
   const flow = useOnboardingFlow(checklist);
-  const [finishing, setFinishing] = useState(false);
+  const stepRef = useRef<OnboardingStepHandle | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const doneCount = useMemo(
     () => flow.steps.reduce((acc, s) => acc + (checklist[s.id] ? 1 : 0), 0),
     [checklist, flow.steps],
   );
 
-  const handleFinish = useCallback(async () => {
-    if (!flow.canFinish || finishing) return;
-    setFinishing(true);
+  const handleNext = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
     try {
+      const ok = (await stepRef.current?.submit()) ?? true;
+      if (ok) flow.goNext();
+    } catch (e) {
+      toast.error(tauriErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, flow]);
+
+  const handleFinish = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const ok = (await stepRef.current?.submit()) ?? true;
+      if (!ok) {
+        // Validasi gagal di step terakhir, footer akan menampilkan
+        // error inline; jangan call onboardingComplete.
+        return;
+      }
+      // Re-ambil checklist freshness untuk yakin semua step wajib done.
+      await refreshChecklist();
       await onboardingComplete({
         completedBy: session?.username ?? null,
       });
@@ -51,14 +73,10 @@ export function OnboardingPage() {
       navigate("/", { replace: true });
     } catch (e) {
       toast.error(tauriErrorMessage(e));
-      setFinishing(false);
+    } finally {
+      setBusy(false);
     }
-  }, [flow.canFinish, finishing, navigate, session?.username]);
-
-  const handleSkip = useCallback(() => {
-    if (flow.current?.wajib) return;
-    flow.goNext();
-  }, [flow]);
+  }, [busy, navigate, refreshChecklist, session?.username]);
 
   const renderStep = () => {
     if (checklistLoading && !flow.current) {
@@ -66,15 +84,15 @@ export function OnboardingPage() {
     }
     switch (flow.current?.id) {
       case "info-perusahaan":
-        return <StepInfoPerusahaan onSaved={refreshChecklist} />;
+        return <StepInfoPerusahaan ref={stepRef} onSaved={refreshChecklist} />;
       case "periode-pembukuan":
-        return <StepPeriodePembukuan onSaved={refreshChecklist} />;
+        return <StepPeriodePembukuan ref={stepRef} onSaved={refreshChecklist} />;
       case "gudang":
-        return <StepGudang onSaved={refreshChecklist} />;
+        return <StepGudang ref={stepRef} onSaved={refreshChecklist} />;
       case "saldo-awal":
-        return <StepSaldoAwal onSaved={refreshChecklist} />;
+        return <StepSaldoAwal ref={stepRef} onSaved={refreshChecklist} />;
       case "password-admin":
-        return <StepPasswordAdmin onSaved={refreshChecklist} />;
+        return <StepPasswordAdmin ref={stepRef} onSaved={refreshChecklist} />;
       default:
         return null;
     }
@@ -93,20 +111,14 @@ export function OnboardingPage() {
       <OnboardingStepFooter
         isFirst={flow.isFirst}
         isLast={flow.isLast}
-        canAdvance={flow.canAdvance}
-        canFinish={flow.canFinish}
-        finishing={finishing}
-        canSkip={flow.current?.wajib === false}
+        busy={busy}
         onBack={flow.goBack}
-        onNext={flow.goNext}
-        onSkip={handleSkip}
+        onNext={handleNext}
         onFinish={handleFinish}
         hint={
-          flow.current?.wajib && !checklist[flow.current.id]
-            ? "Selesaikan langkah ini untuk melanjutkan."
-            : flow.isLast && !flow.canFinish
-              ? "Beberapa langkah wajib masih belum selesai."
-              : undefined
+          flow.current?.wajib
+            ? "Klik Lanjut untuk menyimpan dan melanjutkan."
+            : "Klik Lanjut untuk melewati atau menyimpan."
         }
       />
     </OnboardingShell>

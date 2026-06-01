@@ -1,10 +1,23 @@
+/**
+ * Pengaturan transaksi global — tarif PPN default + flag apakah transaksi
+ * memang dikenakan PPN.
+ *
+ * Memisahkan `terkenaPajak` dari `ppnPersen` (alih-alih sekadar set
+ * `ppnPersen = 0`) memberi 2 manfaat:
+ *  1. UI bisa membedakan "saya tidak punya PPN" vs "PPN saya kebetulan 0%".
+ *  2. Saat user nanti mengaktifkan kembali, tarif lama tetap tersimpan
+ *     dan tidak perlu di-input ulang.
+ */
 export type PengaturanTransaksi = {
-  /** Tarif PPN dalam persen (contoh: 11 = 11%). */
+  /** True bila transaksi (faktur penjualan/pembelian) menyertakan PPN. */
+  terkenaPajak: boolean;
+  /** Tarif PPN dalam persen (contoh: 12 = 12%). */
   ppnPersen: number;
 };
 
 export const defaultPengaturanTransaksi: PengaturanTransaksi = {
-  ppnPersen: 11,
+  terkenaPajak: true,
+  ppnPersen: 12,
 };
 
 const STORAGE_KEY = "easybook-pengaturan-transaksi";
@@ -28,7 +41,13 @@ export function loadPengaturanTransaksi(): PengaturanTransaksi {
         : typeof o.ppnPersen === "string"
           ? Number.parseFloat(o.ppnPersen)
           : defaultPengaturanTransaksi.ppnPersen;
-    return { ppnPersen: clampPpnPersen(ppn) };
+    // Backward compat: data lama tidak punya `terkenaPajak` → anggap true
+    // (perilaku sebelumnya selalu mengenakan PPN).
+    const terkena =
+      typeof o.terkenaPajak === "boolean"
+        ? o.terkenaPajak
+        : defaultPengaturanTransaksi.terkenaPajak;
+    return { terkenaPajak: terkena, ppnPersen: clampPpnPersen(ppn) };
   } catch {
     return { ...defaultPengaturanTransaksi };
   }
@@ -37,6 +56,9 @@ export function loadPengaturanTransaksi(): PengaturanTransaksi {
 export function persistPengaturanTransaksi(data: PengaturanTransaksi) {
   window.localStorage.setItem(
     STORAGE_KEY,
-    JSON.stringify({ ppnPersen: clampPpnPersen(data.ppnPersen) }),
+    JSON.stringify({
+      terkenaPajak: Boolean(data.terkenaPajak),
+      ppnPersen: clampPpnPersen(data.ppnPersen),
+    }),
   );
 }

@@ -1,17 +1,16 @@
 /**
  * Step 4 — Saldo awal kas & stok.
  *
- * Form lengkap untuk dua jenis saldo awal cukup kompleks (butuh akun
- * historical balance, pilih barang × gudang, satuan konversi, dll.) dan
- * sudah punya halaman dedicated. Untuk wizard, kita cukup:
+ * Form lengkap untuk dua jenis saldo awal cukup kompleks dan punya
+ * halaman dedicated. Untuk wizard, cukup:
  *  - jelaskan konteksnya,
- *  - tawarkan pintasan ke halaman pengaturan kas awal dan stok awal,
- *  - tunjukkan status terkini (sudah ada entri / belum).
+ *  - tawarkan pintasan ke halaman pengaturan kas & stok awal,
+ *  - tunjukkan apakah sudah ada entri.
  *
- * Step ini opsional — banyak SME baru memulai dari nol dan tidak punya
- * saldo awal sama sekali.
+ * Step ini opsional dan info-only; `submit()` no-op (selalu true) karena
+ * tidak ada form yang perlu disimpan dari sini.
  */
-import { useEffect, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   CheckCircle2,
@@ -23,6 +22,7 @@ import {
 import { kasAwalGet } from "@/features/keuangan/kasAwalInvoke";
 import { stokAwalGet } from "@/features/barang-jasa/stokAwalInvoke";
 import { OnboardingStepHeader } from "@/features/onboarding/components/OnboardingStepHeader";
+import type { OnboardingStepHandle } from "@/features/onboarding/stepHandle";
 
 type RingkasanRow = {
   label: string;
@@ -34,7 +34,10 @@ type Props = {
   onSaved: () => Promise<void>;
 };
 
-export function StepSaldoAwal({ onSaved }: Props) {
+export const StepSaldoAwal = forwardRef<OnboardingStepHandle, Props>(function StepSaldoAwal(
+  { onSaved },
+  ref,
+) {
   const [kasJumlah, setKasJumlah] = useState<number | null>(null);
   const [stokJumlah, setStokJumlah] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -60,6 +63,17 @@ export function StepSaldoAwal({ onSaved }: Props) {
     // untuk re-evaluasi checklist global setelah fetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      async submit() {
+        // Tidak ada perubahan untuk disimpan dari step ini.
+        return true;
+      },
+    }),
+    [],
+  );
 
   const rows: RingkasanRow[] = [
     {
@@ -88,8 +102,9 @@ export function StepSaldoAwal({ onSaved }: Props) {
       <div className="flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50/60 px-3 py-2.5 text-xs leading-relaxed text-sky-900">
         <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
         <span>
-          Form saldo awal cukup detail dan punya halaman tersendiri. Klik tombol di bawah untuk membuka,
-          atau lewati langkah ini dan kembali kapan saja dari menu Keuangan / Barang.
+          Form saldo awal cukup detail dan punya halaman tersendiri. Klik tombol di bawah untuk
+          membuka di tab baru, atau klik Lanjut untuk melewati dan kembali kapan saja dari menu
+          Keuangan / Barang.
         </span>
       </div>
 
@@ -137,4 +152,4 @@ export function StepSaldoAwal({ onSaved }: Props) {
       )}
     </div>
   );
-}
+});

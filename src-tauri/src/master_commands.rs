@@ -12182,6 +12182,109 @@ pub fn operasional_konfigurasi_set(
     Ok(row)
 }
 
+// --- Onboarding state ---
+//
+// Disimpan terpisah dari pengaturan operasional supaya bisa di-query tanpa
+// dependency ke jurnal/akun. Tujuan utama: backend yang memutuskan apakah
+// wizard first-run masih perlu ditampilkan, bukan UI yang menebak dari
+// banyak sumber.
+//
+// Frontend tetap bertanggung jawab menghitung checklist per-langkah
+// (informasi perusahaan / PPN ada di localStorage, periode + gudang +
+// pengguna ada di DB) — backend hanya menyimpan apakah keseluruhan
+// wizard sudah pernah dinyatakan SELESAI oleh admin.
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingStatusRow {
+    pub completed: bool,
+    pub completed_at: Option<i64>,
+    pub completed_by: Option<String>,
+    pub app_version: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingCompletePayload {
+    pub completed_by: Option<String>,
+    pub app_version: Option<String>,
+}
+
+fn onboarding_state_ensure_row(conn: &Connection, ts: i64) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR IGNORE INTO onboarding_state (id, created_at, updated_at)
+         VALUES (1, ?, ?)",
+        params![ts, ts],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn onboarding_state_load(conn: &Connection) -> Result<OnboardingStatusRow, String> {
+    conn.query_row(
+        "SELECT completed_at, completed_by, app_version
+         FROM onboarding_state WHERE id = 1",
+        [],
+        |r| {
+            let completed_at: Option<i64> = r.get(0)?;
+            Ok(OnboardingStatusRow {
+                completed: completed_at.is_some(),
+                completed_at,
+                completed_by: r.get(1)?,
+                app_version: r.get(2)?,
+            })
+        },
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Ambil status onboarding. Tidak butuh autentikasi — dipakai juga di
+/// halaman login untuk memutuskan apakah perlu menampilkan banner
+/// "pertama kali pakai".
+#[tauri::command]
+pub fn onboarding_status_get(state: State<DbState>) -> Result<OnboardingStatusRow, String> {
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    onboarding_state_ensure_row(&tx, ts)?;
+    let row = onboarding_state_load(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(row)
+}
+
+/// Tandai onboarding sebagai selesai. Idempotent — `completed_at` baru di-set
+/// pertama kali; pemanggilan ulang akan memperbarui `completed_by` /
+/// `app_version` namun **tidak** mengubah `completed_at` agar audit-trail
+/// pertama-kali setup tetap akurat.
+#[tauri::command]
+pub fn onboarding_complete(
+    state: State<DbState>,
+    payload: OnboardingCompletePayload,
+) -> Result<OnboardingStatusRow, String> {
+    let ts = now_ts();
+    let mut conn = db::open_connection(&state.path).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    onboarding_state_ensure_row(&tx, ts)?;
+
+    let by = payload.completed_by.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let ver = payload.app_version.as_deref().map(str::trim).filter(|s| !s.is_empty());
+
+    tx.execute(
+        "UPDATE onboarding_state
+         SET completed_at = COALESCE(completed_at, ?),
+             completed_by = COALESCE(?, completed_by),
+             app_version = COALESCE(?, app_version),
+             updated_at = ?
+         WHERE id = 1",
+        params![ts, by, ver, ts],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let row = onboarding_state_load(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(row)
+}
+
 // --- Saldo awal kas (jurnal pembuka di awal periode operasional) ---
 
 const KAS_AWAL_JENIS: &str = "KAS_AWAL";

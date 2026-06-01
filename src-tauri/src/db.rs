@@ -476,6 +476,7 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     migrate_jurnal_konfigurasi_historical(conn)?;
     migrate_stok_awal_tables(conn)?;
     migrate_backup_log_table(conn)?;
+    migrate_onboarding_state(conn)?;
     Ok(())
 }
 
@@ -568,6 +569,29 @@ fn migrate_jurnal_konfigurasi_historical(conn: &Connection) -> rusqlite::Result<
             [],
         )?;
     }
+    Ok(())
+}
+
+/// State onboarding first-run. Single row (id = 1). `completed_at` NULL
+/// menandakan wizard pengaturan awal belum diselesaikan, sehingga aplikasi
+/// akan mengarahkan admin ke `/onboarding` setelah login.
+///
+/// `app_version` mencatat versi aplikasi saat onboarding diselesaikan,
+/// berguna untuk memutuskan apakah perlu menampilkan wizard "what's new"
+/// di rilis berikutnya tanpa mengulang setup awal.
+fn migrate_onboarding_state(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS onboarding_state (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            completed_at INTEGER,
+            completed_by TEXT,
+            app_version TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        ",
+    )?;
     Ok(())
 }
 

@@ -3,7 +3,9 @@ import { AppShell } from "@/app/layout/AppShell";
 import { POSShell } from "@/app/layout/POSShell";
 import { AuthProvider } from "@/features/auth/AuthContext";
 import { RequireAuth } from "@/features/auth/RequireAuth";
+import { OnboardingGate } from "@/features/onboarding/OnboardingGate";
 import { LoginPage } from "@/pages/LoginPage";
+import { OnboardingPage } from "@/pages/OnboardingPage";
 import { POSPage } from "@/pages/pos/POSPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { BarangJasaPage } from "@/pages/BarangJasaPage";
@@ -108,6 +110,10 @@ export const mainRouter = createHashRouter([
         element: <RequireAuth />,
         children: [
           {
+            element: <OnboardingGate />,
+            children: [
+              { path: "onboarding", element: <OnboardingPage /> },
+          {
             path: "/",
             element: <AppShell />,
             children: [
@@ -200,6 +206,8 @@ export const mainRouter = createHashRouter([
       { path: "keuangan/jurnal-umum", element: <JurnalUmumPage /> },
       { path: "keuangan/buku-besar", element: <BukuBesarPage /> },
       { path: "pengaturan", element: <PengaturanPage /> },
+            ],
+          },
             ],
           },
         ],

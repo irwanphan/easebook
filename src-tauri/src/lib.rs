@@ -182,6 +182,8 @@ pub fn run() {
             master_commands::pos_konfigurasi_set,
             master_commands::operasional_konfigurasi_get,
             master_commands::operasional_konfigurasi_set,
+            master_commands::onboarding_status_get,
+            master_commands::onboarding_complete,
             master_commands::kas_awal_get,
             master_commands::kas_awal_set,
             master_commands::stok_awal_get,

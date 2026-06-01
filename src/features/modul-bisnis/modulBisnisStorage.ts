@@ -11,8 +11,22 @@
 import {
   DEFAULT_MODUL_AKTIF,
   isModulId,
+  MODUL_WAJIB_IDS,
   type ModulBisnisId,
 } from "@/features/modul-bisnis/modulBisnisCatalog";
+
+/**
+ * Pastikan semua modul `wajib` selalu masuk ke dalam set aktif —
+ * baik saat load (defensive terhadap storage corrupt / manipulasi
+ * devtools) maupun saat save (defensive terhadap caller yang lupa
+ * memasukkannya). Modul wajib adalah inti aplikasi; tanpa mereka
+ * sebagian besar fitur menjadi tak konsisten.
+ */
+function withWajib(set: Iterable<ModulBisnisId>): Set<ModulBisnisId> {
+  const next = new Set(set);
+  for (const id of MODUL_WAJIB_IDS) next.add(id);
+  return next;
+}
 
 const STORAGE_KEY = "easybook-modul-aktif";
 
@@ -29,7 +43,7 @@ export function loadModulAktif(): Set<ModulBisnisId> {
     const filtered = parsed.filter(
       (item): item is ModulBisnisId => typeof item === "string" && isModulId(item),
     );
-    return new Set(filtered);
+    return withWajib(filtered);
   } catch {
     return new Set(DEFAULT_MODUL_AKTIF);
   }
@@ -37,7 +51,7 @@ export function loadModulAktif(): Set<ModulBisnisId> {
 
 export function saveModulAktif(set: ReadonlySet<ModulBisnisId>): void {
   try {
-    const arr = Array.from(set);
+    const arr = Array.from(withWajib(set));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
     window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
   } catch {

@@ -89,7 +89,12 @@ export function TokoOption({
       ? "border-brand-500 bg-brand-50/60 shadow-sm shadow-brand-500/10"
       : "border-zinc-200",
     disabled
-      ? "cursor-not-allowed opacity-60 hover:border-zinc-200 hover:bg-white"
+      ? checked
+        // Locked-active: tetap full opacity supaya terbaca sebagai
+        // "aktif permanen", hanya cursor yang menandakan tidak bisa
+        // diubah. Border brand dari state `checked` tetap dominan.
+        ? "cursor-not-allowed hover:border-brand-500 hover:bg-brand-50/60"
+        : "cursor-not-allowed opacity-60 hover:border-zinc-200 hover:bg-white"
       : "",
     wrapperClassName,
   ]

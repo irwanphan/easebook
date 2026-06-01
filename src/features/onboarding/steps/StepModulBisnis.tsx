@@ -28,11 +28,12 @@ import {
   useMemo,
   useState,
 } from "react";
-import { AlertTriangle, Blocks, Info } from "lucide-react";
+import { Blocks, Info, Lock } from "lucide-react";
 import { TokoOption } from "@/components/ui/TokoOption";
 import {
   MODUL_CATALOG,
   type ModulBisnisId,
+  type ModulBisnisMeta,
 } from "@/features/modul-bisnis/modulBisnisCatalog";
 import {
   loadModulAktif,
@@ -45,10 +46,57 @@ type Props = {
   onSaved: () => Promise<void>;
 };
 
+/** Render satu kartu modul — terkunci bila `wajib`, toggleable bila tidak. */
+function ModulCard({
+  modul,
+  checked,
+  onToggle,
+}: {
+  modul: ModulBisnisMeta;
+  checked: boolean;
+  onToggle: (id: ModulBisnisId) => void;
+}) {
+  const Icon = modul.icon;
+  return (
+    <TokoOption
+      name="modul-bisnis"
+      value={modul.id}
+      selectionMode="checkbox"
+      checked={checked}
+      disabled={modul.wajib}
+      onChange={() => onToggle(modul.id)}
+      badge={
+        modul.wajib ? (
+          <span className="inline-flex items-center gap-1">
+            <Lock className="h-3 w-3" aria-hidden /> Inti
+          </span>
+        ) : undefined
+      }
+      badgeVariant={modul.wajib ? "brand" : "neutral"}
+      title={
+        <span className="inline-flex items-center gap-2">
+          <span
+            aria-hidden
+            className={[
+              "inline-flex h-6 w-6 items-center justify-center rounded-lg",
+              checked
+                ? "bg-brand-100 text-brand-700"
+                : "bg-zinc-100 text-zinc-500",
+            ].join(" ")}
+          >
+            <Icon className="h-3.5 w-3.5" />
+          </span>
+          {modul.label}
+        </span>
+      }
+      description={modul.deskripsi}
+    />
+  );
+}
+
 export const StepModulBisnis = forwardRef<OnboardingStepHandle, Props>(
   function StepModulBisnis({ onSaved }, ref) {
     const [aktif, setAktif] = useState<Set<ModulBisnisId>>(() => loadModulAktif());
-    const [error, setError] = useState<string | null>(null);
 
     // Re-sync state saat step re-mount (mis. user navigasi mundur lalu
     // maju lagi) supaya menampilkan pilihan terbaru dari storage.
@@ -56,9 +104,22 @@ export const StepModulBisnis = forwardRef<OnboardingStepHandle, Props>(
       setAktif(loadModulAktif());
     }, []);
 
+    const { modulInti, modulOpsional } = useMemo(() => {
+      const inti: ModulBisnisMeta[] = [];
+      const opsional: ModulBisnisMeta[] = [];
+      for (const m of MODUL_CATALOG) {
+        if (m.wajib) inti.push(m);
+        else opsional.push(m);
+      }
+      return { modulInti: inti, modulOpsional: opsional };
+    }, []);
+
     const toggle = useCallback((id: ModulBisnisId) => {
-      setError(null);
       setAktif((prev) => {
+        // Defensive: jangan pernah toggle modul inti walau dipanggil
+        // (UI sudah disabled, tapi tetap kunci di logic).
+        const meta = MODUL_CATALOG.find((m) => m.id === id);
+        if (meta?.wajib) return prev;
         const next = new Set(prev);
         if (next.has(id)) next.delete(id);
         else next.add(id);
@@ -66,26 +127,21 @@ export const StepModulBisnis = forwardRef<OnboardingStepHandle, Props>(
       });
     }, []);
 
-    const jumlahAktif = aktif.size;
-    const totalModul = MODUL_CATALOG.length;
+    const opsionalAktif = modulOpsional.filter((m) => aktif.has(m.id)).length;
 
     const summary = useMemo(() => {
-      if (jumlahAktif === 0) return "Belum ada modul dipilih.";
-      if (jumlahAktif === totalModul) return "Semua modul aktif.";
-      return `${jumlahAktif} dari ${totalModul} modul aktif.`;
-    }, [jumlahAktif, totalModul]);
+      if (modulOpsional.length === 0) return null;
+      if (opsionalAktif === 0) return "Tidak ada modul opsional yang dipilih.";
+      if (opsionalAktif === modulOpsional.length)
+        return "Semua modul opsional aktif.";
+      return `${opsionalAktif} dari ${modulOpsional.length} modul opsional aktif.`;
+    }, [opsionalAktif, modulOpsional.length]);
 
     useImperativeHandle(
       ref,
       () => ({
         async submit() {
-          setError(null);
-          if (aktif.size === 0) {
-            setError(
-              "Pilih minimal satu modul. Anda tidak bisa memakai aplikasi tanpa modul aktif.",
-            );
-            return false;
-          }
+          // Modul inti selalu masuk — storage layer juga menjamin ini.
           saveModulAktif(aktif);
           await onSaved();
           return true;
@@ -100,7 +156,7 @@ export const StepModulBisnis = forwardRef<OnboardingStepHandle, Props>(
           icon={Blocks}
           judul="Modul bisnis"
           wajib
-          deskripsi="Pilih modul yang ingin Anda pakai. Modul yang tidak dicentang akan disembunyikan dari menu untuk menjaga tampilan tetap ringkas. Anda bisa mengubahnya kembali kapan saja dari Pengaturan."
+          deskripsi="Penjualan, Pembelian, dan Inventory adalah modul inti — selalu aktif. Modul opsional di bawahnya bisa Anda nyalakan/matikan sesuai kebutuhan. Pilihan ini bisa diubah kapan saja dari Pengaturan."
         />
 
         <div className="flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50/60 px-3 py-2.5 text-xs leading-relaxed text-sky-900">
@@ -111,52 +167,40 @@ export const StepModulBisnis = forwardRef<OnboardingStepHandle, Props>(
           </span>
         </div>
 
-        {error ? (
-          <div
-            role="alert"
-            className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
-          >
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            <span>{error}</span>
-          </div>
+        {modulInti.length > 0 ? (
+          <fieldset className="flex flex-col gap-3">
+            <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+              Modul inti
+            </legend>
+            {modulInti.map((modul) => (
+              <ModulCard
+                key={modul.id}
+                modul={modul}
+                checked
+                onToggle={toggle}
+              />
+            ))}
+          </fieldset>
         ) : null}
 
-        <fieldset className="flex flex-col gap-3">
-          <legend className="sr-only">Modul bisnis aktif</legend>
-          {MODUL_CATALOG.map((modul) => {
-            const Icon = modul.icon;
-            const checked = aktif.has(modul.id);
-            return (
-              <TokoOption
+        {modulOpsional.length > 0 ? (
+          <fieldset className="flex flex-col gap-3">
+            <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+              Modul opsional
+            </legend>
+            {modulOpsional.map((modul) => (
+              <ModulCard
                 key={modul.id}
-                name="modul-bisnis"
-                value={modul.id}
-                selectionMode="checkbox"
-                checked={checked}
-                onChange={() => toggle(modul.id)}
-                title={
-                  <span className="inline-flex items-center gap-2">
-                    <span
-                      aria-hidden
-                      className={[
-                        "inline-flex h-6 w-6 items-center justify-center rounded-lg",
-                        checked
-                          ? "bg-brand-100 text-brand-700"
-                          : "bg-zinc-100 text-zinc-500",
-                      ].join(" ")}
-                    >
-                      <Icon className="h-3.5 w-3.5" />
-                    </span>
-                    {modul.label}
-                  </span>
-                }
-                description={modul.deskripsi}
+                modul={modul}
+                checked={aktif.has(modul.id)}
+                onToggle={toggle}
               />
-            );
-          })}
-        </fieldset>
-
-        <p className="text-right text-xs font-medium text-zinc-500">{summary}</p>
+            ))}
+            {summary ? (
+              <p className="text-right text-xs font-medium text-zinc-500">{summary}</p>
+            ) : null}
+          </fieldset>
+        ) : null}
       </div>
     );
   },
